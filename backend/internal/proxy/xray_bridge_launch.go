@@ -41,8 +41,13 @@ func (m *XrayManager) ensureBridge(proxyConfig string, proxies []config.BrowserP
 			log.Error("链式节点解析失败", logger.F("error", err))
 			return "", "", err
 		}
+		firstHop, err := chainFirstHopOutbound(chainCfg.First, "first-hop")
+		if err != nil {
+			log.Error("链式第一层节点构建失败", logger.F("error", err))
+			return "", "", err
+		}
 		outbounds = []interface{}{
-			chainSocks5Outbound(chainCfg.First, "first-hop", ""),
+			firstHop,
 			chainSocks5Outbound(chainCfg.Second, "second-hop", "first-hop"),
 		}
 		routes = []interface{}{
@@ -229,6 +234,27 @@ func (m *XrayManager) launchBridgeAttempt(log *logger.Logger, key string, binary
 	}
 
 	return fmt.Sprintf("socks5://127.0.0.1:%d", port), bridge, nil
+}
+
+func chainFirstHopOutbound(hop chainSocks5Hop, tag string) (map[string]interface{}, error) {
+	proxyConfig := strings.TrimSpace(hop.ProxyConfig)
+	if proxyConfig == "" {
+		return chainSocks5Outbound(hop, tag, ""), nil
+	}
+	standardProxy, outbound, err := ParseProxyNode(proxyConfig)
+	if err != nil {
+		return nil, fmt.Errorf("第一层高级节点解析失败: %w", err)
+	}
+	if strings.TrimSpace(standardProxy) != "" || outbound == nil {
+		return nil, fmt.Errorf("第一层高级节点仅支持 VLESS、VMess、Trojan、SS 或兼容的 Clash 节点")
+	}
+	result := make(map[string]interface{}, len(outbound)+1)
+	for key, value := range outbound {
+		result[key] = value
+	}
+	result["tag"] = tag
+	delete(result, "proxySettings")
+	return result, nil
 }
 
 func chainSocks5Outbound(hop chainSocks5Hop, tag string, nextTag string) map[string]interface{} {

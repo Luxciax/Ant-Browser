@@ -51,14 +51,33 @@ func (m *SingBoxManager) ensureBridge(proxyConfig string, proxies []config.Brows
 	}
 
 	src = normalizeNodeScheme(src)
-	outbound, err := BuildSingBoxOutbound(src)
-	if err != nil {
-		log.Error("节点解析失败", logger.F("error", err))
-		return "", "", err
+	var (
+		outbounds     []interface{}
+		routeOutbound = "proxy-out"
+		preferredPort int
+	)
+	if IsChainSocks5Proxy(src) {
+		chainCfg, err := ParseChainSocks5Config(src)
+		if err != nil {
+			log.Error("链式节点解析失败", logger.F("error", err))
+			return "", "", err
+		}
+		outbounds, routeOutbound, err = buildSingBoxChainOutbounds(chainCfg)
+		if err != nil {
+			log.Error("HY2 链式节点构建失败", logger.F("error", err))
+			return "", "", err
+		}
+		preferredPort = chainCfg.LocalPort
+	} else {
+		outbound, err := BuildSingBoxOutbound(src)
+		if err != nil {
+			log.Error("节点解析失败", logger.F("error", err))
+			return "", "", err
+		}
+		outbounds = []interface{}{outbound}
 	}
 
 	key := computeNodeKey(src)
-
 	if socksURL, reused := m.tryReuseBridge(key, pin); reused {
 		log.Info("复用 sing-box 桥接", logger.F("engine", "sing-box"), logger.F("key", key[:8]), logger.F("socks_url", socksURL))
 		return socksURL, key, nil
@@ -77,18 +96,24 @@ func (m *SingBoxManager) ensureBridge(proxyConfig string, proxies []config.Brows
 	}
 	log.Debug("sing-box binary", logger.F("path", binaryPath))
 
-	const maxRetries = 2
+	maxRetries := 2
+	if preferredPort > 0 {
+		maxRetries = 1
+	}
 	var lastErr error
 	attemptsUsed := 0
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		attemptsUsed = attempt
-		port, err := nextAvailablePort()
-		if err != nil {
-			lastErr = err
-			continue
+		port := preferredPort
+		if port <= 0 {
+			port, err = nextAvailablePort()
+			if err != nil {
+				lastErr = err
+				continue
+			}
 		}
 
-		bridge, err := m.launchBridgeOnPort(log, key, binaryPath, outbound, port, attempt)
+		bridge, err := m.launchBridgeOnPort(log, key, binaryPath, outbounds, routeOutbound, port, attempt)
 		if err != nil {
 			lastErr = err
 			if !isRetryableSingBoxLaunchError(err) {
@@ -111,8 +136,8 @@ func (m *SingBoxManager) ensureBridge(proxyConfig string, proxies []config.Brows
 	return "", "", fmt.Errorf("sing-box 启动失败（已尝试 %d 次）: %w", attemptsUsed, lastErr)
 }
 
-func (m *SingBoxManager) launchBridgeOnPort(log *logger.Logger, key string, binaryPath string, outbound map[string]interface{}, port int, attempt int) (*SingBoxBridge, error) {
-	cfgPath, err := m.buildConfig(key, outbound, port)
+func (m *SingBoxManager) launchBridgeOnPort(log *logger.Logger, key string, binaryPath string, outbounds []interface{}, routeOutbound string, port int, attempt int) (*SingBoxBridge, error) {
+	cfgPath, err := m.buildConfigWithOutbounds(key, outbounds, routeOutbound, port)
 	if err != nil {
 		return nil, fmt.Errorf("sing-box 配置生成失败: %w", err)
 	}
@@ -138,14 +163,20 @@ func (m *SingBoxManager) launchBridgeOnPort(log *logger.Logger, key string, bina
 		return nil, &singBoxLaunchError{err: err, retryable: false}
 	}
 
+	var singleOutbound map[string]interface{}
+	if len(outbounds) == 1 {
+		singleOutbound, _ = outbounds[0].(map[string]interface{})
+	}
 	bridge := &SingBoxBridge{
-		NodeKey:    key,
-		Port:       port,
-		Cmd:        cmd,
-		Pid:        cmd.Process.Pid,
-		Running:    true,
-		Outbound:   cloneStringInterfaceMap(outbound),
-		LastUsedAt: time.Now(),
+		NodeKey:       key,
+		Port:          port,
+		Cmd:           cmd,
+		Pid:           cmd.Process.Pid,
+		Running:       true,
+		Outbound:      cloneStringInterfaceMap(singleOutbound),
+		Outbounds:     cloneInterfaceSlice(outbounds),
+		RouteOutbound: routeOutbound,
+		LastUsedAt:    time.Now(),
 	}
 	bridge.startExitWatcher()
 	log.Info("sing-box 内核进程已启动", logger.F("engine", "sing-box"), logger.F("key", key[:8]), logger.F("pid", bridge.Pid), logger.F("port", port))

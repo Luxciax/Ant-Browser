@@ -35,6 +35,23 @@ func TestResolveProxyKernelDefaultPriority(t *testing.T) {
 	}
 }
 
+func TestResolveProxyKernelChainSocks5UsesXrayOnly(t *testing.T) {
+	chainConfig := buildTestChainSocks5Config(t, 0)
+	got, err := ResolveProxyKernel(chainConfig, nil, "", "")
+	if err != nil {
+		t.Fatalf("ResolveProxyKernel returned error: %v", err)
+	}
+	if got.Kernel != ProxyKernelXray {
+		t.Fatalf("kernel = %q, want xray; resolution=%+v", got.Kernel, got)
+	}
+	if len(got.SupportedKernels) != 1 || got.SupportedKernels[0] != ProxyKernelXray {
+		t.Fatalf("supported kernels = %#v, want [xray]", got.SupportedKernels)
+	}
+	if _, err := ResolveProxyKernel(chainConfig, nil, "", ProxyKernelMihomo); err == nil {
+		t.Fatal("chain+socks5 must reject mihomo until a real two-hop mihomo builder exists")
+	}
+}
+
 func TestResolveProxyKernelRejectsUnsupportedPreferredKernel(t *testing.T) {
 	_, err := ResolveProxyKernel(mieruClashNode, nil, "", ProxyKernelXray)
 	if err == nil {

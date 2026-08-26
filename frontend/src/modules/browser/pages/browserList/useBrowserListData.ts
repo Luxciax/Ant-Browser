@@ -1,7 +1,7 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import type { BrowserGroupWithCount, BrowserProfile, BrowserProxy } from '../../types'
 import { fetchBrowserProfiles, fetchBrowserProxies, fetchGroups } from '../../api'
-import { EventsOn } from '../../../../wailsjs/runtime/runtime'
+
 
 interface UseBrowserListDataOptions {
   loadCores: () => void
@@ -113,18 +113,20 @@ export function useBrowserListData({ loadCores }: UseBrowserListDataOptions) {
       }
     }
 
-    const offStarted = EventsOn('browser:instance:started', (payload: any) => {
+    const runtime = (window as Window & { runtime?: { EventsOn?: (eventName: string, callback: (payload?: any) => void) => (() => void) | void } }).runtime
+    const eventsOn = runtime?.EventsOn?.bind(runtime)
+    const offStarted = eventsOn?.('browser:instance:started', (payload: any) => {
       clearPending(payload)
       void loadProfiles({ silent: true, syncRuntimeState: true })
     })
-    const offUpdated = EventsOn('browser:instance:updated', () => {
+    const offUpdated = eventsOn?.('browser:instance:updated', () => {
       void loadProfiles({ silent: true, syncRuntimeState: true })
     })
-    const offStopped = EventsOn('browser:instance:stopped', (payload: any) => {
+    const offStopped = eventsOn?.('browser:instance:stopped', (payload: any) => {
       clearPending(payload)
       void loadProfiles({ silent: true, syncRuntimeState: true })
     })
-    const offCrashed = EventsOn('browser:instance:crashed', (payload: any) => {
+    const offCrashed = eventsOn?.('browser:instance:crashed', (payload: any) => {
       clearPending(payload)
       void loadProfiles({ silent: true, syncRuntimeState: true })
     })

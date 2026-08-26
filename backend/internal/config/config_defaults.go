@@ -261,7 +261,7 @@ func DefaultConfig() *Config {
 			DefaultLaunchArgs:      []string{"--disable-sync", "--no-first-run"},
 			DefaultStartURLs:       DefaultBrowserStartURLs(),
 			LightStartEnabled:      boolPtr(true),
-			RestoreLastSession:     false,
+			RestoreLastSession:     true,
 			StartReadyTimeoutMs:    3000,
 			StartStableWindowMs:    1200,
 			DefaultConnectorType:   BrowserConnectorXray,

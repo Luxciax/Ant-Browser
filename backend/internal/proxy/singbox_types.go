@@ -21,7 +21,9 @@ type SingBoxBridge struct {
 	Running      bool
 	Stopping     bool
 	LastError    string
-	Outbound     map[string]interface{}
+	Outbound     map[string]interface{} // 单节点兼容上下文
+	Outbounds    []interface{}          // 多跳链恢复上下文
+	RouteOutbound string                // socks-in 默认路由目标
 	RefCount     int
 	LastUsedAt   time.Time
 	Restarting   bool

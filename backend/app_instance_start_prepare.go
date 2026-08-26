@@ -139,7 +139,10 @@ func (a *App) prepareBrowserStartPlan(input browserStartInput, profile *BrowserP
 	maxStartAttempts := browserStartAttemptCount()
 	totalReadyTimeout := time.Duration(maxStartAttempts) * startReadyTimeout
 	restoreLastSession := profileRestoreLastSession(profile, a.config)
-	extensionDirs := a.browserMgr.EnabledExtensionDirsForProfile(input.ProfileID)
+	extensionDirs, err := a.browserMgr.PrepareExtensionDirsForProfile(input.ProfileID, userDataDir)
+	if err != nil {
+		return nil, fmt.Errorf("实例启动失败：插件持久化目录准备失败。%w", err)
+	}
 	fingerprintExpectedArgs := combineFingerprintExpectedArgs(fingerprintLaunchArgs, sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs)
 	defaultStartURLs := a.resolveFingerprintCheckStartURLsForExpectedArgsAndProfile(profile.ProfileId, fingerprintExpectedArgs, profile, mergeStartURLs(browserDefaultStartURLs(a.config), bookmarkStartURLs(bookmarks)))
 	startURLs := a.resolveFingerprintCheckStartURLsForExpectedArgsAndProfile(profile.ProfileId, fingerprintExpectedArgs, profile, input.StartURLs)

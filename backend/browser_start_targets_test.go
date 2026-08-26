@@ -77,3 +77,13 @@ func TestProfileRestoreLastSessionOverridesBrowserDefault(t *testing.T) {
 		t.Fatal("follow profile should use browser default")
 	}
 }
+
+func TestDefaultConfigRestoresLastSession(t *testing.T) {
+	cfg := config.DefaultConfig()
+	if !cfg.Browser.RestoreLastSession {
+		t.Fatal("default browser settings should restore the previous session")
+	}
+	if !profileRestoreLastSession(&browser.Profile{RestoreLastSession: browser.RestoreLastSessionFollow}, cfg) {
+		t.Fatal("profiles following the default should restore the previous session")
+	}
+}

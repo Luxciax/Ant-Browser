@@ -15,6 +15,7 @@ const (
 	extensionDownloadTimeout = 90 * time.Second
 	extensionMaxPackageBytes = 128 << 20
 	extensionsRootDir        = "extensions"
+	profileExtensionsDir     = "AntiBrowserExtensions"
 )
 
 func ExtensionDownloadTimeout() time.Duration {
@@ -265,17 +266,30 @@ func (m *Manager) EnabledExtensionDirs() []string {
 }
 
 func (m *Manager) EnabledExtensionDirsForProfile(profileID string) []string {
+	dirs, _ := m.enabledExtensionDirsForProfile(profileID)
+	return dirs
+}
+
+func (m *Manager) enabledExtensionDirsForProfile(profileID string) ([]string, error) {
 	if m == nil || m.ExtensionDAO == nil {
-		return nil
+		return nil, nil
 	}
 	settings, err := m.ExtensionDAO.GetProfileSettings(profileID)
 	if err != nil || !settings.Configured {
-		return m.EnabledExtensionDirs()
+		items, listErr := m.ExtensionDAO.ListEnabled()
+		if listErr != nil {
+			return nil, listErr
+		}
+		return existingExtensionDirs(items), nil
 	}
 	items, err := m.ExtensionDAO.ListByIDs(settings.ExtensionIDs)
 	if err != nil {
-		return nil
+		return nil, err
 	}
+	return existingExtensionDirs(items), nil
+}
+
+func existingExtensionDirs(items []Extension) []string {
 	dirs := make([]string, 0, len(items))
 	for _, item := range items {
 		dir := strings.TrimSpace(item.InstallDir)
@@ -286,4 +300,39 @@ func (m *Manager) EnabledExtensionDirsForProfile(profileID string) []string {
 		}
 	}
 	return dirs
+}
+
+// PrepareExtensionDirsForProfile creates an immutable package location inside
+// the browser profile. Chromium keys extension state to both the extension ID
+// and its unpacked path, so using a stable per-profile path is required for
+// Local Extension Settings / IndexedDB data to survive application restarts.
+// Existing packages are intentionally never replaced during normal launch.
+func (m *Manager) PrepareExtensionDirsForProfile(profileID string, userDataDir string) ([]string, error) {
+	sourceDirs, err := m.enabledExtensionDirsForProfile(profileID)
+	if err != nil {
+		return nil, fmt.Errorf("读取实例插件配置失败: %w", err)
+	}
+	if len(sourceDirs) == 0 {
+		return nil, nil
+	}
+	root := filepath.Join(filepath.Clean(userDataDir), profileExtensionsDir)
+	prepared := make([]string, 0, len(sourceDirs))
+	for _, sourceDir := range sourceDirs {
+		extensionID := NormalizeExtensionID(filepath.Base(filepath.Clean(sourceDir)))
+		if extensionID == "" {
+			return nil, fmt.Errorf("插件目录缺少有效 ID: %s", sourceDir)
+		}
+		targetDir := filepath.Join(root, extensionID)
+		if _, statErr := os.Stat(filepath.Join(targetDir, "manifest.json")); statErr == nil {
+			prepared = append(prepared, targetDir)
+			continue
+		} else if !os.IsNotExist(statErr) {
+			return nil, fmt.Errorf("检查实例插件目录失败: %w", statErr)
+		}
+		if err := copyExtensionDirectory(sourceDir, targetDir); err != nil {
+			return nil, fmt.Errorf("准备实例插件 %s 失败: %w", extensionID, err)
+		}
+		prepared = append(prepared, targetDir)
+	}
+	return prepared, nil
 }
