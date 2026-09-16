@@ -222,6 +222,47 @@ func TestCleanupProfileExtensionRuntimeKeepsWorkflowStorageAndRemovesRegistratio
 	}
 }
 
+func TestRepeatedProfileExtensionRegistrationPreservesRuntimeStorage(t *testing.T) {
+	userDataDir := t.TempDir()
+	runtimeID := "cccccccccccccccccccccccccccccccc"
+	version := "1.0.0"
+	codePath := persistentExtensionCodePath(userDataDir, runtimeID, version)
+	if err := os.MkdirAll(codePath, 0o755); err != nil {
+		t.Fatalf("MkdirAll code returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(codePath, "manifest.json"), []byte(`{"name":"Script state test","version":"1.0.0"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile manifest returned error: %v", err)
+	}
+
+	if err := ensureProfileScopedExtensionRegistration(userDataDir, codePath, runtimeID, ""); err != nil {
+		t.Fatalf("initial registration returned error: %v", err)
+	}
+	storagePath := filepath.Join(userDataDir, "Default", "Local Extension Settings", runtimeID, "CURRENT")
+	if err := os.MkdirAll(filepath.Dir(storagePath), 0o755); err != nil {
+		t.Fatalf("MkdirAll storage returned error: %v", err)
+	}
+	const state = "scriptcat-user-scripts-and-settings"
+	if err := os.WriteFile(storagePath, []byte(state), 0o644); err != nil {
+		t.Fatalf("WriteFile storage returned error: %v", err)
+	}
+
+	// Startup verification for an already-installed extension must only repair
+	// registration metadata. It must never replace or clean the runtime storage.
+	if err := ensureProfileExtensionRegistration(userDataDir, codePath, runtimeID, ""); err != nil {
+		t.Fatalf("repeat registration returned error: %v", err)
+	}
+	data, err := os.ReadFile(storagePath)
+	if err != nil {
+		t.Fatalf("ReadFile storage after repeat registration returned error: %v", err)
+	}
+	if string(data) != state {
+		t.Fatalf("extension runtime storage changed across repeat registration: %q", data)
+	}
+	if !profileExtensionSettingMatches(userDataDir, runtimeID, version) {
+		t.Fatal("profile registration no longer matches after repeat verification")
+	}
+}
+
 func TestMigrateExtensionStoragePrefersLegacyData(t *testing.T) {
 	userDataDir := t.TempDir()
 	oldRuntimeID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
