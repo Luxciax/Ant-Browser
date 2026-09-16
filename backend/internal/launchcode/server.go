@@ -121,6 +121,8 @@ type LaunchServer struct {
 	activeID    string
 	activeName  string
 	apiAuth     APIAuthConfig
+	proxyMu     sync.RWMutex
+	proxy       ProxyProvider
 }
 
 // NewLaunchServer 创建 LaunchServer
