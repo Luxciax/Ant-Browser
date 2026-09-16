@@ -114,7 +114,7 @@ export function BrowserSettingsModal({ open, onClose, settings: initSettings, co
     <>
       <Modal open={open} onClose={onClose} title="基础配置" width="700px"
         footer={<><Button variant="secondary" onClick={onClose}>取消</Button><Button onClick={handleSave} loading={saving}>保存</Button></>}>
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div>
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm font-medium text-[var(--color-text-primary)]">内核管理</span>

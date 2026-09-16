@@ -30,6 +30,9 @@ func TestUploadProgressReaderReportsFinalTransfer(t *testing.T) {
 	if last.BytesPerSecond < 0 {
 		t.Fatalf("last speed = %f, want non-negative", last.BytesPerSecond)
 	}
+	if last.Stage != UploadProgressStageAwaitingResponse {
+		t.Fatalf("last progress stage = %q, want %q", last.Stage, UploadProgressStageAwaitingResponse)
+	}
 }
 
 func TestUploadProgressReaderReturnsOriginalReaderWhenDisabled(t *testing.T) {

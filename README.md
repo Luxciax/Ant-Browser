@@ -6,7 +6,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)](https://github.com/black-ant/Ant-Browser/releases)
 [![Issues](https://img.shields.io/github/issues/black-ant/Ant-Browser)](https://github.com/black-ant/Ant-Browser/issues)
 
-当前版本：`1.8.0` · 2026-09-03
+当前版本：`1.8.1` · 2026-09-14
 
 ## 推荐内核项目
 
@@ -338,7 +338,8 @@ chrome/
 4. 从历史列表选择本地或远程备份，可下载并恢复；恢复采用合并方式，不会直接清空现有数据。
 5. 需要自动备份时，先配置 OpenList，再设置每日执行时间。
 
-OpenList Token 和 S3 访问凭据保存在本机的 `backup.local.yaml`，不会写入 `config.yaml`；不要把该文件复制到公共仓库或提交到 git。
+OpenList Token 和 S3 访问凭据保存在应用用户配置目录中的 `backup.local.yaml`，不会写入 `config.yaml`；不要把该文件复制到公共仓库或提交到 git。
+Windows 升级或卸载旧版本时，安装器会先将旧安装目录中的 `backup.local.yaml` 迁移到该用户配置目录，避免重装丢失凭据。
 
 ## 常用操作
 
@@ -376,7 +377,7 @@ OpenList Token 和 S3 访问凭据保存在本机的 `backup.local.yaml`，不�
 
 ### 5. 备份凭据会不会写进配置文件？
 
-不会写入普通 `config.yaml`。OpenList Token 和 S3 访问凭据保存在被忽略的本地文件 `backup.local.yaml`，界面读取时默认显示为脱敏值。
+不会写入普通 `config.yaml`。OpenList Token 和 S3 访问凭据保存在应用用户配置目录中的本地文件 `backup.local.yaml`，界面读取时默认显示为脱敏值。
 
 ## Roadmap
 

@@ -125,6 +125,55 @@ Function un.UnregisterDiagnosticsWatcher
 done:
 FunctionEnd
 
+Function PreserveLegacyBackupLocalConfig
+  StrCpy $4 "$INSTDIR"
+  ReadRegStr $3 HKLM "${UNINSTALL_KEY}" "InstallLocation"
+  ${If} "$3" != ""
+    IfFileExists "$3\backup.local.yaml" 0 legacy_use_current_install
+    StrCpy $4 "$3"
+  ${EndIf}
+
+legacy_use_current_install:
+  IfFileExists "$APPDATA\${PRODUCT_NAME}\backup.local.yaml" legacy_done
+  IfFileExists "$4\backup.local.yaml" 0 legacy_done
+
+  ClearErrors
+  CreateDirectory "$APPDATA\${PRODUCT_NAME}"
+  IfErrors legacy_failed
+  DetailPrint "Preserving legacy backup credentials"
+  ClearErrors
+  CopyFiles /SILENT "$4\backup.local.yaml" "$APPDATA\${PRODUCT_NAME}"
+  IfErrors legacy_failed
+  Goto legacy_done
+
+legacy_failed:
+  MessageBox MB_ICONSTOP|MB_OK "Could not preserve the legacy backup credentials. Installation is cancelled to prevent OpenList / S3 Token loss."
+  Abort "Installation cancelled: legacy backup credential migration failed."
+
+legacy_done:
+FunctionEnd
+
+Function un.PreserveLegacyBackupLocalConfig
+  IfFileExists "$INSTDIR\backup.local.yaml" 0 done
+  IfFileExists "$APPDATA\${PRODUCT_NAME}\backup.local.yaml" done
+
+  ClearErrors
+  CreateDirectory "$APPDATA\${PRODUCT_NAME}"
+  IfErrors preserve_failed
+
+  DetailPrint "迁移旧版本地备份凭据到 $APPDATA\${PRODUCT_NAME}"
+  ClearErrors
+  CopyFiles "$INSTDIR\backup.local.yaml" "$APPDATA\${PRODUCT_NAME}\"
+  IfErrors preserve_failed
+  Goto done
+
+preserve_failed:
+  MessageBox MB_ICONSTOP|MB_OK "无法保存旧版本地备份凭据：$APPDATA\${PRODUCT_NAME}\backup.local.yaml。为避免 OpenList / S3 Token 丢失，卸载已取消。请检查该目录权限后重试。"
+  Abort "卸载已取消：旧版本地备份凭据迁移失败。"
+
+done:
+FunctionEnd
+
 Function WarnInstallDir
   StrCpy $0 "$INSTDIR"
 
@@ -206,6 +255,7 @@ RequestExecutionLevel admin
 Section "Ant Browser (required)" SecMain
   SectionIn RO
   Call CloseInstalledProcesses
+  Call PreserveLegacyBackupLocalConfig
   SetOutPath "$INSTDIR"
   File "${STAGINGDIR}\${PRODUCT_EXE}"
   File /oname=${PRODUCT_ICON} "..\build\windows\icon.ico"
@@ -259,6 +309,7 @@ SectionEnd
 Section "Uninstall"
   Call un.CloseInstalledProcesses
   Call un.UnregisterDiagnosticsWatcher
+  Call un.PreserveLegacyBackupLocalConfig
 
   Delete /REBOOTOK "$INSTDIR\${PRODUCT_EXE}"
   Delete /REBOOTOK "$INSTDIR\${PRODUCT_ICON}"

@@ -46,35 +46,37 @@ export function ExtensionManagementHeader({
   onRefresh,
 }: ExtensionManagementHeaderProps) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">插件包管理</h1>
-      <div className="flex gap-2">
-        <Button size="sm" variant="secondary" onClick={onOpenProxy}>
-          <Settings className="h-4 w-4" />
-          {proxyButtonText}
-        </Button>
-        <Button size="sm" variant="secondary" onClick={onOpenHistory}>
-          <History className="h-4 w-4" />
-          历史
-        </Button>
-        <Button size="sm" variant="secondary" onClick={onImportFile} loading={importing === 'file'}>
-          <Download className="h-4 w-4" />
-          导入包
-        </Button>
-        <Button size="sm" variant="secondary" onClick={onImportDirectory} loading={importing === 'directory'}>
-          <Download className="h-4 w-4" />
-          导入目录
-        </Button>
-        <Button size="sm" variant="secondary" onClick={onOpenDownloadDirectory} loading={downloadDirectoryLoading}>
-          <FolderOpen className="h-4 w-4" />
-          下载目录安装
-        </Button>
-        <Button size="sm" variant="secondary" onClick={onRefresh} loading={loading}>
-          <RefreshCw className="h-4 w-4" />
-          刷新
-        </Button>
+    <Card padding="none" className="shadow-[var(--shadow-sm)]">
+      <div className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between">
+        <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">插件包管理</h1>
+        <div className="flex flex-wrap gap-2 md:justify-end">
+          <Button size="sm" variant="secondary" onClick={onOpenProxy}>
+            <Settings className="h-4 w-4" />
+            {proxyButtonText}
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onOpenHistory}>
+            <History className="h-4 w-4" />
+            历史
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onImportFile} loading={importing === 'file'}>
+            <Download className="h-4 w-4" />
+            导入包
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onImportDirectory} loading={importing === 'directory'}>
+            <Download className="h-4 w-4" />
+            导入目录
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onOpenDownloadDirectory} loading={downloadDirectoryLoading}>
+            <FolderOpen className="h-4 w-4" />
+            下载目录安装
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onRefresh} loading={loading}>
+            <RefreshCw className="h-4 w-4" />
+            刷新
+          </Button>
+        </div>
       </div>
-    </div>
+    </Card>
   )
 }
 

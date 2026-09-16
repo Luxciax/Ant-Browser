@@ -476,19 +476,18 @@ export function CoreManagementPage() {
 
 
   return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="space-y-4 animate-fade-in">
+      <Card padding="none" className="shadow-[var(--shadow-sm)]">
+        <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">内核管理</h1>
-          <p className="text-sm text-[var(--color-text-muted)] mt-1">管理 Chrome 内核版本和全局设置</p>
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            <Button size="sm" variant="secondary" onClick={handleOpenDownload}>下载内核</Button>
+            <Button size="sm" variant="secondary" onClick={handleImportLocal} loading={importing}>导入本地</Button>
+            <Button size="sm" variant="secondary" onClick={handleScan} loading={scanning}>扫描内核</Button>
+            <Button size="sm" onClick={handleAdd}>新增内核</Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button size="sm" variant="secondary" onClick={handleOpenDownload}>下载内核</Button>
-          <Button size="sm" variant="secondary" onClick={handleImportLocal} loading={importing}>导入本地</Button>
-          <Button size="sm" variant="secondary" onClick={handleScan} loading={scanning}>扫描内核</Button>
-          <Button size="sm" onClick={handleAdd}>新增内核</Button>
-        </div>
-      </div>
+      </Card>
 
       {importProgress && (
         <div className="flex items-center justify-between rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm">
@@ -500,7 +499,7 @@ export function CoreManagementPage() {
       <CoreSettingsCard settings={settings} onEdit={handleEditSettings} />
 
       {/* 内核列表卡片 */}
-      <Card title="内核列表" subtitle="已配置的 Chrome 内核">
+      <Card title="内核列表">
         <Table
           columns={columns}
           data={displayList}

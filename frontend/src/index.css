@@ -168,27 +168,33 @@ input, select, textarea {
 @keyframes modalBackdropIn {
   from {
     opacity: 0;
-    background-position: 42% 58%;
+    background-position: 44% 56%;
     -webkit-backdrop-filter: blur(0) saturate(1);
     backdrop-filter: blur(0) saturate(1);
   }
-  28% {
-    opacity: 0.3;
-    background-position: 45% 55%;
-    -webkit-backdrop-filter: blur(0.6px) saturate(0.995);
-    backdrop-filter: blur(0.6px) saturate(0.995);
+  18% {
+    opacity: 0.08;
+    background-position: 45.5% 54.5%;
+    -webkit-backdrop-filter: blur(0.2px) saturate(0.999);
+    backdrop-filter: blur(0.2px) saturate(0.999);
   }
-  62% {
-    opacity: 0.78;
-    background-position: 48% 52%;
-    -webkit-backdrop-filter: blur(1.5px) saturate(0.985);
-    backdrop-filter: blur(1.5px) saturate(0.985);
+  42% {
+    opacity: 0.28;
+    background-position: 47.5% 52.5%;
+    -webkit-backdrop-filter: blur(0.8px) saturate(0.992);
+    backdrop-filter: blur(0.8px) saturate(0.992);
   }
-  84% {
-    opacity: 0.94;
+  68% {
+    opacity: 0.64;
+    background-position: 49.2% 50.8%;
+    -webkit-backdrop-filter: blur(1.8px) saturate(0.982);
+    backdrop-filter: blur(1.8px) saturate(0.982);
+  }
+  88% {
+    opacity: 0.9;
     background-position: 50% 50%;
-    -webkit-backdrop-filter: blur(2.2px) saturate(0.98);
-    backdrop-filter: blur(2.2px) saturate(0.98);
+    -webkit-backdrop-filter: blur(2.3px) saturate(0.977);
+    backdrop-filter: blur(2.3px) saturate(0.977);
   }
   to {
     opacity: 1;
@@ -205,23 +211,29 @@ input, select, textarea {
     -webkit-backdrop-filter: blur(2.5px) saturate(0.975);
     backdrop-filter: blur(2.5px) saturate(0.975);
   }
-  24% {
+  18% {
     opacity: 0.94;
-    background-position: 50.5% 49.5%;
-    -webkit-backdrop-filter: blur(2.1px) saturate(0.98);
-    backdrop-filter: blur(2.1px) saturate(0.98);
+    background-position: 50.3% 49.7%;
+    -webkit-backdrop-filter: blur(2.2px) saturate(0.979);
+    backdrop-filter: blur(2.2px) saturate(0.979);
   }
-  56% {
-    opacity: 0.7;
-    background-position: 51.5% 48.5%;
-    -webkit-backdrop-filter: blur(1.2px) saturate(0.99);
-    backdrop-filter: blur(1.2px) saturate(0.99);
+  42% {
+    opacity: 0.72;
+    background-position: 51.1% 48.9%;
+    -webkit-backdrop-filter: blur(1.4px) saturate(0.988);
+    backdrop-filter: blur(1.4px) saturate(0.988);
   }
-  82% {
-    opacity: 0.3;
-    background-position: 52.5% 47.5%;
-    -webkit-backdrop-filter: blur(0.4px) saturate(1);
-    backdrop-filter: blur(0.4px) saturate(1);
+  68% {
+    opacity: 0.42;
+    background-position: 52% 48%;
+    -webkit-backdrop-filter: blur(0.7px) saturate(0.996);
+    backdrop-filter: blur(0.7px) saturate(0.996);
+  }
+  88% {
+    opacity: 0.14;
+    background-position: 52.7% 47.3%;
+    -webkit-backdrop-filter: blur(0.2px) saturate(1);
+    backdrop-filter: blur(0.2px) saturate(1);
   }
   to {
     opacity: 0;
@@ -278,11 +290,11 @@ input, select, textarea {
 }
 
 .animate-modal-backdrop-in {
-  animation: modalBackdropIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: modalBackdropIn 0.68s ease-in-out both;
 }
 
 .animate-modal-backdrop-out {
-  animation: modalBackdropOut 0.42s cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: modalBackdropOut 0.68s ease-in-out both;
 }
 
 .animate-modal-in {
@@ -477,7 +489,7 @@ input, select, textarea {
 }
 .toast-card {
   border-color: var(--color-border-strong);
-  background: var(--color-bg-muted);
+  background: var(--color-bg-surface);
   box-shadow: 0 18px 42px rgb(15 23 42 / 0.14), 0 1px 0 rgb(255 255 255 / 0.72) inset;
   -webkit-backdrop-filter: blur(14px) saturate(1.04);
   backdrop-filter: blur(14px) saturate(1.04);
@@ -489,22 +501,22 @@ input, select, textarea {
 
 .toast-success {
   border-color: rgb(34 197 94 / 0.4);
-  background: linear-gradient(90deg, rgb(34 197 94 / 0.1), transparent 68%), var(--color-bg-muted);
+  background: linear-gradient(90deg, rgb(34 197 94 / 0.1), transparent 68%), var(--color-bg-surface);
 }
 
 .toast-info {
   border-color: rgb(59 130 246 / 0.4);
-  background: linear-gradient(90deg, rgb(59 130 246 / 0.08), transparent 68%), var(--color-bg-muted);
+  background: linear-gradient(90deg, rgb(59 130 246 / 0.08), transparent 68%), var(--color-bg-surface);
 }
 
 .toast-warning {
   border-color: rgb(245 158 11 / 0.55);
-  background: linear-gradient(90deg, rgb(245 158 11 / 0.12), transparent 68%), var(--color-bg-muted);
+  background: linear-gradient(90deg, rgb(245 158 11 / 0.12), transparent 68%), var(--color-bg-surface);
 }
 
 .toast-error {
   border-color: var(--color-error);
-  background: linear-gradient(90deg, rgb(239 68 68 / 0.14), transparent 68%), var(--color-bg-muted);
+  background: linear-gradient(90deg, rgb(239 68 68 / 0.14), transparent 68%), var(--color-bg-surface);
   box-shadow: 0 18px 42px rgb(127 29 29 / 0.2), 0 0 0 1px rgb(239 68 68 / 0.16);
 }
 
@@ -564,7 +576,13 @@ input, select, textarea {
   --toast-focus-alpha: 0.12;
   --toast-focus-blur: 7px;
   --toast-focus-saturate: 0.88;
+  animation-duration: 0.36s;
 }
+
+.toast-focus-backdrop.toast-focus-error.toast-focus-leaving {
+  animation-duration: 0.32s;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-toast-in,
   .animate-toast-out,

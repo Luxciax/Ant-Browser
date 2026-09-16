@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.Manifest, emitProgress func(phase string, progress int, message string, meta *backupProgressMeta)) (int, int, int, error) {
@@ -48,6 +49,15 @@ func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.M
 			}
 			startProgress := 20 + int(float64(i)/float64(totalEntries)*70)
 			emit("writing", startProgress, fmt.Sprintf("开始处理组件 %d/%d：%s", i+1, totalEntries, meta.ComponentName), meta)
+			lastProgressAt := time.Time{}
+			emitEntryProgress := func(bytesWritten int64) {
+				now := time.Now()
+				if !lastProgressAt.IsZero() && now.Sub(lastProgressAt) < 500*time.Millisecond {
+					return
+				}
+				lastProgressAt = now
+				emit("writing", startProgress, fmt.Sprintf("正在处理组件 %d/%d：%s，已读取 %s", i+1, totalEntries, meta.ComponentName, formatBackupFileSize(bytesWritten)), meta)
+			}
 
 			info, err := os.Stat(entry.SourcePath)
 			if err != nil {
@@ -63,7 +73,7 @@ func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.M
 			entryStats := newBackupArchiveStats()
 			if info.IsDir() {
 				var err error
-				entryStats, err = backupZipAddDir(w, entry.SourcePath, entry.ArchivePath, zipPath, metadataPath)
+				entryStats, err = backupZipAddDir(w, entry.SourcePath, entry.ArchivePath, zipPath, metadataPath, emitEntryProgress)
 				if err != nil {
 					return fmt.Errorf("写入目录失败(%s): %w", entry.ID, err)
 				}
@@ -76,7 +86,7 @@ func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.M
 					emit("writing", progress, fmt.Sprintf("组件跳过：%s（导出文件本身）", meta.ComponentName), meta)
 					continue
 				}
-				if err := backupZipAddFile(w, entry.SourcePath, strings.TrimSuffix(entry.ArchivePath, "/"), &entryStats); err != nil {
+				if err := backupZipAddFile(w, entry.SourcePath, strings.TrimSuffix(entry.ArchivePath, "/"), &entryStats, emitEntryProgress); err != nil {
 					return fmt.Errorf("写入文件失败(%s): %w", entry.ID, err)
 				}
 				fileCount++
@@ -139,7 +149,7 @@ func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.M
 	return includedEntries, skippedEntries, fileCount, nil
 }
 
-func backupZipAddDir(w *zip.Writer, srcDir, archiveBase, outputZipPath, outputMetadataPath string) (backupArchiveStats, error) {
+func backupZipAddDir(w *zip.Writer, srcDir, archiveBase, outputZipPath, outputMetadataPath string, progress func(int64)) (backupArchiveStats, error) {
 	base := strings.TrimSuffix(filepath.ToSlash(strings.TrimSpace(archiveBase)), "/")
 	if base == "" {
 		return backupArchiveStats{}, fmt.Errorf("archive base 不能为空")
@@ -171,7 +181,7 @@ func backupZipAddDir(w *zip.Writer, srcDir, archiveBase, outputZipPath, outputMe
 			_, err := w.Create(strings.TrimSuffix(targetName, "/") + "/")
 			return err
 		}
-		if err := backupZipAddFile(w, path, targetName, &stats); err != nil {
+		if err := backupZipAddFile(w, path, targetName, &stats, progress); err != nil {
 			return err
 		}
 		return nil
@@ -179,7 +189,7 @@ func backupZipAddDir(w *zip.Writer, srcDir, archiveBase, outputZipPath, outputMe
 	return stats, err
 }
 
-func backupZipAddFile(w *zip.Writer, srcFile, archivePath string, stats *backupArchiveStats) error {
+func backupZipAddFile(w *zip.Writer, srcFile, archivePath string, stats *backupArchiveStats, progress func(int64)) error {
 	info, err := os.Stat(srcFile)
 	if err != nil {
 		return err
@@ -203,5 +213,9 @@ func backupZipAddFile(w *zip.Writer, srcFile, archivePath string, stats *backupA
 	if stats == nil {
 		return fmt.Errorf("备份条目统计器不能为空")
 	}
-	return stats.addFile(header.Name, srcFile, writer)
+	return stats.addFileWithProgress(header.Name, srcFile, writer, func(bytesWritten int64) {
+		if progress != nil {
+			progress(stats.byteSize + bytesWritten)
+		}
+	})
 }

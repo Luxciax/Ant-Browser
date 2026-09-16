@@ -278,20 +278,22 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="w-full space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">系统设置</h1>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={handleReset}>
-            <RotateCcw className="h-4 w-4" />
-            重置
-          </Button>
-          <Button variant="danger" size="sm" onClick={handleSave} loading={saving} disabled={!hasChanges}>
-            <Save className="h-4 w-4" />
-            保存
-          </Button>
+    <div className="w-full space-y-4 animate-fade-in">
+      <Card padding="none" className="shadow-[var(--shadow-sm)]">
+        <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">系统设置</h1>
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            <Button variant="secondary" size="sm" onClick={handleReset}>
+              <RotateCcw className="h-4 w-4" />
+              重置
+            </Button>
+            <Button variant="danger" size="sm" onClick={handleSave} loading={saving} disabled={!hasChanges}>
+              <Save className="h-4 w-4" />
+              保存
+            </Button>
+          </div>
         </div>
-      </div>
+      </Card>
 
       <Card title="主题">
         <ThemeSwitcher />

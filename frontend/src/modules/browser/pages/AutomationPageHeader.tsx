@@ -1,5 +1,5 @@
 import { Download, History, PlusSquare, RefreshCw, Upload } from "lucide-react";
-import { Button } from "../../../shared/components";
+import { Button, Card } from "../../../shared/components";
 
 interface AutomationPageHeaderProps {
   refreshing: boolean;
@@ -23,11 +23,12 @@ export function AutomationPageHeader({
   onOpenHistory,
 }: AutomationPageHeaderProps) {
   return (
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+    <Card padding="none" className="shadow-[var(--shadow-sm)]">
+      <div className="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between">
         <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">
           脚本管理
         </h1>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 md:justify-end">
           <Button
             size="sm"
             variant="secondary"
@@ -69,6 +70,6 @@ export function AutomationPageHeader({
           </Button>
         </div>
       </div>
-
+    </Card>
   );
 }

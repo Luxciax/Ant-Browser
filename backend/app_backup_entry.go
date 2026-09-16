@@ -16,7 +16,10 @@ import (
 
 // BackupExportPackage 导出全量配置与数据到 ZIP。
 func (a *App) BackupExportPackage() (map[string]interface{}, error) {
-	a.maintenanceMu.Lock()
+	if err := a.lockBackupMaintenance(); err != nil {
+		a.backupEmitExportProgress("error", 100, fmt.Sprintf("导出失败: %v", err))
+		return nil, err
+	}
 	defer a.maintenanceMu.Unlock()
 
 	if a.ctx == nil {
@@ -71,7 +74,10 @@ func (a *App) BackupExportPackage() (map[string]interface{}, error) {
 
 // BackupImportPackage 从 ZIP 导入全量备份或实例备份。
 func (a *App) BackupImportPackage() (map[string]interface{}, error) {
-	a.maintenanceMu.Lock()
+	if err := a.lockBackupImportMaintenance(); err != nil {
+		a.backupEmitImportProgress("error", 100, fmt.Sprintf("导入失败: %v", err))
+		return nil, err
+	}
 	defer a.maintenanceMu.Unlock()
 
 	if a.ctx == nil {
@@ -108,7 +114,10 @@ func (a *App) BackupImportPackage() (map[string]interface{}, error) {
 
 // BackupRestoreLocalPackage 从历史路径恢复本地 ZIP 备份，并按包格式处理。
 func (a *App) BackupRestoreLocalPackage(zipPath string) (map[string]interface{}, error) {
-	a.maintenanceMu.Lock()
+	if err := a.lockBackupImportMaintenance(); err != nil {
+		a.backupEmitImportProgress("error", 100, fmt.Sprintf("本地备份恢复失败: %v", err))
+		return nil, err
+	}
 	defer a.maintenanceMu.Unlock()
 
 	zipPath = strings.TrimSpace(zipPath)

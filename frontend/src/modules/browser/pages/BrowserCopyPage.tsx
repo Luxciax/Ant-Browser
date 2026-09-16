@@ -58,19 +58,19 @@ export function BrowserCopyPage() {
   }
 
   return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="space-y-4 animate-fade-in">
+      <Card padding="none" className="shadow-[var(--shadow-sm)]">
+        <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">配置复制</h1>
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            <Button variant="secondary" size="sm" onClick={() => navigate('/browser/list')}>返回列表</Button>
+            <Button size="sm" onClick={handleCopy} loading={saving} disabled={!targetName.trim() || !isBrowserProfileCopyOptionsValid(copyOptions)}>生成配置</Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => navigate('/browser/list')}>返回列表</Button>
-          <Button size="sm" onClick={handleCopy} loading={saving} disabled={!targetName.trim() || !isBrowserProfileCopyOptionsValid(copyOptions)}>生成配置</Button>
-        </div>
-      </div>
+      </Card>
 
       <Card title="复制设置">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <FormItem label="源配置">
             <Select
               value={sourceId}

@@ -40,6 +40,40 @@ func TestBackupProfilePackageFileName(t *testing.T) {
 	}
 }
 
+func TestBackupPackageInfoFromFileName(t *testing.T) {
+	tests := []struct {
+		name         string
+		packageType  string
+		profileCount int
+		profileNames []string
+	}{
+		{
+			name:        `ant-chrome-backup-20260913-161549.zip`,
+			packageType: `full`,
+		},
+		{
+			name:         `ant-chrome-profile-backup-single--ChatGPT-已登录--20260913-161549.751207500.zip`,
+			packageType:  `profile`,
+			profileCount: 1,
+			profileNames: []string{`ChatGPT-已登录`},
+		},
+		{
+			name:         `ant-chrome-profile-backup-multi-3--20260913-161549.751207500.zip`,
+			packageType:  `profile`,
+			profileCount: 3,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := backupPackageInfoFromFileName(test.name)
+			if got.PackageType != test.packageType || got.ProfileCount != test.profileCount || !reflect.DeepEqual(got.ProfileNames, test.profileNames) {
+				t.Fatalf(`backupPackageInfoFromFileName(%q) = %#v, want type=%q count=%d names=%#v`, test.name, got, test.packageType, test.profileCount, test.profileNames)
+			}
+		})
+	}
+}
+
 func TestDetectBackupPackageFormat(t *testing.T) {
 	for _, format := range []string{"ant-chrome-full-backup", profilePackageFormat} {
 		t.Run(format, func(t *testing.T) {

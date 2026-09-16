@@ -58,10 +58,15 @@ func (reader *uploadProgressReader) Read(buffer []byte) (int, error) {
 	if elapsed > 0 {
 		bytesPerSecond = float64(reader.bytesTransferred-reader.lastReportedBytes) / elapsed
 	}
+	stage := ""
+	if completed {
+		stage = UploadProgressStageAwaitingResponse
+	}
 	reader.callback(UploadProgress{
 		BytesTransferred: reader.bytesTransferred,
 		TotalBytes:       reader.totalBytes,
 		BytesPerSecond:   bytesPerSecond,
+		Stage:            stage,
 	})
 	reader.lastReportedAt = now
 	reader.lastReportedBytes = reader.bytesTransferred

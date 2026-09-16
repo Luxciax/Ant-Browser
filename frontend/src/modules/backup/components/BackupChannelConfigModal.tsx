@@ -11,7 +11,6 @@ interface BackupChannelConfigModalProps {
   open: boolean
   onClose: () => void
   onSelect: (channelId: BackupChannelId) => void
-  localDirectory?: string
   onLocalConfigured?: (directory: string) => void
 }
 
@@ -26,7 +25,6 @@ export function BackupChannelConfigModal({
   open,
   onClose,
   onSelect,
-  localDirectory = '',
   onLocalConfigured,
 }: BackupChannelConfigModalProps) {
   const options = backupChannelDefinitions.filter(option => option.configurable)
@@ -116,14 +114,6 @@ export function BackupChannelConfigModal({
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-medium text-[var(--color-text-primary)]">{option.label}</span>
                 <span className="block text-xs text-[var(--color-text-muted)]">{option.description}</span>
-                {isLocal && (
-                  <span
-                    className="block truncate text-xs text-[var(--color-text-muted)]"
-                    title={localDirectory || undefined}
-                  >
-                    {localDirectory || '未配置本地备份目录'}
-                  </span>
-                )}
               </span>
               <div className="flex shrink-0 items-center gap-2">
                 {!isLocal && (

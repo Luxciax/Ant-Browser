@@ -31,7 +31,11 @@ func (a *App) startup(ctx context.Context) {
 	a.applyRuntimeConfig(cfg.Runtime)
 
 	log := a.startupInitLogger(ctx, cfg)
+	if err := killResidualRuntimeProcesses(a.appRoot); err != nil {
+		log.Warn("清理上次异常退出遗留的代理进程失败", logger.F("error", err))
+	}
 	a.startupLogEnvironment(log, cfg)
+	a.activateStableBackupLocalConfig()
 	if err := a.prepareBackupLocalConfig(); err != nil {
 		log.Error("本地备份配置初始化失败", logger.F("error", err))
 	}
@@ -61,6 +65,7 @@ func (a *App) startup(ctx context.Context) {
 	a.startupInitBridgeHooks()
 	a.startupInitSpeedScheduler()
 	a.startupInitBackupScheduler()
+	a.emitRuntimeEvent("app:ready")
 
 	log.Info("应用启动成功")
 }
@@ -176,7 +181,7 @@ func (a *App) startupInitLaunchServer(log *logger.Logger) {
 		log.Error("LaunchServer 启动失败", logger.F("error", err))
 		return
 	}
-	log.Info("LaunchServer 监听地址",
+	log.Debug("LaunchServer 监听地址",
 		logger.F("url", fmt.Sprintf("http://127.0.0.1:%d", a.launchServer.Port())),
 		logger.F("preferred_port", port),
 	)

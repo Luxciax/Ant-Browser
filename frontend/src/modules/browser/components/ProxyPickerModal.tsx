@@ -10,6 +10,20 @@ import { ProxyEditModal } from './ProxyPickerModal.edit'
 import { GroupItem, ProxyRow } from './ProxyPickerModal.rows'
 import { ALL_GROUP, BATCH_TEST_CONCURRENCY, DIRECT_PROXY_ID, INITIAL_CHAIN_EDIT_FORM, SPEED_RESULT_EVENT, buildChainProxyConfig, formatProxyConfigForDisplay, parseChainSocks5Config, toChainEditForm, type ChainEditForm, type ChainHopForm, type SpeedResult } from './ProxyPickerModal.helpers'
 
+const DIRECT_GROUP = '__direct_proxy__'
+const BUILTIN_DIRECT_PROXY: BrowserProxy = {
+  proxyId: DIRECT_PROXY_ID,
+  proxyName: '\u76f4\u8fde\uff08\u4e0d\u8d70\u4ee3\u7406\uff09',
+  proxyConfig: 'direct://',
+}
+
+function ensureBuiltinDirectProxy(proxies: BrowserProxy[]): BrowserProxy[] {
+  if (proxies.some(proxy => proxy.proxyId === DIRECT_PROXY_ID)) {
+    return proxies
+  }
+  return [BUILTIN_DIRECT_PROXY, ...proxies]
+}
+
 interface ProxyPickerModalProps {
   open: boolean
   currentProxyId: string
@@ -48,11 +62,12 @@ export function ProxyPickerModal({ open, currentProxyId, title = '从代理池�
         fetchBrowserProxyGroups(),
         fetchBrowserProxies(),
       ])
+      const nextProxies = ensureBuiltinDirectProxy(proxyList)
       setGroups(groupList)
-      setAllProxies(proxyList)
-      onProxyListUpdated?.(proxyList)
+      setAllProxies(nextProxies)
+      onProxyListUpdated?.(nextProxies)
       const initMap: Record<string, SpeedResult> = {}
-      proxyList.forEach(proxy => {
+      nextProxies.forEach(proxy => {
         if (proxy.lastTestedAt) {
           initMap[proxy.proxyId] = {
             ok: proxy.lastTestOk ?? false,
@@ -62,7 +77,7 @@ export function ProxyPickerModal({ open, currentProxyId, title = '从代理池�
         }
       })
       setSpeedMap(initMap)
-      return proxyList
+      return nextProxies
     } finally {
       setLoading(false)
     }
@@ -83,7 +98,9 @@ export function ProxyPickerModal({ open, currentProxyId, title = '从代理池�
 
   const displayProxies = useMemo(() => {
     let list = allProxies
-    if (selectedGroup !== ALL_GROUP) {
+    if (selectedGroup === DIRECT_GROUP) {
+      list = list.filter(proxy => proxy.proxyId === DIRECT_PROXY_ID)
+    } else if (selectedGroup !== ALL_GROUP) {
       list = list.filter(proxy => proxy.groupName === selectedGroup)
     }
     if (search.trim()) {
@@ -344,7 +361,7 @@ export function ProxyPickerModal({ open, currentProxyId, title = '从代理池�
         className="relative bg-[var(--color-bg-elevated)] border border-[var(--color-border)] rounded-xl shadow-2xl w-[720px] max-h-[580px] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border)]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
           <span className="font-semibold text-[var(--color-text-primary)]">{title}</span>
           <button onClick={onClose} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors">
             <X className="w-4 h-4" />
@@ -354,6 +371,15 @@ export function ProxyPickerModal({ open, currentProxyId, title = '从代理池�
         <div className="flex flex-1 min-h-0">
           <div className="w-44 border-r border-[var(--color-border)] flex flex-col py-2 overflow-y-auto shrink-0 bg-[var(--color-bg-muted)]">
             <GroupItem label="全部" active={selectedGroup === ALL_GROUP} count={allProxies.length} onClick={() => setSelectedGroup(ALL_GROUP)} />
+            <GroupItem
+              label={'\u4e0d\u4f7f\u7528\u4ee3\u7406'}
+              active={selectedGroup === DIRECT_GROUP}
+              count={allProxies.some(proxy => proxy.proxyId === DIRECT_PROXY_ID) ? 1 : 0}
+              onClick={() => {
+                setSelectedGroup(DIRECT_GROUP)
+                setSearch('')
+              }}
+            />
             {groups.map(groupName => (
               <GroupItem
                 key={groupName}
@@ -420,7 +446,7 @@ export function ProxyPickerModal({ open, currentProxyId, title = '从代理池�
           </div>
         </div>
 
-        <div className="px-5 py-3 border-t border-[var(--color-border)] text-xs text-[var(--color-text-muted)]">
+        <div className="px-4 py-2.5 border-t border-[var(--color-border)] text-xs text-[var(--color-text-muted)]">
           共 {displayProxies.length} 条，点击行即选中
         </div>
       </div>

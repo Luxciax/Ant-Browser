@@ -545,7 +545,7 @@ export function BrowserListPage() {
 
 
   return (
-    <div className="overflow-auto p-5 space-y-5 animate-fade-in h-full">
+    <div className="min-h-full space-y-3 animate-fade-in">
       <BrowserListHeader
         profileCount={profiles.length}
         filteredProfileCount={filteredProfiles.length}

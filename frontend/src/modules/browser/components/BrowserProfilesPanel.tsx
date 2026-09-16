@@ -363,7 +363,7 @@ function BrowserProfileCard({
 
   return (
     <div
-      className={`relative flex flex-col border rounded-xl bg-[var(--color-bg-surface)] p-3 shadow-[0_1px_4px_rgba(0,0,0,0.08)] transition-all duration-200 h-[320px] overflow-visible
+      className={`relative flex min-h-[320px] flex-col border rounded-xl bg-[var(--color-bg-surface)] p-3 shadow-[0_1px_4px_rgba(0,0,0,0.08)] transition-all duration-200 overflow-visible
         ${isSelected ? 'border-[var(--color-accent)] ring-1 ring-[var(--color-accent)]/20' : 'border-[var(--color-border-default)] hover:border-[var(--color-accent)]'}
       `}
     >
@@ -415,7 +415,7 @@ function BrowserProfileCard({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-2 shrink-0">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 py-1 shrink-0">
         <div className="flex flex-col gap-0.5">
           <span className="text-xs text-[var(--color-text-muted)] font-medium">内核版本</span>
           <span className="text-xs text-[var(--color-text-primary)]">{coreLabel}</span>
@@ -440,9 +440,9 @@ function BrowserProfileCard({
         </div>
       </div>
 
-      <div className="border-t border-[var(--color-border-muted)]/50 pt-2 flex items-start gap-2 flex-1 min-h-0">
+      <div className="flex items-start gap-2 border-t border-[var(--color-border-muted)]/50 pt-2">
         <span className="text-xs font-medium text-[var(--color-text-primary)] shrink-0 pt-0.5">系统关键字</span>
-        <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+        <div className="flex-1 pr-1">
           <KeywordInlineRow keywords={profile.keywords || []} />
         </div>
       </div>
@@ -620,46 +620,45 @@ export function BrowserProfilesPanel({
 
   return (
     <Card padding="none">
-      <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 320px)' }}>
-        {loading ? (
-          <div className="py-16 flex items-center justify-center text-sm text-[var(--color-text-muted)]">加载中...</div>
-        ) : profiles.length === 0 ? (
-          <div className="py-16 flex items-center justify-center text-sm text-[var(--color-text-muted)]">暂无数据</div>
-        ) : viewMode === 'table' ? (
-          <Table
-            columns={columns}
-            data={profiles}
-            rowKey="profileId"
-          />
-        ) : (
-          <div className="flex flex-wrap gap-4 min-h-[500px] p-4 items-start content-start">
-            {profiles.map((profile) => (
-              <div key={profile.profileId} className="min-w-[360px] max-w-[560px] flex-[1_1_440px]">
-                <BrowserProfileCard
-                  profile={profile}
-                  proxy={proxies.find(item => item.proxyId === profile.proxyId)}
-                  isSelected={selectedIds.has(profile.profileId)}
-                  status={getProfileStatus(profile)}
-                  coreLabel={resolveProfileCore(profile)?.coreName || getProfileCoreLabel(profile)}
-                  isStarting={isProfileStarting(profile.profileId)}
-                  isStopping={isProfileStopping(profile.profileId)}
-                  isBusy={isProfileBusy(profile.profileId)}
-                  onToggleSelect={onToggleSelect}
-                  onRefreshProfiles={onRefreshProfiles}
-                  onStart={onStart}
-                  onStop={onStop}
-                  onRestart={onRestart}
-                  onOpenKeywords={onOpenKeywords}
-                  onOpenExtensions={onOpenExtensions}
-                  onOpenCopy={onOpenCopy}
-                  onOpenProxyPicker={onOpenProxyPicker}
-                  onDelete={onDelete}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center py-10 text-sm text-[var(--color-text-muted)]">加载中...</div>
+      ) : profiles.length === 0 ? (
+        <div className="flex items-center justify-center py-10 text-sm text-[var(--color-text-muted)]">暂无数据</div>
+      ) : viewMode === 'table' ? (
+        <Table
+          columns={columns}
+          data={profiles}
+          rowKey="profileId"
+          maxHeight="none"
+        />
+      ) : (
+        <div className="grid grid-cols-1 items-start gap-3 p-3 content-start lg:grid-cols-2 2xl:grid-cols-3">
+          {profiles.map((profile) => (
+            <div key={profile.profileId} className="min-w-0">
+              <BrowserProfileCard
+                profile={profile}
+                proxy={proxies.find(item => item.proxyId === profile.proxyId)}
+                isSelected={selectedIds.has(profile.profileId)}
+                status={getProfileStatus(profile)}
+                coreLabel={resolveProfileCore(profile)?.coreName || getProfileCoreLabel(profile)}
+                isStarting={isProfileStarting(profile.profileId)}
+                isStopping={isProfileStopping(profile.profileId)}
+                isBusy={isProfileBusy(profile.profileId)}
+                onToggleSelect={onToggleSelect}
+                onRefreshProfiles={onRefreshProfiles}
+                onStart={onStart}
+                onStop={onStop}
+                onRestart={onRestart}
+                onOpenKeywords={onOpenKeywords}
+                onOpenExtensions={onOpenExtensions}
+                onOpenCopy={onOpenCopy}
+                onOpenProxyPicker={onOpenProxyPicker}
+                onDelete={onDelete}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </Card>
   )
 }

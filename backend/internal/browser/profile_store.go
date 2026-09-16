@@ -41,16 +41,16 @@ func (m *Manager) loadProfiles() {
 				m.Profiles[p.ProfileId] = p
 			}
 			if len(profiles) > 0 {
-				log.Info("实例配置从数据库加载完成", logger.F("count", len(profiles)))
+				log.Debug("实例配置从数据库加载完成", logger.F("count", len(profiles)))
 			} else {
-				log.Info("实例表为空，用户可手动创建新实例")
+				log.Debug("实例表为空，用户可手动创建新实例")
 			}
 			return
 		}
 	}
 
 	if len(m.Config.Browser.Profiles) == 0 {
-		log.Info("实例配置为空，用户可手动创建新实例")
+		log.Debug("实例配置为空，用户可手动创建新实例")
 		return
 	}
 	now := time.Now().Format(time.RFC3339)
@@ -92,7 +92,7 @@ func (m *Manager) loadProfiles() {
 			UpdatedAt:          updatedAt,
 		}
 	}
-	log.Info("浏览器配置从文件加载完成", logger.F("count", len(m.Profiles)))
+	log.Debug("浏览器配置从文件加载完成", logger.F("count", len(m.Profiles)))
 }
 
 // SaveProfiles 保存所有实例配置（DAO 模式：逐条 upsert）

@@ -69,10 +69,10 @@ export function ProfilePage() {
   ].filter((item) => item.label.trim())
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 animate-fade-in">
+    <div className="mx-auto max-w-5xl space-y-4 animate-fade-in">
       <Card padding="lg" className="rounded-[26px]">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-start">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start">
             <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-[20px] bg-[#1f2d46] text-[34px] font-bold tracking-[0.08em] text-white shadow-sm">
               {authorInfo.initial}
             </div>
@@ -137,7 +137,7 @@ export function ProfilePage() {
               padding="lg"
             >
               <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-5">
+                <div className="flex items-center gap-4">
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--color-bg-muted)]">
                     <Icon className={`h-5 w-5 ${iconClassName}`} />
                   </div>

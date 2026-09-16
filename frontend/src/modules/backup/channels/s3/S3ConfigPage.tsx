@@ -3,6 +3,7 @@ import { ArrowLeft, CheckCircle2, Database, Eye, EyeOff, Plug, Save, XCircle } f
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { Button, Card, FormItem, Input, Switch, toast } from '../../../../shared/components'
+import { NotificationMessage } from '../../../../shared/notifications/NotificationMessage'
 import {
   defaultS3Settings,
   fetchS3Settings,
@@ -266,16 +267,18 @@ export function S3ConfigPage() {
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4 animate-fade-in">
-      <div className="flex items-center justify-between gap-3">
-        <Button variant="ghost" onClick={() => navigate('/system/backup')} disabled={submitting}>
-          <ArrowLeft className="h-4 w-4" />
-          返回备份
-        </Button>
-        <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
-          <Database className="h-4 w-4" />
-          S3 配置
+      <Card padding="none" className="shadow-[var(--shadow-sm)]">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
+            <Database className="h-4 w-4" />
+            S3 配置
+          </div>
+          <Button variant="ghost" onClick={() => navigate('/system/backup')} disabled={submitting}>
+            <ArrowLeft className="h-4 w-4" />
+            返回备份
+          </Button>
         </div>
-      </div>
+      </Card>
 
       {loading ? (
         <Card>
@@ -290,7 +293,7 @@ export function S3ConfigPage() {
           }}
         >
           <Card title="连接">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2">
               <FormItem label="Endpoint" hint="留空使用 AWS S3 默认地址" className="md:col-span-2" error={fieldErrors.endpoint}>
                 <Input
                   value={draft.endpoint}
@@ -344,7 +347,7 @@ export function S3ConfigPage() {
           </Card>
 
           <Card title="访问凭据">
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2">
               {credentialInput('accessKeyID', 'Access Key ID', 'username', !settings.accessKeyIDConfigured, settings.accessKeyIDConfigured ? '留空沿用已保存凭据' : undefined)}
               {credentialInput('secretAccessKey', 'Secret Access Key', 'new-password', !settings.secretAccessKeyConfigured, settings.secretAccessKeyConfigured ? '留空沿用已保存凭据' : undefined)}
               <div className="md:col-span-2">
@@ -363,7 +366,7 @@ export function S3ConfigPage() {
               {testResult.status === 'error'
                 ? <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
-              <span className="min-w-0 break-words">{testResult.message}</span>
+              <NotificationMessage message={testResult.message} context='backup' className="min-w-0 flex-1" compact />
             </div>
           )}
           {error && <p role="alert" className="text-sm text-[var(--color-error)]">{error}</p>}

@@ -25,6 +25,7 @@ export interface BackupActionResult {
   metadataAvailable?: boolean
   remoteNames?: string[]
   remoteError?: string
+  remoteWarning?: string
   profileCount?: number
   profileNames?: string[]
   importedCount?: number

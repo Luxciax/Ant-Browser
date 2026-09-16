@@ -2,6 +2,7 @@ import type { RefObject } from 'react'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 import { Button, Modal, Progress } from '../../../shared/components'
+import { NotificationMessage } from '../../../shared/notifications/NotificationMessage'
 
 import type { BackupExportLogItem, BackupExportProgress } from '../progress'
 
@@ -24,13 +25,13 @@ interface BackupImportModalProps {
 
 function BackupProgressPanel({ progress, loadingLabel, logs = [], logsRef }: BackupProgressPanelProps) {
   return (
-    <div className="rounded-md border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] px-3 py-2 space-y-2">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-[var(--color-text-secondary)]">{progress.message}</span>
-        {progress.phase === 'error' && <span className="text-[var(--color-error)]">失败</span>}
-        {progress.phase === 'done' && <span className="text-[var(--color-success)]">完成</span>}
+    <div className="space-y-3 rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-4 py-3 shadow-[var(--shadow-xs)]">
+      <div className="flex items-start justify-between gap-3">
+        <NotificationMessage message={progress.message} context='backup' className="min-w-0 flex-1 text-[var(--color-text-secondary)]" />
+        {progress.phase === 'error' && <span className="shrink-0 text-xs font-medium text-[var(--color-error)]">失败</span>}
+        {progress.phase === 'done' && <span className="shrink-0 text-xs font-medium text-[var(--color-success)]">完成</span>}
         {progress.phase !== 'done' && progress.phase !== 'error' && (
-          <span className="text-[var(--color-text-muted)]">{loadingLabel}</span>
+          <span className="shrink-0 text-xs font-medium text-[var(--color-text-muted)]">{loadingLabel}</span>
         )}
       </div>
       {(progress.componentName || progress.componentId || logsRef) && (
@@ -53,32 +54,37 @@ function BackupProgressPanel({ progress, loadingLabel, logs = [], logsRef }: Bac
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div className="min-w-0">
             <p className="font-semibold">备份操作失败</p>
-            <p className="mt-0.5 break-words leading-5">{progress.message}</p>
+            <NotificationMessage message={progress.message} context='backup' className="mt-0.5 text-[var(--color-error)]" compact />
           </div>
         </div>
       )}
       {progress.phase === 'done' && (
         <div className="flex items-center gap-2 rounded-md border border-[var(--color-success)]/40 bg-[var(--color-success)]/10 px-3 py-2 text-xs text-[var(--color-success)]">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          <span className="break-words">{progress.message}</span>
+          <NotificationMessage message={progress.message} context='backup' className="text-[var(--color-success)]" compact />
         </div>
       )}
       {logsRef && (
-        <div className="rounded border border-[var(--color-border-muted)] bg-[var(--color-bg-primary)] px-2 py-2">
-          <div className="flex items-center justify-between text-xs mb-1">
-            <span className="text-[var(--color-text-secondary)]">导出日志</span>
+        <div className="rounded-lg border border-[var(--color-border-muted)] bg-[var(--color-bg-muted)] px-3 py-2">
+          <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px]">
+            <span className="font-medium text-[var(--color-text-secondary)]">过程记录</span>
             <span className="text-[var(--color-text-muted)]">{logs.length} 条</span>
           </div>
-          <div ref={logsRef} className="max-h-36 overflow-y-auto pr-1 space-y-1">
+          <div ref={logsRef} className="max-h-36 space-y-1 overflow-y-auto pr-1">
             {logs.length === 0 && (
               <p className="text-xs text-[var(--color-text-muted)]">等待导出日志...</p>
             )}
             {logs.map(item => (
-              <div key={item.id} className="text-xs leading-5 font-mono">
-                <span className="text-[var(--color-text-muted)] mr-2">{item.time}</span>
-                <span className={item.phase === 'error' ? 'text-[var(--color-error)]' : item.phase === 'done' ? 'text-[var(--color-success)]' : 'text-[var(--color-text-secondary)]'}>
-                  {item.text}
-                </span>
+              <div key={item.id} className="min-w-0 rounded-md bg-[var(--color-bg-surface)] px-2 py-1">
+                <div className="flex min-w-0 items-start gap-2">
+                  <span className="shrink-0 pt-0.5 font-mono text-[10px] leading-5 text-[var(--color-text-muted)]">{item.time}</span>
+                  <NotificationMessage
+                    message={item.text}
+                    context='backup'
+                    compact
+                    className={item.phase === 'error' ? 'min-w-0 flex-1 text-[var(--color-error)]' : item.phase === 'done' ? 'min-w-0 flex-1 text-[var(--color-success)]' : 'min-w-0 flex-1 text-[var(--color-text-secondary)]'}
+                  />
+                </div>
               </div>
             ))}
           </div>

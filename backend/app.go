@@ -38,27 +38,28 @@ type App struct {
 	appRoot         string
 	version         string
 
-	forceQuit              bool
-	quitMode               quitMode
-	quitMu                 sync.RWMutex
-	runtimeMu              sync.RWMutex
-	runtimeStopped         bool
-	backgroundTaskCtx      context.Context
-	backgroundTaskCancel   context.CancelFunc
-	backgroundTasks        sync.WaitGroup
-	backgroundTasksBlocked bool
-	maintenanceMu          sync.Mutex
-	bridgeMu               sync.Mutex
-	profileBridgeRefs      map[string]profileProxyBridgeRef
-	deferredStartTargetsMu sync.Mutex
-	deferredStartTargets   map[string]deferredStartTargetsPlan
-	automationTargetMu     sync.Mutex
-	automationTargetCursor map[string]string
-	profileWindowMarkersMu sync.Mutex
-	profileWindowMarkers   map[string]*profileWindowMarker
-	browserProcessMonitors map[string]*browserProcessMonitor
-	stopServicesOnce       sync.Once
-	finalizeOnce           sync.Once
+	forceQuit                     bool
+	quitMode                      quitMode
+	quitMu                        sync.RWMutex
+	runtimeMu                     sync.RWMutex
+	runtimeStopped                bool
+	backgroundTaskCtx             context.Context
+	backgroundTaskCancel          context.CancelFunc
+	backgroundTasks               sync.WaitGroup
+	backgroundTasksBlocked        bool
+	maintenanceMu                 sync.Mutex
+	bridgeMu                      sync.Mutex
+	profileBridgeRefs             map[string]profileProxyBridgeRef
+	deferredStartTargetsMu        sync.Mutex
+	deferredStartTargets          map[string]deferredStartTargetsPlan
+	automationTargetMu            sync.Mutex
+	automationTargetCursor        map[string]string
+	profileWindowMarkersMu        sync.Mutex
+	profileWindowMarkers          map[string]*profileWindowMarker
+	browserProcessMonitors        map[string]*browserProcessMonitor
+	backupLocalConfigPathOverride string
+	stopServicesOnce              sync.Once
+	finalizeOnce                  sync.Once
 }
 
 // NewApp 创建新的应用实例

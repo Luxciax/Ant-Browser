@@ -10,16 +10,25 @@ import (
 )
 
 func (a *App) BrowserProxyList() []BrowserProxy {
+	if a == nil || a.browserMgr == nil || a.browserMgr.ProxyDAO == nil || a.config == nil {
+		return []BrowserProxy{}
+	}
 	return browser.ListProxiesWithFallback(a.browserMgr.ProxyDAO, a.config.Browser.Proxies)
 }
 
 // BrowserProxyListGroups 获取所有代理分组名称
 func (a *App) BrowserProxyListGroups() []string {
+	if a == nil || a.browserMgr == nil || a.browserMgr.ProxyDAO == nil {
+		return []string{}
+	}
 	return browser.ListProxyGroups(a.browserMgr.ProxyDAO)
 }
 
 // BrowserProxyListByGroup 按分组名称查询代理
 func (a *App) BrowserProxyListByGroup(groupName string) []BrowserProxy {
+	if a == nil || a.browserMgr == nil || a.browserMgr.ProxyDAO == nil || a.config == nil {
+		return []BrowserProxy{}
+	}
 	return browser.ListProxiesByGroupWithFallback(a.browserMgr.ProxyDAO, groupName, a.config.Browser.Proxies)
 }
 

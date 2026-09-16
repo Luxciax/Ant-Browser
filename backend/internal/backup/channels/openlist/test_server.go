@@ -9,12 +9,24 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type memoryWebDAV struct {
-	mu    sync.Mutex
-	dirs  map[string]bool
-	files map[string][]byte
+	mu                           sync.Mutex
+	dirs                         map[string]bool
+	files                        map[string][]byte
+	mkcolCalls                   int
+	rejectMoves                  bool
+	rejectPROPFIND               bool
+	rejectHEAD                   bool
+	rejectDirectoryTrailingSlash bool
+	allowOptions                 bool
+	hangFileStat                 bool
+	hangPutResponse              bool
+	putResponseStatus            int
+	putResponseBody              string
+	putStoredData                []byte
 }
 
 func newMemoryWebDAV() *memoryWebDAV {
@@ -43,19 +55,39 @@ func (store *memoryWebDAV) handle(w http.ResponseWriter, r *http.Request) {
 	resource := strings.Trim(strings.TrimPrefix(r.URL.Path, `/dav`), `/`)
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	if store.rejectDirectoryTrailingSlash && resource != `` && strings.HasSuffix(r.URL.Path, `/`) && (r.Method == methodPROPFIND || r.Method == http.MethodHead || r.Method == http.MethodOptions) {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
 	switch r.Method {
-	case methodMKCOL:
-		store.dirs[resource] = true
-		w.WriteHeader(http.StatusCreated)
+	case `MKCOL`:
+		store.mkcolCalls++
+		w.WriteHeader(http.StatusMethodNotAllowed)
 	case http.MethodPut:
 		data, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		if store.putStoredData != nil {
+			data = append([]byte(nil), store.putStoredData...)
+		}
 		store.files[resource] = data
+		if store.putResponseStatus != 0 {
+			w.WriteHeader(store.putResponseStatus)
+			_, _ = w.Write([]byte(store.putResponseBody))
+			return
+		}
+		if store.hangPutResponse {
+			<-r.Context().Done()
+			return
+		}
 		w.WriteHeader(http.StatusCreated)
 	case methodMOVE:
+		if store.rejectMoves {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		destinationURL, _ := urlpkg.Parse(r.Header.Get(`Destination`))
 		destination := strings.Trim(strings.TrimPrefix(destinationURL.Path, `/dav`), `/`)
 		store.files[destination] = append([]byte(nil), store.files[resource]...)
@@ -72,13 +104,44 @@ func (store *memoryWebDAV) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(data)
+	case http.MethodHead:
+		if store.rejectHEAD {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if resource != `` && !store.dirs[resource] {
+			if _, exists := store.files[resource]; !exists {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+		}
+		if store.dirs[resource] {
+			w.Header().Set(`Content-Type`, `httpd/unix-directory`)
+		}
+		w.WriteHeader(http.StatusOK)
 	case methodPROPFIND:
+		if store.rejectPROPFIND {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if store.hangFileStat && strings.HasSuffix(resource, `.zip`) {
+			time.Sleep(200 * time.Millisecond)
+			return
+		}
 		if resource != `` && !store.dirs[resource] && store.files[resource] == nil {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		w.WriteHeader(207)
 		_, _ = w.Write([]byte(store.propfindXML(resource, r.Header.Get(`Depth`))))
+	case http.MethodOptions:
+		if store.allowOptions {
+			w.Header().Set(`DAV`, `1`)
+			w.Header().Set(`Allow`, `OPTIONS, PROPFIND`)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}

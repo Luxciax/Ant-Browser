@@ -37,16 +37,7 @@ func (a *App) BackupS3List(input map[string]string) ([]map[string]interface{}, e
 	if err != nil {
 		return nil, fmt.Errorf("S3 \u5907\u4efd\u5217\u8868\u8bfb\u53d6\u5931\u8d25\uff1a%w", err)
 	}
-	result := make([]map[string]interface{}, 0, len(items))
-	for _, item := range items {
-		entry := map[string]interface{}{
-			"name":       item.Name,
-			"size":       item.Size,
-			"modifiedAt": item.ModifiedAt,
-		}
-		result = append(result, entry)
-	}
-	return result, nil
+	return a.backupRemoteHistoryEntries(client, items, s3.ControlTimeout), nil
 }
 
 func (a *App) backupS3Client(input map[string]string) (*s3.Client, error) {
@@ -58,7 +49,10 @@ func (a *App) backupS3Client(input map[string]string) (*s3.Client, error) {
 }
 
 func (a *App) BackupS3Upload(input map[string]string) (map[string]interface{}, error) {
-	a.maintenanceMu.Lock()
+	if err := a.lockBackupMaintenance(); err != nil {
+		a.backupEmitExportProgress("error", 100, fmt.Sprintf("S3 备份失败: %v", err))
+		return nil, err
+	}
 	defer a.maintenanceMu.Unlock()
 	return a.backupS3UploadLocked(input)
 }
@@ -80,7 +74,7 @@ func (a *App) backupS3UploadLocked(input map[string]string) (map[string]interfac
 	if err != nil {
 		return nil, err
 	}
-	remoteFile, err := a.backupUploadRemoteArtifacts(backupRemoteUploadTarget{
+	outcome, err := a.backupUploadRemoteArtifacts(backupRemoteUploadTarget{
 		label:   "S3",
 		client:  client,
 		timeout: s3.TransferTimeout,
@@ -89,16 +83,22 @@ func (a *App) backupS3UploadLocked(input map[string]string) (map[string]interfac
 		a.backupEmitExportProgress("error", 100, err.Error())
 		return nil, err
 	}
-	result["remoteName"] = remoteFile.Name
-	result["remoteSize"] = remoteFile.Size
+	result["remoteName"] = outcome.File.Name
+	result["remoteSize"] = outcome.File.Size
 	result["remoteUploaded"] = true
+	if outcome.Warning != "" {
+		result["remoteWarning"] = outcome.Warning
+	}
 	result["message"] = "S3 \u5907\u4efd\u5b8c\u6210"
 	a.backupEmitExportProgress("done", 100, result["message"].(string))
 	return result, nil
 }
 
 func (a *App) BackupS3Restore(input map[string]string, fileName string) (map[string]interface{}, error) {
-	a.maintenanceMu.Lock()
+	if err := a.lockBackupImportMaintenance(); err != nil {
+		a.backupEmitImportProgress("error", 100, fmt.Sprintf("S3 备份恢复失败: %v", err))
+		return nil, err
+	}
 	defer a.maintenanceMu.Unlock()
 
 	client, err := a.backupS3Client(input)

@@ -58,32 +58,33 @@ export function BrowserListHeader({
   ]
 
   return (
-    <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3 min-w-0">
-          <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">实例列表</h1>
+    <Card padding="none" className="shadow-[var(--shadow-sm)]">
+      <div className="flex flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="shrink-0 text-xl font-semibold text-[var(--color-text-primary)]">实例列表</h1>
           <div className="flex flex-wrap items-center gap-2">
             {statItems.map((item) => (
               <div
                 key={item.label}
-                className="flex h-8 items-center gap-2 rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] px-3 text-sm"
+                className="inline-flex h-8 items-center gap-2 rounded-lg bg-[var(--color-bg-muted)] px-3 text-sm"
               >
                 <span className="text-[var(--color-text-muted)]">{item.label}</span>
                 <span className="font-semibold text-[var(--color-text-primary)]">{item.value}</span>
               </div>
             ))}
             {filteredProfileCount !== profileCount && (
-              <div className="flex h-8 items-center gap-2 rounded-lg border border-[var(--color-accent)]/30 bg-[var(--color-accent)]/5 px-3 text-sm">
+              <div className="inline-flex h-8 items-center gap-2 rounded-lg bg-[var(--color-accent)]/10 px-3 text-sm">
                 <span className="text-[var(--color-text-muted)]">筛选</span>
                 <span className="font-semibold text-[var(--color-accent)]">{filteredProfileCount}</span>
               </div>
             )}
           </div>
         </div>
-        <div className="flex flex-wrap justify-end gap-2">
+
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
           <Button variant="secondary" size="sm" onClick={onToggleHeaderCollapsed}>
             {headerCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-            {headerCollapsed ? '展开面板' : '收起面板'}
+            {headerCollapsed ? '展开筛选' : '收起筛选'}
           </Button>
           <Button variant="secondary" size="sm" onClick={onRefresh}>
             <RefreshCw className="w-4 h-4" />刷新
@@ -102,41 +103,52 @@ export function BrowserListHeader({
               <Archive className="w-4 h-4" />全局备份
             </Button>
           </Link>
-          <div className="flex items-center bg-[var(--color-bg-secondary)] rounded-md border border-[var(--color-border-default)] p-0.5 ml-2">
+
+          <div className="flex items-center rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] p-0.5" role="group" aria-label="视图切换">
             <button
-              className={`p-1.5 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors ${viewMode === 'card' ? 'bg-[var(--color-bg-surface)] shadow-sm text-[var(--color-accent)]' : ''}`}
+              type="button"
+              aria-label="卡片视图"
+              aria-pressed={viewMode === 'card'}
+              className={`rounded-md p-1.5 text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${viewMode === 'card' ? 'bg-[var(--color-bg-surface)] text-[var(--color-accent)] shadow-sm' : ''}`}
               onClick={() => onViewModeChange('card')}
               title="卡片视图"
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
             <button
-              className={`p-1.5 rounded text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors ${viewMode === 'table' ? 'bg-[var(--color-bg-surface)] shadow-sm text-[var(--color-accent)]' : ''}`}
+              type="button"
+              aria-label="表格视图"
+              aria-pressed={viewMode === 'table'}
+              className={`rounded-md p-1.5 text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text-primary)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${viewMode === 'table' ? 'bg-[var(--color-bg-surface)] text-[var(--color-accent)] shadow-sm' : ''}`}
               onClick={() => onViewModeChange('table')}
               title="表格视图"
             >
               <List className="w-4 h-4" />
             </button>
           </div>
-          <span className="w-px h-4 bg-[var(--color-border-muted)] mx-1 self-center"></span>
-          <Link to="/browser/edit/new">
+
+          <span className="mx-1 hidden h-5 w-px bg-[var(--color-border-muted)] sm:block" />
+          <Link to="/browser/edit/new" className="shrink-0">
             <Button size="sm">
               <Play className="w-4 h-4" />新建配置
             </Button>
           </Link>
         </div>
       </div>
+
       {!headerCollapsed && (
-        <InstanceFilterBar
-          filters={filters}
-          onChange={onFiltersChange}
-          proxies={proxies}
-          cores={cores}
-          allTags={allTags}
-          groups={groups}
-        />
+        <div className="border-t border-[var(--color-border-muted)] px-4 py-3">
+          <InstanceFilterBar
+            filters={filters}
+            onChange={onFiltersChange}
+            proxies={proxies}
+            cores={cores}
+            allTags={allTags}
+            groups={groups}
+          />
+        </div>
       )}
-    </>
+    </Card>
   )
 }
 
@@ -222,7 +234,7 @@ export function BrowserListSettingsModal({
         </>
       }
     >
-      <div className="space-y-6">
+      <div className="space-y-4">
         <div>
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-[var(--color-text-primary)]">内核管理</span>
@@ -288,7 +300,7 @@ export function BrowserListSettingsModal({
             />
           </div>
         </FormItem>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
           <FormItem label="启动就绪超时（毫秒）">
             <Input
               type="number"

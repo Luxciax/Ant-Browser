@@ -58,7 +58,7 @@ export function Table<T extends Record<string, any>>({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16" style={{ maxHeight }}>
+      <div className="flex items-center justify-center py-10" style={{ maxHeight }}>
         <div className="flex flex-col items-center gap-3">
           <div className="w-6 h-6 border-2 border-[var(--color-border-default)] border-t-[var(--color-accent)] rounded-full animate-spin" />
           <span className="text-sm text-[var(--color-text-muted)]">加载中...</span>
@@ -102,11 +102,15 @@ export function Table<T extends Record<string, any>>({
 
   return (
     <div
-      className={clsx('w-full min-w-0 overflow-auto', className)}
+      className={clsx(
+        'w-full min-w-0',
+        maxHeight === 'none' ? 'overflow-x-auto overflow-y-hidden' : 'overflow-auto',
+        className,
+      )}
       style={{ maxHeight }}
     >
       <table className="min-w-full" style={{ minWidth: tableMinWidth }}>
-        <thead className={clsx(stickyHeader && 'sticky top-0 z-10')}>
+        <thead className={clsx(stickyHeader && maxHeight !== 'none' && 'sticky top-0 z-10')}>
           <tr>
             {columns.map((col) => (
               <th
@@ -132,7 +136,7 @@ export function Table<T extends Record<string, any>>({
         <tbody className="divide-y divide-[var(--color-border-muted)] bg-[var(--color-bg-surface)]">
           {data.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-16 text-center">
+              <td colSpan={columns.length} className="px-4 py-10 text-center">
                 <div className="flex flex-col items-center gap-2">
                   <div className="w-12 h-12 rounded-full bg-[var(--color-bg-muted)] flex items-center justify-center">
                     <svg className="w-6 h-6 text-[var(--color-text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">

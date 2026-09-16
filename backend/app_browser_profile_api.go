@@ -20,15 +20,26 @@ type BrowserCoreExtendedInfo = browser.CoreExtendedInfo
 type BrowserProfileCopyOptions = browser.ProfileCopyOptions
 
 // BrowserProfileList 获取所有实例列表
-func (a *App) BrowserProfileList() []BrowserProfile { return a.browserMgr.List() }
+func (a *App) BrowserProfileList() []BrowserProfile {
+	if a == nil || a.browserMgr == nil {
+		return []BrowserProfile{}
+	}
+	return a.browserMgr.List()
+}
 
 // BrowserProfileListByTag 按标签筛选实例列表
 func (a *App) BrowserProfileListByTag(tag string) []BrowserProfile {
+	if a == nil || a.browserMgr == nil {
+		return []BrowserProfile{}
+	}
 	return a.browserMgr.ListByTag(tag)
 }
 
 // BrowserGetAllTags 获取所有已使用的标签
 func (a *App) BrowserGetAllTags() []string {
+	if a == nil || a.browserMgr == nil {
+		return []string{}
+	}
 	return a.browserMgr.GetAllTags()
 }
 

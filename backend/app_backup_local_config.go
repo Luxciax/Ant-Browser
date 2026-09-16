@@ -10,7 +10,92 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const backupLocalConfigFileName = "backup.local.yaml"
+const (
+	backupLocalConfigFileName = "backup.local.yaml"
+	backupLocalConfigDirName  = "Ant Browser"
+)
+
+func defaultBackupLocalConfigPath() string {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	configDir = strings.TrimSpace(configDir)
+	if configDir == "" {
+		return ""
+	}
+	return filepath.Join(configDir, backupLocalConfigDirName, backupLocalConfigFileName)
+}
+
+func (a *App) backupLocalConfigPath() string {
+	if a == nil {
+		return ""
+	}
+	if override := strings.TrimSpace(a.backupLocalConfigPathOverride); override != "" {
+		return filepath.Clean(override)
+	}
+	return a.resolveAppPath(backupLocalConfigFileName)
+}
+
+func (a *App) legacyBackupLocalConfigPath() string {
+	if a == nil {
+		return ""
+	}
+	return a.resolveAppPath(backupLocalConfigFileName)
+}
+
+func (a *App) activateStableBackupLocalConfig() {
+	if a == nil {
+		return
+	}
+	if path := defaultBackupLocalConfigPath(); path != "" {
+		a.backupLocalConfigPathOverride = path
+	}
+}
+
+func (a *App) loadBackupLocalConfig(base config.BackupConfig) (config.BackupConfig, bool, string, error) {
+	path := a.backupLocalConfigPath()
+	settings, exists, err := loadBackupLocalConfig(path, base)
+	if err != nil || exists {
+		return settings, exists, path, err
+	}
+
+	legacyPath := a.legacyBackupLocalConfigPath()
+	if legacyPath == path {
+		return settings, false, "", nil
+	}
+	legacySettings, legacyExists, legacyErr := loadBackupLocalConfig(legacyPath, base)
+	return legacySettings, legacyExists, legacyPath, legacyErr
+}
+
+func (a *App) backupLocalConfigPaths() []string {
+	if a == nil {
+		return nil
+	}
+	paths := make([]string, 0, 2)
+	seen := make(map[string]struct{}, 2)
+	for _, path := range []string{a.backupLocalConfigPath(), a.legacyBackupLocalConfigPath()} {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if _, exists := seen[path]; exists {
+			continue
+		}
+		seen[path] = struct{}{}
+		paths = append(paths, path)
+	}
+	return paths
+}
+
+func (a *App) removeBackupLocalConfigs() error {
+	for _, path := range a.backupLocalConfigPaths() {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("删除本地备份配置失败: %w", err)
+		}
+	}
+	return nil
+}
 
 type backupLocalConfigFile struct {
 	Backup backupLocalSecrets `yaml:"backup"`
@@ -279,9 +364,9 @@ func (a *App) prepareBackupLocalConfig() error {
 		return fmt.Errorf("应用配置未初始化")
 	}
 
-	path := a.resolveAppPath(backupLocalConfigFileName)
+	path := a.backupLocalConfigPath()
 	base := normalizeBackupSettings(a.config.Backup)
-	settings, _, err := loadBackupLocalConfig(path, a.config.Backup)
+	settings, _, sourcePath, err := a.loadBackupLocalConfig(a.config.Backup)
 	if err != nil {
 		if !backupHasLocalSecrets(base) {
 			return err
@@ -290,7 +375,12 @@ func (a *App) prepareBackupLocalConfig() error {
 	}
 	if backupHasLocalConfig(settings) {
 		if err := saveBackupLocalConfig(path, settings); err != nil {
-			return fmt.Errorf("迁移旧版本地备份配置失败: %w", err)
+			return fmt.Errorf("保存本地备份配置失败: %w", err)
+		}
+		if sourcePath != "" && sourcePath != path {
+			if err := os.Remove(sourcePath); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("删除旧本地备份配置失败: %w", err)
+			}
 		}
 	}
 

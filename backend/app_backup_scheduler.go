@@ -72,7 +72,7 @@ func (s *backupScheduler) localConfigPath() string {
 	if s == nil || s.app == nil {
 		return ""
 	}
-	return s.app.resolveAppPath(backupLocalConfigFileName)
+	return s.app.backupLocalConfigPath()
 }
 
 func (s *backupScheduler) loadLocalConfig() error {
@@ -206,7 +206,10 @@ func (s *backupScheduler) execute(openList config.OpenListChannelConfig) {
 		return
 	}
 
-	s.app.maintenanceMu.Lock()
+	if err := s.app.lockMaintenanceWithNotice(nil); err != nil {
+		s.recordSkipped(err.Error())
+		return
+	}
 	defer s.app.maintenanceMu.Unlock()
 	result, err := s.app.backupOpenListUploadLocked(map[string]string{
 		"baseURL":             openList.BaseURL,
@@ -312,7 +315,7 @@ func backupScheduledSettingsSnapshot(app *App, scheduler *backupScheduler) map[s
 			if app.config != nil {
 				base = app.config.Backup
 			}
-			if stored, _, err := loadBackupLocalConfig(app.resolveAppPath(backupLocalConfigFileName), base); err == nil {
+			if stored, _, _, err := app.loadBackupLocalConfig(base); err == nil {
 				settings = stored
 			}
 		}
