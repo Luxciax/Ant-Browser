@@ -5,6 +5,7 @@ import (
 	"ant-chrome/backend/internal/database"
 	"archive/zip"
 	"bytes"
+	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -261,6 +262,168 @@ func TestRepeatedProfileExtensionRegistrationPreservesRuntimeStorage(t *testing.
 	if !profileExtensionSettingMatches(userDataDir, runtimeID, version) {
 		t.Fatal("profile registration no longer matches after repeat verification")
 	}
+}
+
+func TestRecoverExistingPersistentExtensionRuntimePreservesBrowserStorage(t *testing.T) {
+	appRoot := t.TempDir()
+	userDataDir := filepath.Join(appRoot, "profile")
+	packagePath := filepath.Join(appRoot, "scriptcat.crx")
+	const version = "1.2.3"
+	publicKey := []byte("scriptcat-stable-public-key")
+	runtimeID := extensionIDFromPublicKey(publicKey)
+
+	packageData := buildTestCRX2Package(t, publicKey, version)
+	if err := os.WriteFile(packagePath, packageData, 0o644); err != nil {
+		t.Fatalf("WriteFile package returned error: %v", err)
+	}
+	extension := Extension{
+		ExtensionID: runtimeID,
+		Name:        "ScriptCat",
+		Version:     version,
+		PackagePath: packagePath,
+		InstallMode: ExtensionInstallModePersistent,
+		Enabled:     true,
+	}
+	codePath := persistentExtensionCodePath(userDataDir, runtimeID, version)
+	if err := os.MkdirAll(codePath, 0o755); err != nil {
+		t.Fatalf("MkdirAll code returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(codePath, "manifest.json"), []byte(`{"name":"ScriptCat","version":"1.2.3"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile manifest returned error: %v", err)
+	}
+	const codeMarker = "existing-profile-extension-code-must-not-be-replaced"
+	if err := os.WriteFile(filepath.Join(codePath, "marker.txt"), []byte(codeMarker), 0o644); err != nil {
+		t.Fatalf("WriteFile marker returned error: %v", err)
+	}
+	if err := ensureProfileScopedExtensionRegistration(userDataDir, codePath, runtimeID, packagePath); err != nil {
+		t.Fatalf("ensureProfileScopedExtensionRegistration returned error: %v", err)
+	}
+
+	storageFiles := map[string]string{
+		filepath.Join(userDataDir, "Default", "Local Extension Settings", runtimeID, "CURRENT"):                         "scriptcat-local-settings",
+		filepath.Join(userDataDir, "Default", "Sync Extension Settings", runtimeID, "CURRENT"):                          "scriptcat-sync-settings",
+		filepath.Join(userDataDir, "Default", "IndexedDB", "chrome-extension_"+runtimeID+"_0.indexeddb.leveldb", "LOG"): "scriptcat-indexeddb",
+		filepath.Join(userDataDir, "Default", "Service Worker", "Database", "LOG"):                                     "scriptcat-service-worker",
+	}
+	for path, contents := range storageFiles {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll storage %q returned error: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatalf("WriteFile storage %q returned error: %v", path, err)
+		}
+	}
+
+	manager := NewManager(config.DefaultConfig(), appRoot)
+	manager.ExtensionDAO = newTestExtensionDAO(t, appRoot)
+	profile := &Profile{ProfileId: "profile", ProfileName: "profile", UserDataDir: userDataDir}
+	packageHash := extensionPackageHash(packageData)
+	artifactPath, recovered, err := manager.recoverExistingPersistentExtensionRuntime(profile, userDataDir, packagePath, packageHash, extension)
+	if err != nil {
+		t.Fatalf("recoverExistingPersistentExtensionRuntime returned error: %v", err)
+	}
+	if !recovered {
+		t.Fatal("recoverExistingPersistentExtensionRuntime = false, want true")
+	}
+	if !sameProfileExtensionPath(artifactPath, codePath) {
+		t.Fatalf("recovered artifact path = %q, want %q", artifactPath, codePath)
+	}
+	storedRuntime, err := manager.ExtensionDAO.GetProfileExtensionRuntime(profile.ProfileId, extension.ExtensionID)
+	if err != nil {
+		t.Fatalf("GetProfileExtensionRuntime returned error: %v", err)
+	}
+	if storedRuntime.RuntimeExtensionID != runtimeID || storedRuntime.Status != ExtensionRuntimeStatusInstalled || storedRuntime.PackageHash != packageHash {
+		t.Fatalf("recovered runtime = %#v", storedRuntime)
+	}
+	marker, err := os.ReadFile(filepath.Join(codePath, "marker.txt"))
+	if err != nil || string(marker) != codeMarker {
+		t.Fatalf("existing extension code changed during recovery: data=%q err=%v", marker, err)
+	}
+	for path, want := range storageFiles {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile storage %q returned error: %v", path, err)
+		}
+		if string(data) != want {
+			t.Fatalf("storage %q changed during recovery: %q", path, data)
+		}
+	}
+}
+
+func TestRecoverExistingPersistentExtensionRuntimeRejectsMismatchedRegistration(t *testing.T) {
+	appRoot := t.TempDir()
+	userDataDir := filepath.Join(appRoot, "profile")
+	packagePath := filepath.Join(appRoot, "extension.crx")
+	const version = "1.2.3"
+	publicKey := []byte("registration-mismatch-public-key")
+	runtimeID := extensionIDFromPublicKey(publicKey)
+	packageData := buildTestCRX2Package(t, publicKey, version)
+	if err := os.WriteFile(packagePath, packageData, 0o644); err != nil {
+		t.Fatalf("WriteFile package returned error: %v", err)
+	}
+	codePath := persistentExtensionCodePath(userDataDir, runtimeID, version)
+	if err := os.MkdirAll(codePath, 0o755); err != nil {
+		t.Fatalf("MkdirAll code returned error: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(codePath, "manifest.json"), []byte(`{"name":"Test","version":"1.2.3"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile manifest returned error: %v", err)
+	}
+	wrongPath := filepath.Join(userDataDir, "Default", "Extensions", runtimeID, "wrong_0")
+	root := profileExtensionJSON{
+		"extensions": profileExtensionJSON{
+			"settings": profileExtensionJSON{
+				runtimeID: profileExtensionJSON{
+					"location": float64(1),
+					"path":     wrongPath,
+				},
+			},
+		},
+	}
+	if err := writeProfileJSON(filepath.Join(userDataDir, "Default", "Secure Preferences"), root); err != nil {
+		t.Fatalf("writeProfileJSON returned error: %v", err)
+	}
+
+	manager := NewManager(config.DefaultConfig(), appRoot)
+	manager.ExtensionDAO = newTestExtensionDAO(t, appRoot)
+	profile := &Profile{ProfileId: "profile", ProfileName: "profile", UserDataDir: userDataDir}
+	extension := Extension{ExtensionID: runtimeID, Name: "Test", Version: version, PackagePath: packagePath, InstallMode: ExtensionInstallModePersistent}
+	if _, recovered, err := manager.recoverExistingPersistentExtensionRuntime(profile, userDataDir, packagePath, extensionPackageHash(packageData), extension); err != nil {
+		t.Fatalf("recoverExistingPersistentExtensionRuntime returned error: %v", err)
+	} else if recovered {
+		t.Fatal("recoverExistingPersistentExtensionRuntime = true for mismatched Secure Preferences registration")
+	}
+	if _, err := manager.ExtensionDAO.GetProfileExtensionRuntime(profile.ProfileId, extension.ExtensionID); err != sql.ErrNoRows {
+		t.Fatalf("runtime row was created for invalid registration: %v", err)
+	}
+}
+
+func buildTestCRX2Package(t *testing.T, publicKey []byte, version string) []byte {
+	t.Helper()
+	var archive bytes.Buffer
+	zipWriter := zip.NewWriter(&archive)
+	manifestWriter, err := zipWriter.Create("manifest.json")
+	if err != nil {
+		t.Fatalf("Create manifest returned error: %v", err)
+	}
+	manifestData, err := json.Marshal(map[string]string{"name": "Test", "version": version})
+	if err != nil {
+		t.Fatalf("Marshal manifest returned error: %v", err)
+	}
+	if _, err := manifestWriter.Write(manifestData); err != nil {
+		t.Fatalf("Write manifest returned error: %v", err)
+	}
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("Close archive returned error: %v", err)
+	}
+	signature := []byte("test-signature")
+	packageData := make([]byte, 16+len(publicKey)+len(signature))
+	copy(packageData[:4], []byte("Cr24"))
+	binary.LittleEndian.PutUint32(packageData[4:8], 2)
+	binary.LittleEndian.PutUint32(packageData[8:12], uint32(len(publicKey)))
+	binary.LittleEndian.PutUint32(packageData[12:16], uint32(len(signature)))
+	copy(packageData[16:], publicKey)
+	copy(packageData[16+len(publicKey):], signature)
+	return append(packageData, archive.Bytes()...)
 }
 
 func TestMigrateExtensionStoragePrefersLegacyData(t *testing.T) {

@@ -287,6 +287,20 @@ func (m *Manager) ensurePersistentExtensionInstalled(profile *Profile, userDataD
 	if runtimeErr != nil && runtimeErr != sql.ErrNoRows {
 		return "", runtimeErr
 	}
+	if runtimeErr == sql.ErrNoRows {
+		if artifactPath, recovered, recoverErr := m.recoverExistingPersistentExtensionRuntime(profile, userDataDir, packagePath, packageHash, extension); recoverErr != nil {
+			return "", recoverErr
+		} else if recovered {
+			runtimeID, idErr := runtimeExtensionIDFromPackage(packagePath, extension)
+			if idErr != nil {
+				return "", idErr
+			}
+			if err := ensurePersistentExternalExtensionRegistry(runtimeID, packagePath, extension.Version); err != nil {
+				return "", err
+			}
+			return artifactPath, nil
+		}
+	}
 	if runtimeErr == nil && runtimeState.Status == ExtensionRuntimeStatusInstalled &&
 		runtimeState.InstalledVersion == extension.Version && runtimeState.PackageHash == packageHash {
 		expectedArtifactPath := persistentExtensionCodePath(userDataDir, runtimeState.RuntimeExtensionID, extension.Version)
@@ -394,6 +408,48 @@ func (m *Manager) ensurePersistentExtensionInstalled(profile *Profile, userDataD
 		return "", err
 	}
 	return persistentExtensionCodePath(userDataDir, runtimeExtensionID, extension.Version), nil
+}
+
+// recoverExistingPersistentExtensionRuntime repairs only Ant Browser's runtime
+// index when Chromium already has the exact extension installed in this
+// profile. It intentionally does not rewrite the extension code directory,
+// Secure Preferences, Local/Sync Extension Settings, IndexedDB, or service
+// worker state. This keeps a lost/stale runtime-index row from turning a normal
+// application restart into a destructive extension reinstall.
+func (m *Manager) recoverExistingPersistentExtensionRuntime(profile *Profile, userDataDir string, packagePath string, packageHash string, extension Extension) (string, bool, error) {
+	if m == nil || m.ExtensionDAO == nil || profile == nil {
+		return "", false, nil
+	}
+	runtimeID, err := runtimeExtensionIDFromPackage(packagePath, extension)
+	if err != nil {
+		return "", false, nil
+	}
+	artifactPath := persistentExtensionArtifactPath(userDataDir, runtimeID, extension.Version)
+	expectedPath := persistentExtensionCodePath(userDataDir, runtimeID, extension.Version)
+	if artifactPath == "" || expectedPath == "" || !sameProfileExtensionPath(artifactPath, expectedPath) {
+		return "", false, nil
+	}
+	if !profileExtensionSettingMatches(userDataDir, runtimeID, extension.Version) {
+		return "", false, nil
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	runtimeState := ProfileExtensionRuntime{
+		ProfileID:          profile.ProfileId,
+		ExtensionID:        extension.ExtensionID,
+		RuntimeExtensionID: runtimeID,
+		InstallMode:        ExtensionInstallModePersistent,
+		InstalledVersion:   extension.Version,
+		PackageHash:        packageHash,
+		Status:             ExtensionRuntimeStatusInstalled,
+		LastVerifiedAt:     now,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	if err := m.ExtensionDAO.UpsertProfileExtensionRuntime(runtimeState); err != nil {
+		return "", false, err
+	}
+	return artifactPath, true, nil
 }
 
 func (m *Manager) recordProfileExtensionRuntimeError(profileID string, extension Extension, runtimeState ProfileExtensionRuntime, packageHash string, backupPath string, installErr error) {
