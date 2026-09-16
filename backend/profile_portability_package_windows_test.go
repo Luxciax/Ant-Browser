@@ -120,6 +120,43 @@ func TestProfilePackagePortableLoginRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBackupCenterProfileExportIncludesPortableLoginEnvelope(t *testing.T) {
+	const migrationPassword = "backup-center-portable-password"
+	masterKey := []byte("11223344556677889900aabbccddeeff")
+
+	root := t.TempDir()
+	db := newProfilePackageDatabase(t, root)
+	cfg := config.DefaultConfig()
+	cfg.Browser.UserDataRoot = filepath.Join(root, "user-data")
+	app := NewApp(root)
+	app.config = cfg
+	app.db = db
+	app.browserMgr = browser.NewManager(cfg, root)
+	profile := &browser.Profile{
+		ProfileId:   "backup-center-profile",
+		ProfileName: "Backup Center Profile",
+		UserDataDir: "backup-center-profile",
+		CreatedAt:   "2026-09-16T00:00:00Z",
+		UpdatedAt:   "2026-09-16T00:00:00Z",
+	}
+	app.browserMgr.Profiles[profile.ProfileId] = profile
+	writePortableLoginTestLocalState(t, app.browserMgr.ResolveUserDataDir(profile), masterKey)
+
+	zipPath := filepath.Join(root, "backup-center-profile.zip")
+	result, err := app.backupExportProfilePackageToPathWithOptions(
+		zipPath,
+		[]string{profile.ProfileId},
+		ProfilePackageExportOptions{PortableLogin: true, MigrationPassword: migrationPassword},
+	)
+	if err != nil {
+		t.Fatalf("backupExportProfilePackageToPathWithOptions: %v", err)
+	}
+	if result["packageType"] != "profile" || result["portableLoginCount"] != 1 {
+		t.Fatalf("unexpected Backup Center export result: %#v", result)
+	}
+	assertPortableLoginEnvelopeInPackage(t, zipPath, profile.ProfileId, masterKey)
+}
+
 func TestProfilePackagePortableLoginRejectsWrongPasswordBeforeCommit(t *testing.T) {
 	const migrationPassword = "portable-login-test-password"
 	masterKey := []byte("abcdef0123456789abcdef0123456789")

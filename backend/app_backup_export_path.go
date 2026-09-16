@@ -48,6 +48,10 @@ func (a *App) backupExportPackageToPath(savePath string) (map[string]interface{}
 }
 
 func (a *App) backupExportProfilePackageToPath(savePath string, profileIDs []string) (map[string]interface{}, error) {
+	return a.backupExportProfilePackageToPathWithOptions(savePath, profileIDs, ProfilePackageExportOptions{})
+}
+
+func (a *App) backupExportProfilePackageToPathWithOptions(savePath string, profileIDs []string, options ProfilePackageExportOptions) (map[string]interface{}, error) {
 	if strings.TrimSpace(savePath) == `` {
 		return nil, fmt.Errorf(`backup export path is empty`)
 	}
@@ -63,7 +67,7 @@ func (a *App) backupExportProfilePackageToPath(savePath string, profileIDs []str
 		return nil, err
 	}
 	a.backupEmitExportProgress(`preparing`, 10, fmt.Sprintf(`正在准备 %d 个实例...`, len(profiles)))
-	fileCount, err := a.writeProfilePackage(savePath, profiles)
+	fileCount, portableLoginCount, warnings, err := a.writeProfilePackageWithOptions(savePath, profiles, options)
 	if err != nil {
 		a.backupEmitExportProgress(`error`, 100, fmt.Sprintf(`实例备份失败: %v`, err))
 		return nil, err
@@ -76,6 +80,8 @@ func (a *App) backupExportProfilePackageToPath(savePath string, profileIDs []str
 		`profileNames`: profilePackageProfileNames(profiles),
 		`fileCount`:    fileCount,
 		`packageType`:  `profile`,
+		`portableLoginCount`: portableLoginCount,
+		`warnings`:           warnings,
 		`message`:      `实例备份完成`,
 	}, nil
 }

@@ -30,6 +30,37 @@ func TestBackupProfileIDsFromInput(t *testing.T) {
 	}
 }
 
+func TestBackupProfileExportOptionsFromInput(t *testing.T) {
+	options, err := backupProfileExportOptionsFromInput(map[string]string{
+		"portableLogin":     "true",
+		"migrationPassword": "portable-backup-password",
+	})
+	if err != nil {
+		t.Fatalf("backupProfileExportOptionsFromInput returned error: %v", err)
+	}
+	if !options.PortableLogin || options.MigrationPassword != "portable-backup-password" {
+		t.Fatalf("unexpected portable-login options: %#v", options)
+	}
+
+	options, err = backupProfileExportOptionsFromInput(map[string]string{
+		"portableLogin":     "false",
+		"migrationPassword": "must-not-survive",
+	})
+	if err != nil {
+		t.Fatalf("disabled portable login returned error: %v", err)
+	}
+	if options.PortableLogin || options.MigrationPassword != "" {
+		t.Fatalf("disabled portable-login retained sensitive input: %#v", options)
+	}
+
+	if _, err := backupProfileExportOptionsFromInput(map[string]string{
+		"portableLogin":     "true",
+		"migrationPassword": "short",
+	}); err == nil {
+		t.Fatal("short migration password should be rejected")
+	}
+}
+
 func TestBackupProfilePackageFileName(t *testing.T) {
 	now := time.Date(2026, time.September, 1, 17, 36, 16, 0, time.UTC)
 	if got := backupProfilePackageFileName([]string{"测试账号 A"}, now, false); got != "ant-chrome-profile-backup-single--测试账号 A--20260901-173616.zip" {

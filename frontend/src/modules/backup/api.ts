@@ -1,6 +1,6 @@
 import type { BackupChannelSelection } from './channels'
 import type { BackupPackageInfo } from './packageInfo'
-import type { BrowserProfilePackageImportPreview } from '../browser/types'
+import type { BrowserProfilePackageExportOptions, BrowserProfilePackageImportPreview } from '../browser/types'
 
 export interface BackupActionResult {
   cancelled?: boolean
@@ -28,6 +28,7 @@ export interface BackupActionResult {
   remoteWarning?: string
   profileCount?: number
   profileNames?: string[]
+  portableLoginCount?: number
   importedCount?: number
   createdCount?: number
   overwrittenCount?: number
@@ -82,6 +83,7 @@ const getBindings = async () => {
 export async function createBackupPackage(
   destinations: BackupDestinationSelection,
   profileIds: string[] = [],
+  profileOptions?: BrowserProfilePackageExportOptions,
 ): Promise<BackupActionResult> {
   const bindings: any = await getBindings()
   if (!bindings?.BackupCreatePackage) {
@@ -95,6 +97,10 @@ export async function createBackupPackage(
   }
   if (profileIds.length > 0) {
     payload.profileIds = JSON.stringify(profileIds)
+    if (profileOptions?.portableLogin) {
+      payload.portableLogin = 'true'
+      payload.migrationPassword = profileOptions.migrationPassword
+    }
   }
   return (await bindings.BackupCreatePackage(payload)) || {}
 }

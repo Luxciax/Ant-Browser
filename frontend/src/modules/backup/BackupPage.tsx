@@ -19,17 +19,23 @@ import type { BackupTypeSelection } from './components/BackupTypeModal'
 import { BackupScopeModal } from './components/BackupScopeModal'
 import { BackupHistoryTable } from './components/BackupHistoryTable'
 import { ProfilePackageConflictModal } from './components/ProfilePackageConflictModal'
+import { ProfilePackageExportModal } from '../browser/components/ProfilePackageExportModal'
 import { fetchOpenListSettings } from './channels/openlist/api'
 import type { OpenListConnection } from './channels/openlist/api'
 import { fetchS3Settings } from './channels/s3/api'
 import type { S3Connection } from './channels/s3/api'
 import { importBrowserProfilePackageWithOptions } from '../browser/api/profiles'
-import type { BrowserProfilePackageImportAction, BrowserProfilePackageImportPreview } from '../browser/types'
+import type { BrowserProfilePackageExportOptions, BrowserProfilePackageImportAction, BrowserProfilePackageImportPreview } from '../browser/types'
 import { createBackupRouteState } from './flow'
 import type { BackupRouteState } from './flow'
 import { useBackupProgressEffects } from './hooks/useBackupProgressEffects'
 
 type BackupActionLoading = 'none' | 'export' | 'import-merge'
+
+interface PendingProfileBackupRequest {
+  destinations: BackupTypeSelection
+  profileIds: string[]
+}
 
 function formatBackupBytes(value?: number) {
   const bytes = Math.max(0, Number(value) || 0)
@@ -63,6 +69,8 @@ export function BackupPage() {
   const [localBackupDirectory, setLocalBackupDirectory] = useState('')
   const [pendingBackupTypes, setPendingBackupTypes] = useState<BackupTypeSelection | null>(null)
   const [pendingProfileIds, setPendingProfileIds] = useState<string[]>([])
+  const [profileExportModalOpen, setProfileExportModalOpen] = useState(false)
+  const [pendingProfileBackupRequest, setPendingProfileBackupRequest] = useState<PendingProfileBackupRequest | null>(null)
   const openListConfigurationCompletedRef = useRef(false)
   const openListConfiguredConnectionRef = useRef<OpenListConnection | null>(null)
   const [historyRefreshToken, setHistoryRefreshToken] = useState(0)
@@ -141,12 +149,16 @@ export function BackupPage() {
     navigate(location.pathname, { replace: true, state: null })
   }, [location.key, location.pathname, location.state, navigate])
 
-  const handleBackup = async (destinations: BackupTypeSelection, profileIds: string[]) => {
+  const handleBackup = async (
+    destinations: BackupTypeSelection,
+    profileIds: string[],
+    profileOptions?: BrowserProfilePackageExportOptions,
+  ) => {
     setActionLoading('export')
     setExportLogs([])
     setExportProgress({ phase: 'starting', progress: 0, message: '准备备份...' })
     try {
-      const res = await createBackupPackage(destinations, profileIds)
+      const res = await createBackupPackage(destinations, profileIds, profileOptions)
       if (res.cancelled) {
         setExportProgress(null)
         setExportLogs([])
@@ -165,11 +177,21 @@ export function BackupPage() {
       const partial = Boolean(res.partial || res.remoteError)
       const remoteWarning = typeof res.remoteWarning === 'string' ? res.remoteWarning.trim() : ''
       const feedbackMessage = remoteWarning ? `${resultMessage}：${remoteWarning}` : resultMessage
-      const feedbackPhase = partial ? 'error' : remoteWarning ? 'warning' : 'done'
+      const portableLoginHint = Number.isFinite(res.portableLoginCount) && (res.portableLoginCount || 0) > 0
+        ? `，含 ${res.portableLoginCount} 个可迁移登录态`
+        : ''
+      const exportWarnings = Array.isArray(res.warnings)
+        ? res.warnings.map(item => String(item || '').trim()).filter(Boolean)
+        : []
+      const finalResultMessage = `${resultMessage}${portableLoginHint}`
+      const finalFeedbackMessage = exportWarnings.length > 0
+        ? `${feedbackMessage}${portableLoginHint}；${exportWarnings.join('；')}`
+        : `${feedbackMessage}${portableLoginHint}`
+      const feedbackPhase = partial ? 'error' : (remoteWarning || exportWarnings.length > 0) ? 'warning' : 'done'
       setExportProgress({
         phase: feedbackPhase,
         progress: 100,
-        message: feedbackMessage,
+        message: finalFeedbackMessage,
       })
       if (localSaved && res.zipPath) {
         setHistoryRefreshToken(previous => previous + 1)
@@ -178,11 +200,13 @@ export function BackupPage() {
         setHistoryRefreshToken(previous => previous + 1)
       }
       if (partial) {
-        toast.warning(feedbackMessage)
+        toast.warning(finalFeedbackMessage)
       } else if (remoteWarning) {
-        toast.warning(feedbackMessage)
+        toast.warning(finalFeedbackMessage)
+      } else if (exportWarnings.length > 0) {
+        toast.warning(finalFeedbackMessage)
       } else {
-        toast.success(resultMessage)
+        toast.success(finalResultMessage)
       }
     } catch (error: any) {
       setExportProgress(prev => ({
@@ -241,6 +265,11 @@ export function BackupPage() {
     const profileIds = pendingProfileIds
     setPendingBackupTypes(null)
     setPendingProfileIds([])
+    if (profileIds.length > 0) {
+      setPendingProfileBackupRequest({ destinations, profileIds: [...profileIds] })
+      setProfileExportModalOpen(true)
+      return
+    }
     void handleBackup(destinations, profileIds)
   }, [
     backupScopeModalOpen,
@@ -286,6 +315,11 @@ export function BackupPage() {
     setPendingBackupTypes(null)
     setPendingProfileIds([])
     setBackupTypeModalOpen(false)
+    if (profileIds.length > 0) {
+      setPendingProfileBackupRequest({ destinations, profileIds: [...profileIds] })
+      setProfileExportModalOpen(true)
+      return
+    }
     void handleBackup(destinations, profileIds)
   }
 
@@ -532,6 +566,24 @@ export function BackupPage() {
           if (profileImportPreview) {
             void executeProfileImport(profileImportPreview, actions, migrationPassword)
           }
+        }}
+      />
+
+      <ProfilePackageExportModal
+        open={profileExportModalOpen}
+        profileCount={pendingProfileBackupRequest?.profileIds.length || 0}
+        busy={actionLoading === 'export'}
+        onClose={() => {
+          if (actionLoading === 'export') return
+          setProfileExportModalOpen(false)
+          setPendingProfileBackupRequest(null)
+        }}
+        onConfirm={(options) => {
+          const request = pendingProfileBackupRequest
+          if (!request) return
+          setProfileExportModalOpen(false)
+          setPendingProfileBackupRequest(null)
+          void handleBackup(request.destinations, request.profileIds, options)
         }}
       />
 

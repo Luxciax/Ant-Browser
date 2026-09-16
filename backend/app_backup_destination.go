@@ -34,6 +34,14 @@ func (a *App) BackupCreatePackage(input map[string]string) (map[string]interface
 		a.backupEmitExportProgress("error", 100, fmt.Sprintf("备份失败: %v", err))
 		return nil, err
 	}
+	profileExportOptions := ProfilePackageExportOptions{}
+	if len(profileIDs) > 0 {
+		profileExportOptions, err = backupProfileExportOptionsFromInput(input)
+		if err != nil {
+			a.backupEmitExportProgress("error", 100, fmt.Sprintf("备份失败: %v", err))
+			return nil, err
+		}
+	}
 	profileNames := []string(nil)
 	if len(profileIDs) > 0 {
 		profiles, collectErr := a.collectProfilesForPackage(profileIDs)
@@ -96,7 +104,7 @@ func (a *App) BackupCreatePackage(input map[string]string) (map[string]interface
 
 	var result map[string]interface{}
 	if len(profileIDs) > 0 {
-		result, err = a.backupExportProfilePackageToPath(packagePath, profileIDs)
+		result, err = a.backupExportProfilePackageToPathWithOptions(packagePath, profileIDs, profileExportOptions)
 	} else {
 		result, err = a.backupExportPackageToPath(packagePath)
 	}
@@ -241,6 +249,20 @@ func backupProfileIDsFromInput(input map[string]string) ([]string, error) {
 		return nil, fmt.Errorf("请选择要备份的实例")
 	}
 	return profileIDs, nil
+}
+
+func backupProfileExportOptionsFromInput(input map[string]string) (ProfilePackageExportOptions, error) {
+	options := ProfilePackageExportOptions{
+		PortableLogin:     backupDestinationFlag(input, "portableLogin"),
+		MigrationPassword: input["migrationPassword"],
+	}
+	if options.PortableLogin && len(strings.TrimSpace(options.MigrationPassword)) < 8 {
+		return ProfilePackageExportOptions{}, fmt.Errorf("登录态迁移密码至少需要 8 个字符")
+	}
+	if !options.PortableLogin {
+		options.MigrationPassword = ""
+	}
+	return options, nil
 }
 
 func backupPackageDefaultName(profileOnly bool, profileNames []string, now time.Time) string {
