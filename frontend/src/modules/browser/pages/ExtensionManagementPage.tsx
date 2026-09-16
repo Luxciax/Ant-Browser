@@ -21,7 +21,7 @@ import { fetchBrowserProxies } from '../api/proxies'
 import { ProxyPickerModal } from '../components/ProxyPickerModal'
 import { ExtensionInstallCard, ExtensionManagementHeader, InstalledExtensionsList } from './ExtensionManagementCards'
 import { DownloadDirectoryInstallModal, ExtensionHistoryModal, ExtensionProfileLimitModal, ManualInstallModal } from './ExtensionManagementModals'
-import { EXTENSION_HISTORY_LIMIT, buildChromeWebStoreQueryURL, createExtensionHistoryRecord, extensionStoreURL, loadExtensionDownloadProxyPreference, loadExtensionHistory, saveExtensionDownloadProxyPreference, saveExtensionHistory, type ExtensionHistoryRecord } from './extensionManagementUtils'
+import { EXTENSION_HISTORY_LIMIT, buildChromeWebStoreQueryURL, createExtensionHistoryRecord, extensionStoreURL, isBrowserExtensionLookupQuery, loadExtensionDownloadProxyPreference, loadExtensionHistory, saveExtensionDownloadProxyPreference, saveExtensionHistory, type ExtensionHistoryRecord } from './extensionManagementUtils'
 
 export function ExtensionManagementPage() {
   const [items, setItems] = useState<BrowserExtension[]>([])
@@ -106,6 +106,23 @@ export function ExtensionManagementPage() {
     const value = query.trim()
     if (!value) {
       toast.warning('请输入插件 ID 或 Chrome Web Store 链接')
+      return
+    }
+    if (!isBrowserExtensionLookupQuery(value)) {
+      const storeUrl = buildChromeWebStoreQueryURL(value)
+      setLookup(null)
+      window.open(storeUrl, '_blank', 'noopener,noreferrer')
+      appendHistory({
+        action: 'lookup',
+        query: value,
+        extensionId: '',
+        name: '',
+        version: '',
+        storeUrl,
+        proxyLabel: 'Chrome Web Store',
+        ok: true,
+        message: '已打开商店关键词搜索',
+      })
       return
     }
     if (useProxy && !downloadProxyConfig) {
@@ -528,7 +545,10 @@ export function ExtensionManagementPage() {
         selectedProxy={selectedProxy}
         installedIds={installedIds}
         lastLookupProxyLabel={lastLookupProxyLabel}
-        onQueryChange={setQuery}
+        onQueryChange={(value) => {
+          setQuery(value)
+          setLookup(null)
+        }}
         onLookup={() => void handleLookup()}
         onOpenWebStoreQuery={handleOpenWebStoreQuery}
         onOpenManualInstall={handleOpenManualInstall}
