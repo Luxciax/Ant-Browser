@@ -189,6 +189,12 @@ func main() {
 	if startupDebugEnabled {
 		log.Printf("应用根目录: %s (dev=%v)", appRoot, isDevMode)
 	}
+	// The stdio bridge is a short-lived helper process. Handle it before the
+	// GUI single-instance lock so MCP clients can launch it while Ant Browser
+	// is already running.
+	if isMCPStdioInvocation(os.Args[1:]) {
+		os.Exit(runMCPStdioBridge(appRoot))
+	}
 	if err := backend.EnsureRuntimeLayout(appRoot); err != nil {
 		log.Printf("准备用户数据目录失败: %v", err)
 		lifecycle.Log(appRoot, "runtime_layout.error", map[string]interface{}{"error": err.Error()})
