@@ -78,8 +78,12 @@ export function BrowserListV2Page() {
   const [backupOpen, setBackupOpen] = useState(false)
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false)
 
-  const loadCores = useCallback(() => {
-    void fetchBrowserCores().then(setCores).catch(() => setCores([]))
+  const loadCores = useCallback(async () => {
+    try {
+      setCores(await fetchBrowserCores())
+    } catch {
+      setCores([])
+    }
   }, [])
 
   const {
