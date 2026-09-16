@@ -43,6 +43,11 @@ func NormalizePreferredKernel(value string) string {
 
 func ResolveProxyKernel(proxyConfig string, proxies []config.BrowserProxy, proxyId string, preferredKernel string) (ProxyKernelResolution, error) {
 	src := strings.TrimSpace(resolveProxyConfig(proxyConfig, proxies, proxyId))
+	if strings.TrimSpace(preferredKernel) == "" && IsChainProxy(src) {
+		if chainCfg, err := ParseChainProxyConfig(src); err == nil {
+			preferredKernel = chainCfg.PreferredCore
+		}
+	}
 	if strings.TrimSpace(preferredKernel) == "" && strings.TrimSpace(proxyId) != "" {
 		for _, item := range proxies {
 			if strings.EqualFold(strings.TrimSpace(item.ProxyId), strings.TrimSpace(proxyId)) {
@@ -72,6 +77,11 @@ func ResolveProxyKernel(proxyConfig string, proxies []config.BrowserProxy, proxy
 	}
 	if preferred != ProxyKernelAuto {
 		if !containsKernel(resolution.SupportedKernels, preferred) {
+			if protocol == "chain+proxy" {
+				resolution.Kernel = resolution.SupportedKernels[0]
+				resolution.Reason = fmt.Sprintf("链式代理指定内核 %s 不可用，已回退到 %s", preferred, resolution.Kernel)
+				return resolution, nil
+			}
 			return resolution, fmt.Errorf("协议 %s 不支持指定内核 %s", protocol, preferred)
 		}
 		resolution.Kernel = preferred
@@ -128,6 +138,9 @@ func DetectProxyProtocol(proxyConfig string) string {
 	if IsChainSocks5Proxy(src) {
 		return "chain+socks5"
 	}
+	if IsChainProxy(src) {
+		return "chain+proxy"
+	}
 	if nodeType := clashNodeType(src); nodeType != "" {
 		return nodeType
 	}
@@ -159,6 +172,37 @@ func SupportedKernelsForProtocol(protocol string, proxyConfig string, proxies []
 			}
 		}
 		return []string{ProxyKernelXray}
+	case "chain+proxy":
+		cfg, err := ParseChainProxyConfig(proxyConfig)
+		if err != nil {
+			return nil
+		}
+		front, err := resolveChainFront(cfg, proxies, proxyId)
+		if err != nil {
+			return nil
+		}
+		frontProtocol := DetectProxyProtocol(front.ProxyConfig)
+		switch frontProtocol {
+		case "http", "socks5", "vmess", "vless", "trojan":
+			return []string{ProxyKernelXray}
+		case "ss", "shadowsocks":
+			if IsMihomoOnlyProtocol(front.ProxyConfig) {
+				return []string{ProxyKernelMihomo}
+			}
+			return []string{ProxyKernelXray, ProxyKernelMihomo}
+		case "hysteria", "hysteria2", "hy2", "tuic", "anytls":
+			return []string{ProxyKernelSingBox, ProxyKernelMihomo}
+		case "mieru", "wireguard":
+			return []string{ProxyKernelMihomo}
+		default:
+			if IsSingBoxProtocol(front.ProxyConfig) {
+				return []string{ProxyKernelSingBox, ProxyKernelMihomo}
+			}
+			if IsMihomoOnlyProtocol(front.ProxyConfig) {
+				return []string{ProxyKernelMihomo}
+			}
+		}
+		return nil
 	case "vmess", "vless", "trojan":
 		return []string{ProxyKernelXray, ProxyKernelMihomo}
 	case "ss", "shadowsocks":

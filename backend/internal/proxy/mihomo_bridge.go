@@ -97,7 +97,7 @@ func (m *ClashManager) ensureNodeBridgeContext(ctx context.Context, proxyConfig 
 		return "direct://", "", nil
 	}
 
-	key := computeNodeKey(src + "\x00mihomo")
+	key := computeNodeKey(chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00mihomo")
 	unlock := m.lockLaunchForKey(key)
 	defer unlock()
 
@@ -115,19 +115,41 @@ func (m *ClashManager) ensureNodeBridgeContext(ctx context.Context, proxyConfig 
 	if err != nil {
 		return "", "", err
 	}
-	node, err := buildMihomoNode(src)
-	if err != nil {
-		return "", "", err
+	var (
+		nodes         []interface{}
+		targetName    string
+		preferredPort int
+	)
+	if IsChainProxy(src) {
+		chainCfg, err := ParseChainProxyConfig(src)
+		if err != nil {
+			return "", "", err
+		}
+		nodes, targetName, err = buildMihomoReferencedChainNodes(chainCfg, proxies, proxyId)
+		if err != nil {
+			return "", "", err
+		}
+		preferredPort = chainCfg.LocalPort
+	} else {
+		node, err := buildMihomoNode(src)
+		if err != nil {
+			return "", "", err
+		}
+		nodes = []interface{}{node}
+		targetName = strings.TrimSpace(getMapString(node, "name"))
 	}
-	port, err := nextAvailablePort()
-	if err != nil {
-		return "", "", err
+	port := preferredPort
+	if port <= 0 {
+		port, err = nextAvailablePort()
+		if err != nil {
+			return "", "", err
+		}
 	}
 	controllerPort, err := nextAvailablePort()
 	if err != nil {
 		return "", "", err
 	}
-	cfgPath, err := m.buildMihomoNodeConfig(key, node, port, controllerPort)
+	cfgPath, err := m.buildMihomoNodesConfig(key, nodes, targetName, port, controllerPort)
 	if err != nil {
 		return "", "", err
 	}
@@ -276,7 +298,7 @@ func (m *ClashManager) TestNodeDelay(proxyId string, proxies []config.BrowserPro
 	if _, err := m.EnsureNodeBridge(src, proxies, proxyId); err != nil {
 		return TestResult{ProxyId: proxyId, Ok: false, Engine: "mihomo", Error: err.Error()}
 	}
-	key := computeNodeKey(src + "\x00mihomo")
+	key := computeNodeKey(chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00mihomo")
 	m.mu.Lock()
 	bridge := m.NodeBridges[key]
 	m.mu.Unlock()
@@ -387,14 +409,29 @@ func (m *ClashManager) lockLaunchForKey(key string) func() {
 }
 
 func (m *ClashManager) buildMihomoNodeConfig(key string, node map[string]interface{}, port int, controllerPort int) (string, error) {
+	return m.buildMihomoNodesConfig(key, []interface{}{node}, strings.TrimSpace(getMapString(node, "name")), port, controllerPort)
+}
+
+func (m *ClashManager) buildMihomoNodesConfig(key string, nodes []interface{}, targetName string, port int, controllerPort int) (string, error) {
 	baseDir := m.resolveMihomoWorkdir(key)
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return "", err
 	}
-	name := strings.TrimSpace(getMapString(node, "name"))
+	if len(nodes) == 0 {
+		return "", fmt.Errorf("mihomo 节点配置为空")
+	}
+	name := strings.TrimSpace(targetName)
 	if name == "" {
-		name = "node"
-		node["name"] = name
+		if node, ok := nodes[0].(map[string]interface{}); ok {
+			name = strings.TrimSpace(getMapString(node, "name"))
+			if name == "" {
+				name = "node"
+				node["name"] = name
+			}
+		}
+	}
+	if name == "" {
+		return "", fmt.Errorf("mihomo 目标节点名称为空")
 	}
 	payload := map[string]interface{}{
 		"mixed-port":          port,
@@ -405,7 +442,7 @@ func (m *ClashManager) buildMihomoNodeConfig(key string, node map[string]interfa
 		"ipv6":                true,
 		"unified-delay":       true,
 		"tcp-concurrent":      false,
-		"proxies":             []interface{}{node},
+		"proxies":             nodes,
 		"proxy-groups": []interface{}{
 			map[string]interface{}{
 				"name":    "proxy-out",

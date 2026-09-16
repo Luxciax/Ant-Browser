@@ -13,6 +13,7 @@ import {
   buildImportCandidatesFromClash,
   buildImportPreview,
   createExistingProxyPicker,
+  detectProxyNodeProtocol,
   nextProxyID,
   parseChainImportJSON,
   parseClashImportText,
@@ -124,7 +125,17 @@ export function useProxyImportFlow({
   const handleApplyChainJSON = () => {
     try {
       const { form, groupName } = parseChainImportJSON(chainImportText)
-      setChainImportForm(form)
+      if (form.firstNodeSource === 'pool' && form.firstProxyId) {
+        const front = proxies.find((proxy) => proxy.proxyId === form.firstProxyId)
+        const protocol = front ? detectProxyNodeProtocol(front.proxyConfig) : null
+        setChainImportForm({
+          ...form,
+          firstNodeProtocol: protocol || form.firstNodeProtocol,
+          firstProxyConfig: front?.proxyConfig || '',
+        })
+      } else {
+        setChainImportForm(form)
+      }
       setImportGroupName(groupName)
       toast.success('JSON 已应用')
     } catch (error: any) {
@@ -284,7 +295,7 @@ export function useProxyImportFlow({
     : importMode === 'direct'
       ? !!directImportText.trim() || (!!directImportForm.server.trim() && !!directImportForm.port.trim())
       : (chainImportForm.firstMode === 'node'
-          ? !!chainImportForm.firstProxyConfig.trim()
+          ? (chainImportForm.firstNodeSource === 'pool' ? !!chainImportForm.firstProxyId.trim() : !!chainImportForm.firstProxyConfig.trim())
           : !!chainImportForm.first.server.trim() && !!chainImportForm.first.port.trim())
         && !!chainImportForm.second.server.trim()
         && !!chainImportForm.second.port.trim()

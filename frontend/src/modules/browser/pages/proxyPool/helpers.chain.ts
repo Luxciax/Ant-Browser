@@ -1,5 +1,6 @@
-import type { ChainHopForm, ChainImportForm, ChainSocks5Config, ChainSocks5HopConfig, ImportCandidate } from './helpers.types'
-import { CHAIN_SOCKS5_PREFIX } from './helpers.types'
+import type { BrowserProxy } from '../../types'
+import type { ChainHopForm, ChainImportForm, ChainProxyConfig, ChainSocks5Config, ChainSocks5HopConfig, ImportCandidate } from './helpers.types'
+import { CHAIN_PROXY_PREFIX, CHAIN_SOCKS5_PREFIX, INITIAL_CHAIN_IMPORT_FORM } from './helpers.types'
 
 function detectChainNodeProtocol(proxyConfig: string): ChainImportForm['firstNodeProtocol'] {
   const scheme = proxyConfig.trim().match(/^([a-zA-Z0-9+.-]+):\/\//)?.[1]?.toLowerCase()
@@ -66,7 +67,55 @@ export function parseChainSocks5Config(proxyConfig: string): ChainSocks5Config |
   }
 }
 
-export function toChainImportForm(proxyName: string, proxyConfig: string): ChainImportForm | null {
+export function parseChainProxyConfig(proxyConfig: string): ChainProxyConfig | null {
+  const cfg = proxyConfig.trim()
+  if (!cfg.toLowerCase().startsWith(CHAIN_PROXY_PREFIX)) return null
+  const encoded = cfg.slice(CHAIN_PROXY_PREFIX.length)
+  if (!encoded) return null
+  try {
+    const parsed = JSON.parse(decodeURIComponent(encoded)) as Record<string, unknown>
+    const frontProxyId = String(parsed.frontProxyId || '').trim()
+    const landing = normalizeChainHop(parsed.landing, false)
+    if (!frontProxyId || !landing) return null
+    const localPortRaw = parsed.localPort
+    const localPortNum = localPortRaw === undefined || localPortRaw === null || localPortRaw === '' ? 0 : Number(localPortRaw)
+    if (!Number.isInteger(localPortNum) || localPortNum < 0 || localPortNum > 65535) return null
+    return {
+      version: 2,
+      frontProxyId,
+      landing,
+      localPort: localPortNum > 0 ? localPortNum : undefined,
+      preferredKernel: String(parsed.preferredKernel || '').trim() || undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
+export function toChainImportForm(proxyName: string, proxyConfig: string, proxies: BrowserProxy[] = []): ChainImportForm | null {
+  const referenced = parseChainProxyConfig(proxyConfig)
+  if (referenced) {
+    const front = proxies.find((proxy) => proxy.proxyId === referenced.frontProxyId)
+    const frontProxyConfig = front?.proxyConfig || ''
+    return {
+      proxyName,
+      localPort: referenced.localPort ? String(referenced.localPort) : '',
+      firstMode: 'node',
+      firstNodeProtocol: detectChainNodeProtocol(frontProxyConfig),
+      firstNodeSource: 'pool',
+      firstProxyId: referenced.frontProxyId,
+      firstProxyConfig: frontProxyConfig,
+      first: { ...INITIAL_CHAIN_IMPORT_FORM.first },
+      second: {
+        protocol: referenced.landing.protocol || 'socks5',
+        server: referenced.landing.server || '',
+        port: referenced.landing.port ? String(referenced.landing.port) : '',
+        username: referenced.landing.username || '',
+        password: referenced.landing.password || '',
+      },
+    }
+  }
+
   const cfg = parseChainSocks5Config(proxyConfig)
   if (!cfg) return null
 
@@ -76,6 +125,7 @@ export function toChainImportForm(proxyName: string, proxyConfig: string): Chain
     firstMode: cfg.first.proxyConfig ? 'node' : 'standard',
     firstNodeProtocol: detectChainNodeProtocol(cfg.first.proxyConfig || ''),
     firstNodeSource: 'manual',
+    firstProxyId: '',
     firstProxyConfig: cfg.first.proxyConfig || '',
     first: {
       protocol: cfg.first.protocol || 'http',
@@ -134,16 +184,31 @@ export function buildChainImportCandidate(form: ChainImportForm): ImportCandidat
     throw new Error('本地监听端口必须在 1-65535 之间')
   }
 
+  const second = parseStandardHop('第二层', form.second)
+  if (form.firstMode === 'node' && form.firstNodeSource === 'pool') {
+    const frontProxyId = form.firstProxyId.trim()
+    if (!frontProxyId) throw new Error('请选择第一层代理池节点')
+    const payload: ChainProxyConfig = {
+      version: 2,
+      frontProxyId,
+      landing: second,
+      localPort: localPort > 0 ? localPort : undefined,
+    }
+    return {
+      proxyName: form.proxyName.trim() || `链式代理-${second.server}`,
+      proxyConfig: `${CHAIN_PROXY_PREFIX}${encodeURIComponent(JSON.stringify(payload))}`,
+    }
+  }
+
   const first: ChainSocks5HopConfig = form.firstMode === 'node'
     ? (() => {
         const proxyConfig = form.firstProxyConfig.trim()
         if (!proxyConfig) throw new Error('请输入第一层机场节点配置')
-        if (/^chain\+socks5:\/\//i.test(proxyConfig)) throw new Error('第一层不支持嵌套链式代理')
+        if (/^chain\+(?:socks5|proxy):\/\//i.test(proxyConfig)) throw new Error('第一层不支持嵌套链式代理')
         return { proxyConfig }
       })()
     : parseStandardHop('第一层', form.first)
 
-  const second = parseStandardHop('第二层', form.second)
   const payload: ChainSocks5Config = {
     first,
     second,
@@ -220,6 +285,32 @@ export function parseChainImportJSON(raw: string): { form: ChainImportForm; grou
     throw new Error('JSON 根节点必须是对象')
   }
 
+  const referencedFrontProxyId = String(payload.frontProxyId || '').trim()
+  if (referencedFrontProxyId) {
+    const landing = parseChainQuickImportHop(payload.landing, '落地')
+    const localPort = parseOptionalChainPort(payload.localPort, 'localPort')
+    const proxyName = String(payload.name ?? payload.proxyName ?? '').trim()
+    const groupName = String(payload.group ?? payload.groupName ?? '').trim()
+    return {
+      form: {
+        ...INITIAL_CHAIN_IMPORT_FORM,
+        proxyName,
+        localPort: localPort ? String(localPort) : '',
+        firstMode: 'node',
+        firstNodeSource: 'pool',
+        firstProxyId: referencedFrontProxyId,
+        second: {
+          protocol: landing.protocol || 'socks5',
+          server: landing.server || '',
+          port: landing.port ? String(landing.port) : '',
+          username: landing.username || '',
+          password: landing.password || '',
+        },
+      },
+      groupName,
+    }
+  }
+
   const first = parseChainQuickImportHop(payload.first, '第一层', true)
   const second = parseChainQuickImportHop(payload.second, '第二层')
   const localPort = parseOptionalChainPort(payload.localPort, 'localPort')
@@ -233,6 +324,7 @@ export function parseChainImportJSON(raw: string): { form: ChainImportForm; grou
       firstMode: first.proxyConfig ? 'node' : 'standard',
       firstNodeProtocol: detectChainNodeProtocol(first.proxyConfig || ''),
       firstNodeSource: 'manual',
+      firstProxyId: '',
       firstProxyConfig: first.proxyConfig || '',
       first: {
         protocol: first.protocol || 'http',

@@ -257,7 +257,7 @@ func speedTestRuntimeError(engine string, src string, proxies []config.BrowserPr
 			}
 		}
 	}
-	key := computeNodeKey(normalizeNodeScheme(src) + "\x00" + dnsServers)
+	key := computeNodeKey(chainProxyRuntimeKeySource(normalizeNodeScheme(src), proxies, proxyId) + "\x00" + dnsServers)
 	return latestXrayErrorSummary(filepath.Join(xrayMgr.resolveWorkdir(key), "xray-error.log"))
 }
 

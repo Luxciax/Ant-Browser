@@ -71,7 +71,19 @@ func (m *SingBoxManager) ensureBridgeContext(ctx context.Context, proxyConfig st
 		routeOutbound = "proxy-out"
 		preferredPort int
 	)
-	if IsChainSocks5Proxy(src) {
+	if IsChainProxy(src) {
+		chainCfg, err := ParseChainProxyConfig(src)
+		if err != nil {
+			log.Error("通用链式节点解析失败", logger.F("error", err))
+			return "", "", err
+		}
+		outbounds, routeOutbound, err = buildSingBoxReferencedChainOutbounds(chainCfg, proxies, proxyId)
+		if err != nil {
+			log.Error("通用链式节点构建失败", logger.F("error", err))
+			return "", "", err
+		}
+		preferredPort = chainCfg.LocalPort
+	} else if IsChainSocks5Proxy(src) {
 		chainCfg, err := ParseChainSocks5Config(src)
 		if err != nil {
 			log.Error("链式节点解析失败", logger.F("error", err))
@@ -92,7 +104,7 @@ func (m *SingBoxManager) ensureBridgeContext(ctx context.Context, proxyConfig st
 		outbounds = []interface{}{outbound}
 	}
 
-	key := computeNodeKey(src)
+	key := computeNodeKey(chainProxyRuntimeKeySource(src, proxies, proxyId))
 
 	if socksURL, reused := m.tryReuseBridge(key, pin); reused {
 		log.Info("复用 sing-box 桥接", logger.F("engine", "sing-box"), logger.F("key", key[:8]), logger.F("socks_url", socksURL))

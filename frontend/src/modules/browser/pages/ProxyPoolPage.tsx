@@ -260,7 +260,9 @@ export function ProxyPoolPage() {
         dnsServers: proxy.dnsServers || '',
         groupName: proxy.groupName || '',
       })
-      const nextChainForm = toChainImportForm(proxy.proxyName, proxy.proxyConfig)
+      const nextChainForm = proxy.proxyConfig.trim().toLowerCase().startsWith('chain+proxy://')
+        ? null
+        : toChainImportForm(proxy.proxyName, proxy.proxyConfig, proxies)
       const nextDirectForm = nextChainForm ? null : toDirectImportForm(proxy.proxyName, proxy.proxyConfig)
       if (nextChainForm) {
         setChainEditMode(true)

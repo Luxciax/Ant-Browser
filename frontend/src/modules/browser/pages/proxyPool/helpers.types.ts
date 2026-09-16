@@ -26,7 +26,7 @@ export interface DirectImportForm {
 }
 
 export interface ChainHopForm {
-  protocol: 'http' | 'socks5'
+  protocol: 'http' | 'https' | 'socks5'
   server: string
   port: string
   username: string
@@ -43,13 +43,14 @@ export interface ChainImportForm {
   firstMode: ChainFirstHopMode
   firstNodeProtocol: ChainNodeProtocol
   firstNodeSource: ChainNodeSource
+  firstProxyId: string
   firstProxyConfig: string
   first: ChainHopForm
   second: ChainHopForm
 }
 
 export interface ChainSocks5HopConfig {
-  protocol?: 'http' | 'socks5'
+  protocol?: 'http' | 'https' | 'socks5'
   server?: string
   port?: number
   username?: string
@@ -64,15 +65,22 @@ export interface ChainSocks5Config {
 }
 
 export const CHAIN_SOCKS5_PREFIX = 'chain+socks5://'
+export const CHAIN_PROXY_PREFIX = 'chain+proxy://'
+
+export interface ChainProxyConfig {
+  version: 2
+  frontProxyId: string
+  landing: ChainSocks5HopConfig
+  localPort?: number
+  preferredKernel?: string
+}
 
 export const CHAIN_QUICK_IMPORT_TEMPLATE = `{
   "name": "",
   "group": "",
   "localPort": "",
-  "first": {
-    "proxyConfig": "vless://UUID@example.com:443?security=tls&sni=example.com&type=tcp"
-  },
-  "second": {
+  "frontProxyId": "从代理池选择节点后自动填入",
+  "landing": {
     "protocol": "socks5",
     "server": "",
     "port": "",
@@ -122,6 +130,7 @@ export const INITIAL_CHAIN_IMPORT_FORM: ChainImportForm = {
   firstMode: 'standard',
   firstNodeProtocol: 'vless',
   firstNodeSource: 'pool',
+  firstProxyId: '',
   firstProxyConfig: '',
   first: {
     protocol: 'http',

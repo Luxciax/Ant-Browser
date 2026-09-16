@@ -46,7 +46,18 @@ func (m *XrayManager) ensureBridgeContext(ctx context.Context, proxyConfig strin
 		preferredPort int
 	)
 
-	if IsChainSocks5Proxy(src) {
+	if IsChainProxy(src) {
+		chainCfg, err := ParseChainProxyConfig(src)
+		if err != nil {
+			log.Error("通用链式节点解析失败", logger.F("error", err))
+			return "", "", err
+		}
+		outbounds, routes, err = buildXrayReferencedChainOutbounds(chainCfg, proxies, proxyId)
+		if err != nil {
+			return "", "", err
+		}
+		preferredPort = chainCfg.LocalPort
+	} else if IsChainSocks5Proxy(src) {
 		chainCfg, err := ParseChainSocks5Config(src)
 		if err != nil {
 			log.Error("链式节点解析失败", logger.F("error", err))
@@ -106,7 +117,7 @@ func (m *XrayManager) ensureBridgeContext(ctx context.Context, proxyConfig strin
 			}
 		}
 	}
-	key := computeNodeKey(src + "\x00" + dnsServers)
+	key := computeNodeKey(chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00" + dnsServers)
 
 	if socksURL, reused := m.tryReuseBridge(key, pin); reused {
 		log.Info("复用 xray 桥接进程", logger.F("engine", "xray"), logger.F("key", key), logger.F("socks_url", socksURL))

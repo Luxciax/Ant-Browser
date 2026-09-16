@@ -93,10 +93,10 @@ func BuildProxyDiagnostic(proxyConfig string, proxies []config.BrowserProxy, pro
 	}
 	switch resolution.Kernel {
 	case ProxyKernelMihomo:
-		buildMihomoDiagnostic(src, options.ClashMgr, &result)
+		buildMihomoDiagnostic(src, proxies, proxyId, options.ClashMgr, &result)
 		return result
 	case ProxyKernelSingBox:
-		buildSingBoxDiagnostic(src, options.SingBoxMgr, &result)
+		buildSingBoxDiagnostic(src, proxies, proxyId, options.SingBoxMgr, &result)
 		return result
 	case ProxyKernelXray:
 		buildXrayDiagnostic(src, proxies, proxyId, options.XrayMgr, &result)
@@ -111,8 +111,33 @@ func BuildProxyDiagnostic(proxyConfig string, proxies []config.BrowserProxy, pro
 	return result
 }
 
-func buildMihomoDiagnostic(src string, manager *ClashManager, result *ProxyBuildDiagnostic) {
+func buildMihomoDiagnostic(src string, proxies []config.BrowserProxy, proxyId string, manager *ClashManager, result *ProxyBuildDiagnostic) {
 	result.Engine = "mihomo"
+	if IsChainProxy(src) {
+		cfg, err := ParseChainProxyConfig(src)
+		if err != nil {
+			result.Errors = append(result.Errors, err.Error())
+			return
+		}
+		nodes, _, err := buildMihomoReferencedChainNodes(cfg, proxies, proxyId)
+		if err != nil {
+			result.Errors = append(result.Errors, err.Error())
+			return
+		}
+		result.Ok = true
+		result.NodeKey = computeNodeKey(chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00mihomo")
+		for _, node := range nodes {
+			if item, ok := node.(map[string]interface{}); ok {
+				result.Outbounds = append(result.Outbounds, sanitizeDiagnosticMap(item))
+			}
+		}
+		if manager != nil {
+			workDir := manager.resolveMihomoWorkdir(result.NodeKey)
+			result.Runtime = buildRuntimeDiagnostic(workDir, "mihomo-config.yaml", "mihomo-stderr.log", "", "")
+			fillMihomoBridgeState(manager, result.NodeKey, &result.Runtime)
+		}
+		return
+	}
 	node, err := buildMihomoNode(src)
 	if err != nil {
 		result.Errors = append(result.Errors, err.Error())
@@ -128,9 +153,27 @@ func buildMihomoDiagnostic(src string, manager *ClashManager, result *ProxyBuild
 	}
 }
 
-func buildSingBoxDiagnostic(src string, manager *SingBoxManager, result *ProxyBuildDiagnostic) {
+func buildSingBoxDiagnostic(src string, proxies []config.BrowserProxy, proxyId string, manager *SingBoxManager, result *ProxyBuildDiagnostic) {
 	result.Engine = "sing-box"
-	if IsChainSocks5Proxy(src) {
+	if IsChainProxy(src) {
+		chainCfg, err := ParseChainProxyConfig(src)
+		if err != nil {
+			result.Errors = append(result.Errors, err.Error())
+			return
+		}
+		outbounds, routeOutbound, err := buildSingBoxReferencedChainOutbounds(chainCfg, proxies, proxyId)
+		if err != nil {
+			result.Errors = append(result.Errors, err.Error())
+			return
+		}
+		result.Outbounds = make([]interface{}, 0, len(outbounds))
+		for _, outbound := range outbounds {
+			if item, ok := outbound.(map[string]interface{}); ok {
+				result.Outbounds = append(result.Outbounds, sanitizeDiagnosticMap(item))
+			}
+		}
+		result.Routes = []interface{}{map[string]interface{}{"inbound": []string{"socks-in"}, "outbound": routeOutbound}}
+	} else if IsChainSocks5Proxy(src) {
 		chainCfg, err := ParseChainSocks5Config(src)
 		if err != nil {
 			result.Errors = append(result.Errors, err.Error())
@@ -157,7 +200,7 @@ func buildSingBoxDiagnostic(src string, manager *SingBoxManager, result *ProxyBu
 		result.Outbound = sanitizeDiagnosticMap(outbound)
 	}
 	result.Ok = true
-	result.NodeKey = computeNodeKey(src)
+	result.NodeKey = computeNodeKey(chainProxyRuntimeKeySource(src, proxies, proxyId))
 	if manager != nil {
 		workDir := manager.resolveWorkdir(result.NodeKey)
 		result.Runtime = buildRuntimeDiagnostic(workDir, "singbox-config.json", "singbox-stderr.log", "singbox.log", "")
@@ -168,7 +211,24 @@ func buildSingBoxDiagnostic(src string, manager *SingBoxManager, result *ProxyBu
 func buildXrayDiagnostic(src string, proxies []config.BrowserProxy, proxyId string, manager *XrayManager, result *ProxyBuildDiagnostic) {
 	result.Engine = "xray"
 	var preferredKeySource string
-	if IsChainSocks5Proxy(src) {
+	if IsChainProxy(src) {
+		chainCfg, err := ParseChainProxyConfig(src)
+		if err != nil {
+			result.Errors = append(result.Errors, err.Error())
+			return
+		}
+		outbounds, routes, err := buildXrayReferencedChainOutbounds(chainCfg, proxies, proxyId)
+		if err != nil {
+			result.Errors = append(result.Errors, err.Error())
+			return
+		}
+		for _, outbound := range outbounds {
+			if item, ok := outbound.(map[string]interface{}); ok {
+				result.Outbounds = append(result.Outbounds, sanitizeDiagnosticMap(item))
+			}
+		}
+		result.Routes = routes
+	} else if IsChainSocks5Proxy(src) {
 		chainCfg, err := ParseChainSocks5Config(src)
 		if err != nil {
 			result.Errors = append(result.Errors, err.Error())
@@ -212,7 +272,7 @@ func buildXrayDiagnostic(src string, proxies []config.BrowserProxy, proxyId stri
 
 	result.Ok = true
 	result.Inbound = buildXrayDiagnosticInbound()
-	preferredKeySource = src + "\x00" + dnsServersForDiagnostic(proxies, proxyId)
+	preferredKeySource = chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00" + dnsServersForDiagnostic(proxies, proxyId)
 	result.NodeKey = computeNodeKey(preferredKeySource)
 	if manager != nil {
 		workDir := manager.resolveWorkdir(result.NodeKey)
