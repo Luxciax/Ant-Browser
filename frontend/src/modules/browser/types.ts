@@ -135,7 +135,14 @@ export interface BrowserProfilePackageExportResult {
   zipPath: string
   profileCount: number
   fileCount: number
+  portableLoginCount?: number
+  warnings?: string[]
   message: string
+}
+
+export interface BrowserProfilePackageExportOptions {
+  portableLogin: boolean
+  migrationPassword: string
 }
 
 export interface BrowserProfilePackageImportResult {
@@ -198,6 +205,9 @@ export interface BrowserProfilePackageImportPreview {
   canOverwrite: boolean
   profiles: BrowserProfilePackageImportPreviewProfile[]
   conflicts: BrowserProfilePackageImportConflict[]
+  portableLogin?: boolean
+  portableLoginCount?: number
+  requiresMigrationPassword?: boolean
   message: string
 }
 

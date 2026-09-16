@@ -362,13 +362,17 @@ export function BackupPage() {
     }
   }
 
-  const executeProfileImport = async (preview: BrowserProfilePackageImportPreview, actions: BrowserProfilePackageImportAction[]) => {
+  const executeProfileImport = async (
+    preview: BrowserProfilePackageImportPreview,
+    actions: BrowserProfilePackageImportAction[],
+    migrationPassword: string,
+  ) => {
     setProfileImportPreview(null)
     setProfileImportBusy(true)
     setActionLoading('import-merge')
     setImportProgress({ phase: 'importing', progress: 40, message: '正在导入实例备份...' })
     try {
-      const result = await importBrowserProfilePackageWithOptions(preview.zipPath, 'new', true, actions)
+      const result = await importBrowserProfilePackageWithOptions(preview.zipPath, 'new', true, actions, migrationPassword)
       if (result.cancelled) {
         setImportProgress(null)
         return
@@ -524,9 +528,9 @@ export function BackupPage() {
         preview={profileImportPreview}
         busy={profileImportBusy}
         onClose={() => setProfileImportPreview(null)}
-        onConfirm={(actions) => {
+        onConfirm={(actions, migrationPassword) => {
           if (profileImportPreview) {
-            void executeProfileImport(profileImportPreview, actions)
+            void executeProfileImport(profileImportPreview, actions, migrationPassword)
           }
         }}
       />

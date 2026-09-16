@@ -108,6 +108,10 @@ func (a *App) BrowserExtensionInstallManualDownloadFile(fileName string) (backen
 	return a.App.BrowserExtensionInstallManualDownloadFile(fileName)
 }
 
+func (a *App) BrowserProfilePackageExportWithOptions(profileIds []string, options backend.ProfilePackageExportOptions) (backend.ProfilePackageExportResult, error) {
+	return a.App.BrowserProfilePackageExportWithOptions(profileIds, options)
+}
+
 func (a *App) BrowserProfilePackagePrepareImport() (backend.ProfilePackageImportPreview, error) {
 	return a.App.BrowserProfilePackagePrepareImport()
 }
@@ -183,6 +187,19 @@ func main() {
 		} else {
 			appRoot = "."
 		}
+	}
+
+	// `wails generate module` builds and executes this program with the
+	// `bindings` build tag. Binding generation must reach wails.Run without
+	// taking the normal desktop single-instance lock or starting runtime
+	// services; otherwise an already-running Ant Browser instance can leave
+	// stale frontend bindings behind.
+	if isWailsBindingsBuild {
+		app := NewApp(appRoot, resolveBuildVersion())
+		if err := wails.Run(&options.App{Bind: []interface{}{app}}); err != nil {
+			log.Fatal("生成 Wails bindings 失败:", err)
+		}
+		return
 	}
 
 	startupDebugEnabled := envFlagEnabled("ANT_BROWSER_DEBUG_STARTUP")

@@ -6,6 +6,7 @@ import type {
   BrowserFingerprintCheckResult,
   BrowserProfileCopyOptions,
   BrowserProfileInput,
+  BrowserProfilePackageExportOptions,
   BrowserProfilePackageExportResult,
   BrowserProfilePackageImportPreview,
   BrowserProfilePackageImportAction,
@@ -145,8 +146,14 @@ export async function fetchAllTags(): Promise<string[]> {
   return Array.from(tags).sort()
 }
 
-export async function exportBrowserProfilePackage(profileIds: string[]): Promise<BrowserProfilePackageExportResult> {
+export async function exportBrowserProfilePackage(
+  profileIds: string[],
+  options?: BrowserProfilePackageExportOptions,
+): Promise<BrowserProfilePackageExportResult> {
   const bindings: any = await getBindings()
+  if (options && bindings?.BrowserProfilePackageExportWithOptions) {
+    return await bindings.BrowserProfilePackageExportWithOptions(profileIds, options)
+  }
   if (bindings?.BrowserProfilePackageExport) {
     return await bindings.BrowserProfilePackageExport(profileIds)
   }
@@ -194,10 +201,16 @@ export async function importBrowserProfilePackageWithOptions(
   conflictMode: 'new' | 'overwrite' | 'rename',
   confirmConflict = false,
   actions: BrowserProfilePackageImportAction[] = [],
+  migrationPassword = '',
 ): Promise<BrowserProfilePackageImportResult> {
   const bindings: any = await getBindings()
   if (bindings?.BrowserProfilePackageImportWithOptions) {
-    return await bindings.BrowserProfilePackageImportWithOptions(zipPath, { conflictMode, confirmConflict, actions })
+    return await bindings.BrowserProfilePackageImportWithOptions(zipPath, {
+      conflictMode,
+      confirmConflict,
+      actions,
+      migrationPassword,
+    })
   }
   return {
     cancelled: true,

@@ -27,16 +27,25 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from '../../shared/components'
-import type { BrowserCore, BrowserProfile, BrowserProxy } from '../../modules/browser/types'
+import type {
+  BrowserCore,
+  BrowserProfile,
+  BrowserProfilePackageImportAction,
+  BrowserProfilePackageImportPreview,
+  BrowserProxy,
+} from '../../modules/browser/types'
 import {
   browserProxyTestSpeed,
   deleteBrowserProfile,
   exportBrowserProfilePackage,
   fetchBrowserCores,
-  importBrowserProfilePackage,
+  importBrowserProfilePackageWithOptions,
   openUserDataDir,
+  prepareBrowserProfilePackageImport,
   updateBrowserProfile,
 } from '../../modules/browser/api'
+import { ProfilePackageExportModal } from '../../modules/browser/components/ProfilePackageExportModal'
+import { ProfilePackageConflictModal } from '../../modules/backup/components/ProfilePackageConflictModal'
 import { EMPTY_FILTERS } from '../../modules/browser/components/InstanceFilterBar'
 import { useBrowserListData } from '../../modules/browser/pages/browserList/useBrowserListData'
 import { useBrowserListDerived, useBrowserListViewState } from '../../modules/browser/pages/browserList/useBrowserListViewState'
@@ -70,6 +79,9 @@ export function BrowserListV2Page() {
   const [pendingStartId, setPendingStartId] = useState<string | null>(null)
   const [opError, setOpError] = useState('')
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [profilePackageBusy, setProfilePackageBusy] = useState(false)
+  const [profileExportIds, setProfileExportIds] = useState<string[]>([])
+  const [profileImportPreview, setProfileImportPreview] = useState<BrowserProfilePackageImportPreview | null>(null)
   const [keywordsProfile, setKeywordsProfile] = useState<BrowserProfile | null>(null)
   const [extensionsProfile, setExtensionsProfile] = useState<BrowserProfile | null>(null)
   const [proxyPickerProfile, setProxyPickerProfile] = useState<BrowserProfile | null>(null)
@@ -170,15 +182,7 @@ export function BrowserListV2Page() {
       toast.error(`请先停止实例再导出：${running.slice(0, 3).map((profile) => profile.profileName).join('、')}${running.length > 3 ? ' 等' : ''}`)
       return
     }
-    setBulkBusy(true)
-    try {
-      const result = await exportBrowserProfilePackage(Array.from(selectedIds))
-      if (!result.cancelled) toast.success(result.message || `已导出 ${result.profileCount} 个实例`)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '批量导出失败')
-    } finally {
-      setBulkBusy(false)
-    }
+    setProfileExportIds(Array.from(selectedIds))
   }
 
   const confirmBatchDelete = async () => {
@@ -198,14 +202,16 @@ export function BrowserListV2Page() {
   }
 
   const handleImport = async () => {
+    if (profilePackageBusy) return
+    setProfilePackageBusy(true)
     try {
-      const result = await importBrowserProfilePackage()
-      if (!result.cancelled) {
-        toast.success(result.message || `已导入 ${result.importedCount} 个实例`)
-        await loadProfiles()
-      }
+      const preview = await prepareBrowserProfilePackageImport()
+      if (preview.cancelled) return
+      setProfileImportPreview(preview)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '导入实例失败')
+    } finally {
+      setProfilePackageBusy(false)
     }
   }
 
@@ -227,11 +233,44 @@ export function BrowserListV2Page() {
       toast.error(`请先停止实例再导出：${profile.profileName}`)
       return
     }
+    setProfileExportIds([profile.profileId])
+  }
+
+  const executeProfileExport = async (options: NonNullable<Parameters<typeof exportBrowserProfilePackage>[1]>) => {
+    if (profileExportIds.length === 0) return
+    setProfilePackageBusy(true)
     try {
-      const result = await exportBrowserProfilePackage([profile.profileId])
-      if (!result.cancelled) toast.success(result.message || '实例已导出')
+      const result = await exportBrowserProfilePackage(profileExportIds, options)
+      if (result.cancelled) return
+      const warning = result.warnings?.[0]
+      const summary = `已导出 ${result.profileCount} 个实例${result.portableLoginCount ? `，其中 ${result.portableLoginCount} 个包含可迁移登录态` : ''}`
+      if (warning) toast.warning(`${summary}；${warning}`)
+      else toast.success(summary)
+      setProfileExportIds([])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '导出实例失败')
+    } finally {
+      setProfilePackageBusy(false)
+    }
+  }
+
+  const executeProfileImport = async (actions: BrowserProfilePackageImportAction[], migrationPassword: string) => {
+    if (!profileImportPreview) return
+    const preview = profileImportPreview
+    setProfilePackageBusy(true)
+    try {
+      const result = await importBrowserProfilePackageWithOptions(preview.zipPath, 'new', true, actions, migrationPassword)
+      if (result.cancelled) return
+      const warning = result.warnings?.[0]
+      const summary = result.message || `已导入 ${result.importedCount} 个实例`
+      if (warning) toast.warning(`${summary}；${warning}`)
+      else toast.success(summary)
+      setProfileImportPreview(null)
+      await loadProfiles()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '导入实例失败')
+    } finally {
+      setProfilePackageBusy(false)
     }
   }
 
@@ -468,6 +507,19 @@ export function BrowserListV2Page() {
       {proxyPickerProfile ? <ProxyPickerV2Modal profile={proxyPickerProfile} proxies={proxies} onSelect={(proxy) => saveProfileProxy(proxyPickerProfile, proxy)} onClose={() => setProxyPickerProfile(null)} /> : null}
       {trashOpen ? <TrashV2Modal onClose={() => setTrashOpen(false)} onChanged={loadProfiles} /> : null}
       {backupOpen ? <BackupV2Modal selectedProfiles={selectedProfiles} runningCount={runningCount} onClose={() => setBackupOpen(false)} onChanged={loadProfiles} /> : null}
+      <ProfilePackageExportModal
+        open={profileExportIds.length > 0}
+        profileCount={profileExportIds.length}
+        busy={profilePackageBusy}
+        onClose={() => setProfileExportIds([])}
+        onConfirm={(options) => { void executeProfileExport(options) }}
+      />
+      <ProfilePackageConflictModal
+        preview={profileImportPreview}
+        busy={profilePackageBusy}
+        onClose={() => setProfileImportPreview(null)}
+        onConfirm={(actions, migrationPassword) => { void executeProfileImport(actions, migrationPassword) }}
+      />
 
       {opError ? (
         <div className="ui-v2-backdrop"><div className="ui-v2-modal"><div className="ui-v2-modal-head"><strong>操作失败</strong></div><div className="ui-v2-modal-body"><p>{opError}</p></div><div className="ui-v2-modal-foot"><button className="ui-v2-btn primary" type="button" onClick={() => setOpError('')}>知道了</button></div></div></div>

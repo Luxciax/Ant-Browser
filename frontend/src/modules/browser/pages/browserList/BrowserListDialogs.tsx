@@ -45,7 +45,7 @@ interface BrowserListDialogsProps {
   profileImportPreview: BrowserProfilePackageImportPreview | null
   profileImportBusy: boolean
   onCloseProfileImport: () => void
-  onConfirmProfileImport: (actions: BrowserProfilePackageImportAction[]) => void
+  onConfirmProfileImport: (actions: BrowserProfilePackageImportAction[], migrationPassword: string) => void
 }
 
 export function BrowserListDialogs({

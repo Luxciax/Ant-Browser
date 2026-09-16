@@ -4,6 +4,7 @@ import type { BrowserProfile, BrowserProfileCopyOptions, BrowserProfilePackageIm
 import { BrowserCoreEditorModal, BrowserListHeader, BrowserListSettingsModal } from '../components/BrowserListLayout'
 import { BatchToolbar } from '../components/BrowserListWidgets'
 import { BrowserProfilesPanel } from '../components/BrowserProfilesPanel'
+import { ProfilePackageExportModal } from '../components/ProfilePackageExportModal'
 import { ProxyPickerModal } from '../components/ProxyPickerModal'
 import { ProfileExtensionModal } from '../components/ProfileExtensionModal'
 import { createBrowserProfileCopyOptions, isBrowserProfileCopyOptionsValid } from '../copyOptions'
@@ -46,6 +47,7 @@ export function BrowserListPage() {
   const [batchLoading, setBatchLoading] = useState(false)
   const [profilePackageBusy, setProfilePackageBusy] = useState(false)
   const [profileImportPreview, setProfileImportPreview] = useState<BrowserProfilePackageImportPreview | null>(null)
+  const [profileExportIds, setProfileExportIds] = useState<string[]>([])
   const [deleteConfirm, setDeleteConfirm] = useState<{
     open: boolean
     mode: 'single' | 'batch'
@@ -310,16 +312,7 @@ export function BrowserListPage() {
       toast.error(`请先停止实例再导出：${runningNames.slice(0, 3).join('、')}${runningNames.length > 3 ? ' 等' : ''}`)
       return
     }
-    setProfilePackageBusy(true)
-    try {
-      const result = await exportBrowserProfilePackage(ids)
-      if (result.cancelled) return
-      toast.success(`已导出 ${result.profileCount} 个实例`)
-    } catch (error: any) {
-      toast.error(error?.message || '导出实例失败')
-    } finally {
-      setProfilePackageBusy(false)
-    }
+    setProfileExportIds(ids)
   }
 
   const handleExportProfile = async (profile: BrowserProfile) => {
@@ -328,11 +321,23 @@ export function BrowserListPage() {
       toast.error(`请先停止实例再导出：${profile.profileName}`)
       return
     }
+    setProfileExportIds([profile.profileId])
+  }
+
+  const executeProfileExport = async (options: NonNullable<Parameters<typeof exportBrowserProfilePackage>[1]>) => {
+    if (profileExportIds.length === 0) return
     setProfilePackageBusy(true)
     try {
-      const result = await exportBrowserProfilePackage([profile.profileId])
+      const result = await exportBrowserProfilePackage(profileExportIds, options)
       if (result.cancelled) return
-      toast.success(`已导出：${profile.profileName}`)
+      const warning = result.warnings?.[0]
+      const portableSummary = result.portableLoginCount
+        ? `，其中 ${result.portableLoginCount} 个包含可迁移登录态`
+        : ''
+      const summary = `已导出 ${result.profileCount} 个实例${portableSummary}`
+      if (warning) toast.warning(`${summary}；${warning}`)
+      else toast.success(summary)
+      setProfileExportIds([])
     } catch (error: any) {
       toast.error(error?.message || '导出实例失败')
     } finally {
@@ -355,7 +360,12 @@ export function BrowserListPage() {
     }
   }
 
-  const executeProfileImport = async (zipPath: string, actions: BrowserProfilePackageImportAction[], confirmConflict = false) => {
+  const executeProfileImport = async (
+    zipPath: string,
+    actions: BrowserProfilePackageImportAction[],
+    confirmConflict = false,
+    migrationPassword = '',
+  ) => {
     if (!zipPath.trim()) {
       setProfileImportPreview(null)
       setProfilePackageBusy(false)
@@ -363,7 +373,7 @@ export function BrowserListPage() {
     }
     setProfileImportPreview(null)
     try {
-      const result = await importBrowserProfilePackageWithOptions(zipPath, 'new', confirmConflict, actions)
+      const result = await importBrowserProfilePackageWithOptions(zipPath, 'new', confirmConflict, actions, migrationPassword)
       if (result.cancelled) return
       const warnings = result.warnings || []
       const createdCount = result.createdCount ?? Math.max(0, result.importedCount - (result.overwrittenCount || 0))
@@ -665,6 +675,14 @@ export function BrowserListPage() {
         }}
       />
 
+      <ProfilePackageExportModal
+        open={profileExportIds.length > 0}
+        profileCount={profileExportIds.length}
+        busy={profilePackageBusy}
+        onClose={() => setProfileExportIds([])}
+        onConfirm={(options) => { void executeProfileExport(options) }}
+      />
+
       <BrowserListDialogs
         proxyErrorModal={proxyErrorModal}
         pendingStartId={pendingStartId}
@@ -718,9 +736,9 @@ export function BrowserListPage() {
           setProfileImportPreview(null)
           setProfilePackageBusy(false)
         }}
-        onConfirmProfileImport={(actions) => {
+        onConfirmProfileImport={(actions, migrationPassword) => {
           if (profileImportPreview) {
-            void executeProfileImport(profileImportPreview.zipPath, actions, true)
+            void executeProfileImport(profileImportPreview.zipPath, actions, true, migrationPassword)
           }
         }}
       />

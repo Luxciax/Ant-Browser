@@ -11,7 +11,7 @@ interface ProfilePackageConflictModalProps {
   preview: BrowserProfilePackageImportPreview | null
   busy?: boolean
   onClose: () => void
-  onConfirm: (actions: BrowserProfilePackageImportAction[]) => void
+  onConfirm: (actions: BrowserProfilePackageImportAction[], migrationPassword: string) => void
 }
 
 function defaultAction(row: BrowserProfilePackageImportPreviewProfile): BrowserProfilePackageImportAction {
@@ -46,11 +46,13 @@ export function ProfilePackageConflictModal({
 }: ProfilePackageConflictModalProps) {
   const [actions, setActions] = useState<Record<number, BrowserProfilePackageImportAction>>({})
   const [validationError, setValidationError] = useState('')
+  const [migrationPassword, setMigrationPassword] = useState('')
 
   useEffect(() => {
     if (!preview) {
       setActions({})
       setValidationError('')
+      setMigrationPassword('')
       return
     }
     const next: Record<number, BrowserProfilePackageImportAction> = {}
@@ -59,6 +61,7 @@ export function ProfilePackageConflictModal({
     })
     setActions(next)
     setValidationError('')
+    setMigrationPassword('')
   }, [preview])
 
   const updateAction = (row: BrowserProfilePackageImportPreviewProfile, mode: BrowserProfilePackageImportActionMode) => {
@@ -98,10 +101,17 @@ export function ProfilePackageConflictModal({
       setValidationError('请填写所有重命名实例的新名称')
       return
     }
+
+    const normalizedMigrationPassword = migrationPassword.trim()
+    if (preview.requiresMigrationPassword && normalizedMigrationPassword.length < 8) {
+      setValidationError('该实例包包含可迁移登录态，请输入导出时设置的迁移密码（至少 8 个字符）')
+      return
+    }
+
     onConfirm(resolvedActions.map((action) => ({
       ...action,
       profileName: action.mode === 'rename' ? action.profileName?.trim() : '',
-    })))
+    })), normalizedMigrationPassword)
   }
 
   return (
@@ -126,6 +136,26 @@ export function ProfilePackageConflictModal({
           <div className="text-xs text-[var(--color-warning)]">
             覆盖会把旧实例及用户数据移入回收站；新建和重命名都会保留旧实例。
           </div>
+          {preview.requiresMigrationPassword && (
+            <div className="rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-muted)] p-3">
+              <div className="text-sm font-medium text-[var(--color-text-primary)]">恢复跨电脑登录态</div>
+              <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
+                此包包含 {preview.portableLoginCount || 0} 个实例的加密登录态迁移数据。密码仅用于解开浏览器主密钥，不会保存到配置或数据库。
+              </div>
+              <input
+                type="password"
+                value={migrationPassword}
+                onChange={(event) => {
+                  setMigrationPassword(event.target.value)
+                  setValidationError('')
+                }}
+                disabled={busy}
+                autoComplete="off"
+                placeholder="输入导出时设置的迁移密码"
+                className="mt-3 w-full rounded-md border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:border-[var(--color-primary)]"
+              />
+            </div>
+          )}
           <div className="overflow-x-auto rounded-lg border border-[var(--color-border-default)]">
             <table className="w-full min-w-[860px] border-collapse text-left">
               <thead className="bg-[var(--color-bg-muted)] text-xs text-[var(--color-text-secondary)]">

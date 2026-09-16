@@ -21,20 +21,29 @@ import (
 const profilePackageFormat = "ant-chrome-profile-package"
 
 type ProfilePackageManifest struct {
-	Format          string   `json:"format"`
-	Version         int      `json:"version"`
-	ExportedAt      string   `json:"exportedAt"`
-	ProfileCount    int      `json:"profileCount"`
-	ProfileNames    []string `json:"profileNames,omitempty"`
-	DatabaseVersion int      `json:"databaseVersion,omitempty"`
+	Format                string   `json:"format"`
+	Version               int      `json:"version"`
+	ExportedAt            string   `json:"exportedAt"`
+	ProfileCount          int      `json:"profileCount"`
+	ProfileNames          []string `json:"profileNames,omitempty"`
+	DatabaseVersion       int      `json:"databaseVersion,omitempty"`
+	PortableLogin         bool     `json:"portableLogin,omitempty"`
+	PortableLoginProfiles []string `json:"portableLoginProfiles,omitempty"`
+}
+
+type ProfilePackageExportOptions struct {
+	PortableLogin     bool   `json:"portableLogin"`
+	MigrationPassword string `json:"migrationPassword"`
 }
 
 type ProfilePackageExportResult struct {
-	Cancelled    bool   `json:"cancelled"`
-	ZipPath      string `json:"zipPath"`
-	ProfileCount int    `json:"profileCount"`
-	FileCount    int    `json:"fileCount"`
-	Message      string `json:"message"`
+	Cancelled          bool     `json:"cancelled"`
+	ZipPath            string   `json:"zipPath"`
+	ProfileCount       int      `json:"profileCount"`
+	FileCount          int      `json:"fileCount"`
+	PortableLoginCount int      `json:"portableLoginCount"`
+	Warnings           []string `json:"warnings,omitempty"`
+	Message            string   `json:"message"`
 }
 
 type ProfilePackageImportResult struct {
@@ -49,9 +58,10 @@ type ProfilePackageImportResult struct {
 }
 
 type ProfilePackageImportOptions struct {
-	Actions         []ProfilePackageImportAction `json:"actions,omitempty"`
-	ConflictMode    string                       `json:"conflictMode"`
-	ConfirmConflict bool                         `json:"confirmConflict"`
+	Actions           []ProfilePackageImportAction `json:"actions,omitempty"`
+	ConflictMode      string                       `json:"conflictMode"`
+	ConfirmConflict   bool                         `json:"confirmConflict"`
+	MigrationPassword string                       `json:"migrationPassword,omitempty"`
 }
 
 type ProfilePackageImportAction struct {
@@ -94,14 +104,17 @@ type ProfilePackageImportPreviewProfile struct {
 }
 
 type ProfilePackageImportPreview struct {
-	Profiles      []ProfilePackageImportPreviewProfile `json:"profiles"`
-	Cancelled     bool                                 `json:"cancelled"`
-	ZipPath       string                               `json:"zipPath"`
-	ProfileCount  int                                  `json:"profileCount"`
-	ConflictCount int                                  `json:"conflictCount"`
-	CanOverwrite  bool                                 `json:"canOverwrite"`
-	Conflicts     []ProfilePackageImportConflict       `json:"conflicts"`
-	Message       string                               `json:"message"`
+	Profiles                  []ProfilePackageImportPreviewProfile `json:"profiles"`
+	Cancelled                 bool                                 `json:"cancelled"`
+	ZipPath                   string                               `json:"zipPath"`
+	ProfileCount              int                                  `json:"profileCount"`
+	ConflictCount             int                                  `json:"conflictCount"`
+	CanOverwrite              bool                                 `json:"canOverwrite"`
+	Conflicts                 []ProfilePackageImportConflict       `json:"conflicts"`
+	PortableLogin             bool                                 `json:"portableLogin"`
+	PortableLoginCount        int                                  `json:"portableLoginCount"`
+	RequiresMigrationPassword bool                                 `json:"requiresMigrationPassword"`
+	Message                   string                               `json:"message"`
 }
 
 const (
@@ -125,6 +138,7 @@ type preparedProfilePackageImport struct {
 
 type profilePackageContents struct {
 	Reader           *zip.ReadCloser
+	Manifest         ProfilePackageManifest
 	Profiles         []browser.Profile
 	DatabaseSnapshot *ProfilePackageDatabase
 }
@@ -150,8 +164,19 @@ type profilePackageDirectorySwap struct {
 
 // BrowserProfilePackageExport 导出选中的实例配置和浏览器用户数据目录。
 func (a *App) BrowserProfilePackageExport(profileIds []string) (ProfilePackageExportResult, error) {
+	return a.browserProfilePackageExportWithOptions(profileIds, ProfilePackageExportOptions{})
+}
+
+func (a *App) BrowserProfilePackageExportWithOptions(profileIds []string, options ProfilePackageExportOptions) (ProfilePackageExportResult, error) {
+	return a.browserProfilePackageExportWithOptions(profileIds, options)
+}
+
+func (a *App) browserProfilePackageExportWithOptions(profileIds []string, options ProfilePackageExportOptions) (ProfilePackageExportResult, error) {
 	a.maintenanceMu.Lock()
 	defer a.maintenanceMu.Unlock()
+	if options.PortableLogin && len(strings.TrimSpace(options.MigrationPassword)) < 8 {
+		return ProfilePackageExportResult{}, fmt.Errorf("登录态迁移密码至少需要 8 个字符")
+	}
 
 	ids := normalizeProfilePackageIDs(profileIds)
 	if len(ids) == 0 {
@@ -175,7 +200,7 @@ func (a *App) BrowserProfilePackageExport(profileIds []string) (ProfilePackageEx
 		return ProfilePackageExportResult{Cancelled: true, Message: "已取消导出"}, nil
 	}
 
-	fileCount, err := a.writeProfilePackage(savePath, profiles)
+	fileCount, portableLoginCount, warnings, err := a.writeProfilePackageWithOptions(savePath, profiles, options)
 	if err != nil {
 		return ProfilePackageExportResult{}, err
 	}
@@ -184,6 +209,8 @@ func (a *App) BrowserProfilePackageExport(profileIds []string) (ProfilePackageEx
 		ZipPath:      savePath,
 		ProfileCount: len(profiles),
 		FileCount:    fileCount,
+		PortableLoginCount: portableLoginCount,
+		Warnings: warnings,
 		Message:      "导出完成",
 	}, nil
 }
@@ -245,7 +272,7 @@ func (a *App) BrowserProfilePackagePrepareImportFromPath(zipPath string) (Profil
 func (a *App) BrowserProfilePackageImportWithOptions(zipPath string, options ProfilePackageImportOptions) (ProfilePackageImportResult, error) {
 	a.maintenanceMu.Lock()
 	defer a.maintenanceMu.Unlock()
-	return a.importProfilePackageFromPathWithModeAndActions(zipPath, options.ConflictMode, options.ConfirmConflict, options.Actions)
+	return a.importProfilePackageFromPathWithModeAndActionsAndPassword(zipPath, options.ConflictMode, options.ConfirmConflict, options.Actions, options.MigrationPassword)
 }
 
 func (a *App) collectProfilesForPackage(profileIds []string) ([]browser.Profile, error) {
@@ -364,6 +391,116 @@ func (a *App) writeProfilePackage(zipPath string, profiles []browser.Profile) (i
 	return fileCount, nil
 }
 
+func (a *App) writeProfilePackageWithOptions(zipPath string, profiles []browser.Profile, options ProfilePackageExportOptions) (int, int, []string, error) {
+	if !options.PortableLogin {
+		count, err := a.writeProfilePackage(zipPath, profiles)
+		return count, 0, nil, err
+	}
+
+	portableEnvelopes := make(map[string]profilePortableLoginEnvelope, len(profiles))
+	portableProfiles := make([]string, 0, len(profiles))
+	warnings := make([]string, 0)
+	for i := range profiles {
+		profile := &profiles[i]
+		userDataDir := a.browserMgr.ResolveUserDataDir(profile)
+		envelope, err := createProfilePortableLoginEnvelope(userDataDir, options.MigrationPassword)
+		if err == errPortableLoginKeyMissing {
+			warnings = append(warnings, fmt.Sprintf("实例「%s」未找到可迁移的浏览器加密主密钥，登录态按普通实例数据导出", profile.ProfileName))
+			continue
+		}
+		if err != nil {
+			return 0, 0, warnings, fmt.Errorf("准备实例登录态迁移数据失败 [%s]: %w", profile.ProfileName, err)
+		}
+		portableEnvelopes[profile.ProfileId] = *envelope
+		portableProfiles = append(portableProfiles, profile.ProfileId)
+	}
+
+	databaseSnapshot, err := a.collectProfilePackageDatabase(profiles)
+	if err != nil {
+		return 0, 0, warnings, err
+	}
+	if err := os.MkdirAll(filepath.Dir(zipPath), 0o755); err != nil {
+		return 0, 0, warnings, fmt.Errorf("创建导出目录失败: %w", err)
+	}
+	tmpPath := zipPath + ".tmp"
+	_ = os.Remove(tmpPath)
+	out, err := os.Create(tmpPath)
+	if err != nil {
+		return 0, 0, warnings, fmt.Errorf("创建导出文件失败: %w", err)
+	}
+	zipWriter := zip.NewWriter(out)
+	fileCount := 0
+	manifest := ProfilePackageManifest{
+		Format:                profilePackageFormat,
+		Version:               profilePackageVersion,
+		ExportedAt:            time.Now().Format(time.RFC3339),
+		ProfileCount:          len(profiles),
+		ProfileNames:          profilePackageProfileNames(profiles),
+		DatabaseVersion:       databaseSnapshot.Version,
+		PortableLogin:         len(portableProfiles) > 0,
+		PortableLoginProfiles: portableProfiles,
+	}
+
+	writeErr := func() error {
+		if err := writeProfilePackageJSON(zipWriter, "manifest.json", manifest); err != nil {
+			return err
+		}
+		fileCount++
+		if err := writeProfilePackageJSON(zipWriter, profilePackageDatabasePath, databaseSnapshot); err != nil {
+			return err
+		}
+		fileCount++
+		if err := writeProfilePackageJSON(zipWriter, "profiles.json", profiles); err != nil {
+			return err
+		}
+		fileCount++
+		for _, profileID := range portableProfiles {
+			envelope := portableEnvelopes[profileID]
+			if err := writeProfilePackageJSON(zipWriter, profilePortableLoginEntryName(profileID), envelope); err != nil {
+				return err
+			}
+			fileCount++
+		}
+		for i := range profiles {
+			profile := &profiles[i]
+			userDataDir := a.browserMgr.ResolveUserDataDir(profile)
+			if _, err := os.Stat(userDataDir); err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return fmt.Errorf("读取用户数据目录失败: %w", err)
+			}
+			added, err := writeProfilePackageDir(zipWriter, userDataDir, "user-data/"+profile.ProfileId)
+			if err != nil {
+				return fmt.Errorf("导出用户数据失败 [%s]: %w", profile.ProfileName, err)
+			}
+			fileCount += added
+		}
+		return nil
+	}()
+
+	closeZipErr := zipWriter.Close()
+	closeFileErr := out.Close()
+	if writeErr != nil {
+		_ = os.Remove(tmpPath)
+		return 0, 0, warnings, writeErr
+	}
+	if closeZipErr != nil {
+		_ = os.Remove(tmpPath)
+		return 0, 0, warnings, closeZipErr
+	}
+	if closeFileErr != nil {
+		_ = os.Remove(tmpPath)
+		return 0, 0, warnings, closeFileErr
+	}
+	if err := os.Rename(tmpPath, zipPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return 0, 0, warnings, fmt.Errorf("保存导出文件失败: %w", err)
+	}
+	_, _ = backupWriteProfileMetadata(zipPath, manifest, fileCount, a.appName(), a.appVersion())
+	return fileCount, len(portableProfiles), warnings, nil
+}
+
 func (a *App) importProfilePackageFromPath(zipPath string) (ProfilePackageImportResult, error) {
 	return a.importProfilePackageFromPathWithMode(zipPath, profilePackageImportModeNew)
 }
@@ -385,11 +522,12 @@ func openProfilePackageContents(zipPath string) (*profilePackageContents, error)
 	if err := readProfilePackageJSON(reader.File, "manifest.json", &manifest); err != nil {
 		return nil, err
 	}
-	if manifest.Format != profilePackageFormat || (manifest.Version != 1 && manifest.Version != profilePackageVersion) {
+	if manifest.Format != profilePackageFormat || manifest.Version < 1 || manifest.Version > profilePackageVersion {
 		return nil, fmt.Errorf("不支持的实例包格式")
 	}
+	contents.Manifest = manifest
 	var profiles []browser.Profile
-	if manifest.Version >= profilePackageVersion {
+	if manifest.Version >= profilePackageDatabaseVersionIntroduced {
 		var snapshot ProfilePackageDatabase
 		if err := readProfilePackageJSON(reader.File, profilePackageDatabasePath, &snapshot); err != nil {
 			return nil, err
@@ -428,15 +566,26 @@ func (a *App) prepareProfilePackageImportFromPath(zipPath string) (ProfilePackag
 	if err != nil {
 		return ProfilePackageImportPreview{}, err
 	}
+	portableLoginCount := 0
+	for _, profile := range contents.Profiles {
+		if _, exists, err := readProfilePackagePortableLoginEnvelope(contents.Reader.File, profile.ProfileId); err != nil {
+			return ProfilePackageImportPreview{}, err
+		} else if exists {
+			portableLoginCount++
+		}
+	}
 	return ProfilePackageImportPreview{
-		Cancelled:     false,
-		ZipPath:       zipPath,
-		ProfileCount:  len(contents.Profiles),
-		ConflictCount: len(conflicts),
-		CanOverwrite:  canOverwrite,
-		Profiles:      profiles,
-		Conflicts:     conflicts,
-		Message:       profilePackageImportPreviewMessage(profiles, conflicts),
+		Cancelled:                 false,
+		ZipPath:                   zipPath,
+		ProfileCount:              len(contents.Profiles),
+		ConflictCount:             len(conflicts),
+		CanOverwrite:              canOverwrite,
+		Profiles:                  profiles,
+		Conflicts:                 conflicts,
+		PortableLogin:             portableLoginCount > 0,
+		PortableLoginCount:        portableLoginCount,
+		RequiresMigrationPassword: portableLoginCount > 0,
+		Message:                   profilePackageImportPreviewMessage(profiles, conflicts),
 	}, nil
 }
 
@@ -558,6 +707,10 @@ func (a *App) importProfilePackageFromPathWithModeAndConfirmation(zipPath string
 }
 
 func (a *App) importProfilePackageFromPathWithModeAndActions(zipPath string, mode string, confirmConflict bool, actions []ProfilePackageImportAction) (ProfilePackageImportResult, error) {
+	return a.importProfilePackageFromPathWithModeAndActionsAndPassword(zipPath, mode, confirmConflict, actions, "")
+}
+
+func (a *App) importProfilePackageFromPathWithModeAndActionsAndPassword(zipPath string, mode string, confirmConflict bool, actions []ProfilePackageImportAction, migrationPassword string) (ProfilePackageImportResult, error) {
 	mode = normalizeProfilePackageImportMode(mode)
 	if mode == "" {
 		return ProfilePackageImportResult{}, fmt.Errorf("不支持的实例导入冲突处理方式")
@@ -781,6 +934,22 @@ func (a *App) importProfilePackageFromPathWithModeAndActions(zipPath string, mod
 		}
 		if !hasUserData {
 			warnings = append(warnings, fmt.Sprintf("实例「%s」没有用户数据目录，仅导入配置", profile.ProfileName))
+		}
+		envelope, hasPortableLogin, err := readProfilePackagePortableLoginEnvelope(contents.Reader.File, oldID)
+		if err != nil {
+			return ProfilePackageImportResult{}, err
+		}
+		if hasPortableLogin {
+			if !hasUserData {
+				warnings = append(warnings, fmt.Sprintf("实例「%s」包含登录态迁移数据，但没有用户数据目录，已跳过登录态恢复", profile.ProfileName))
+			} else if strings.TrimSpace(migrationPassword) == "" {
+				warnings = append(warnings, fmt.Sprintf("实例「%s」包含可迁移登录态，但未提供迁移密码；跨电脑登录状态可能不可用", profile.ProfileName))
+			} else if err := restoreProfilePortableLoginEnvelope(stagingDir, migrationPassword, envelope); err != nil {
+				if err == errPortableLoginBadPassword {
+					return ProfilePackageImportResult{}, fmt.Errorf("登录态迁移密码不正确")
+				}
+				return ProfilePackageImportResult{}, fmt.Errorf("恢复实例登录态失败 [%s]: %w", profile.ProfileName, err)
+			}
 		}
 		replacedProfileID := ""
 		if overwrite && match.Target != nil {
@@ -1131,6 +1300,26 @@ func readProfilePackageJSON(files []*zip.File, name string, target any) error {
 		return json.NewDecoder(reader).Decode(target)
 	}
 	return fmt.Errorf("实例包缺少 %s", name)
+}
+
+func readProfilePackagePortableLoginEnvelope(files []*zip.File, profileID string) (profilePortableLoginEnvelope, bool, error) {
+	name := profilePortableLoginEntryName(profileID)
+	for _, file := range files {
+		if filepath.ToSlash(file.Name) != name {
+			continue
+		}
+		reader, err := file.Open()
+		if err != nil {
+			return profilePortableLoginEnvelope{}, false, err
+		}
+		defer reader.Close()
+		var envelope profilePortableLoginEnvelope
+		if err := json.NewDecoder(reader).Decode(&envelope); err != nil {
+			return profilePortableLoginEnvelope{}, false, fmt.Errorf("解析登录态迁移数据失败: %w", err)
+		}
+		return envelope, true, nil
+	}
+	return profilePortableLoginEnvelope{}, false, nil
 }
 
 func extractProfilePackageFile(file *zip.File, destDir string, rel string) error {

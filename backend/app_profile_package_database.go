@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	profilePackageVersion         = 2
+	profilePackageVersion                   = 3
+	profilePackageDatabaseVersionIntroduced = 2
 	profilePackageDatabasePath    = "database.json"
 	profilePackageDatabaseFormat  = "ant-chrome-profile-database"
 	profilePackageDatabaseVersion = 1

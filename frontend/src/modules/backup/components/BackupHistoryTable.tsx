@@ -664,6 +664,7 @@ export function BackupHistoryTable({
     item: BackupHistoryItem,
     preview: BrowserProfilePackageImportPreview,
     actions: BrowserProfilePackageImportAction[],
+    migrationPassword: string,
   ) => {
     setProfileImportPreview(null)
     setProfileImportItem(null)
@@ -672,7 +673,7 @@ export function BackupHistoryTable({
     setRestoringItemId(item.id)
     setError('')
     try {
-      const result = await importBrowserProfilePackageWithOptions(preview.zipPath, 'new', true, actions)
+      const result = await importBrowserProfilePackageWithOptions(preview.zipPath, 'new', true, actions, migrationPassword)
       if (!result.cancelled) {
         showProfileImportResult(item, result)
       }
@@ -1047,9 +1048,9 @@ export function BackupHistoryTable({
           setProfileImportPreview(null)
           setProfileImportItem(null)
         }}
-        onConfirm={(actions) => {
+        onConfirm={(actions, migrationPassword) => {
           if (profileImportItem && profileImportPreview) {
-            void executeProfileImport(profileImportItem, profileImportPreview, actions)
+            void executeProfileImport(profileImportItem, profileImportPreview, actions, migrationPassword)
           }
         }}
       />
