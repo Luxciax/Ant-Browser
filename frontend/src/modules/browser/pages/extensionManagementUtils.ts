@@ -45,6 +45,16 @@ export function buildChromeWebStoreQueryURL(value: string): string {
   return `https://chromewebstore.google.com/search/${encodeURIComponent(query)}`
 }
 
+export function isBrowserExtensionLookupQuery(value: string): boolean {
+  const query = value.trim()
+  if (/^[a-p]{32}$/i.test(query)) return true
+  try {
+    const url = new URL(query)
+    return url.pathname.split('/').some((part) => /^[a-p]{32}$/i.test(part.trim()))
+  } catch {
+    return false
+  }
+}
 export function loadExtensionHistory(): ExtensionHistoryRecord[] {
   if (typeof window === 'undefined' || !window.localStorage) return []
   try {
