@@ -123,6 +123,8 @@ type LaunchServer struct {
 	apiAuth     APIAuthConfig
 	proxyMu     sync.RWMutex
 	proxy       ProxyProvider
+	pageMu      sync.RWMutex
+	page        PageDriver
 }
 
 // NewLaunchServer 创建 LaunchServer
