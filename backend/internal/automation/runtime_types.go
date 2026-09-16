@@ -70,6 +70,9 @@ type Manager struct {
 	lastError   string
 	activeTasks map[string]*activeTask
 	profileTask map[string]string
+	pageMu       sync.Mutex
+	pageSessions map[string]*pageSession
+	pageReaperOn bool
 }
 
 type activeTask struct {
@@ -112,12 +115,13 @@ func NewManager(appRoot string, cfg *config.Config, emit func(string, any), opts
 	}
 
 	return &Manager{
-		appRoot:     strings.TrimSpace(appRoot),
-		config:      cfg,
-		emit:        emit,
-		options:     opts,
-		activeTasks: make(map[string]*activeTask),
-		profileTask: make(map[string]string),
+		appRoot:      strings.TrimSpace(appRoot),
+		config:       cfg,
+		emit:         emit,
+		options:      opts,
+		activeTasks:  make(map[string]*activeTask),
+		profileTask:  make(map[string]string),
+		pageSessions: make(map[string]*pageSession),
 	}
 }
 
