@@ -1,4 +1,4 @@
-import { Button } from '../../../../shared/components'
+import { Button, Card } from '../../../../shared/components'
 
 interface ProxyPoolHeaderProps {
   checkingAllIPHealth: boolean
@@ -32,18 +32,18 @@ export function ProxyPoolHeader({
   totalCount,
 }: ProxyPoolHeaderProps) {
   return (
-    <div className="flex items-center justify-between">
-      <div>
-        <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">代理池配置</h1>
-      </div>
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2 rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-primary)] px-2 py-1 shadow-sm">
-          <span className="inline-flex items-center gap-1 whitespace-nowrap px-2 text-xs text-[var(--color-text-muted)]">
-            内核状态：{currentConnectorStatus || '未知'}
-          </span>
-          <Button size="sm" variant="secondary" onClick={onOpenCoreDownload}>下载内核</Button>
+    <Card padding="none" className="shadow-[var(--shadow-sm)]">
+      <div className="flex flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">代理池配置</h1>
+          <div className="flex items-center gap-2 rounded-lg bg-[var(--color-bg-muted)] px-2 py-1">
+            <span className="inline-flex items-center gap-1 whitespace-nowrap px-2 text-xs text-[var(--color-text-muted)]">
+              内核状态：{currentConnectorStatus || '未知'}
+            </span>
+            <Button size="sm" variant="secondary" onClick={onOpenCoreDownload}>下载内核</Button>
+          </div>
         </div>
-        <div className="flex items-center gap-2 rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-primary)] px-2 py-1 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
           <Button
             size="sm"
             variant="secondary"
@@ -81,9 +81,9 @@ export function ProxyPoolHeader({
           <Button size="sm" variant="secondary" onClick={onOpenUsageGuide}>
             使用说明
           </Button>
+          <Button size="sm" onClick={onOpenImport}>导入代理</Button>
         </div>
-        <Button size="sm" onClick={onOpenImport}>导入代理</Button>
       </div>
-    </div>
+    </Card>
   )
 }

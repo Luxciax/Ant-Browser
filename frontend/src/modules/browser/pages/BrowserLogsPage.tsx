@@ -46,7 +46,7 @@ async function clearLogs() {
 
 export function BrowserLogsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([])
-  const [levelFilter, setLevelFilter] = useState('ALL')
+  const [levelFilter, setLevelFilter] = useState('INFO')
   const [componentFilter, setComponentFilter] = useState('ALL')
   const [methodFilter, setMethodFilter] = useState('ALL')
   const [keyword, setKeyword] = useState('')
@@ -127,7 +127,7 @@ export function BrowserLogsPage() {
   const components = Array.from(new Set(logs.map(entry => entry.component).filter(Boolean))).sort()
   const methods = Array.from(new Set(logs.map(entry => String(entry.fields?.method || '')).filter(Boolean))).sort()
   const resetFilters = () => {
-    setLevelFilter('ALL')
+    setLevelFilter('INFO')
     setComponentFilter('ALL')
     setMethodFilter('ALL')
     setQuickFilter('ALL')
@@ -140,20 +140,19 @@ export function BrowserLogsPage() {
 
   return (
     <div className="space-y-4 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
+      <Card padding="none" className="shadow-[var(--shadow-sm)]">
+        <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">日志查看</h1>
-          <p className="text-sm text-[var(--color-text-muted)] mt-1">应用运行日志，每 3 秒自动刷新</p>
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            <Button variant="secondary" size="sm" onClick={load} loading={loading}>
+              <RefreshCw className="w-4 h-4" />刷新
+            </Button>
+            <Button variant="secondary" size="sm" onClick={handleClear}>
+              <Trash2 className="w-4 h-4" />清空
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={load} loading={loading}>
-            <RefreshCw className="w-4 h-4" />刷新
-          </Button>
-          <Button variant="secondary" size="sm" onClick={handleClear}>
-            <Trash2 className="w-4 h-4" />清空
-          </Button>
-        </div>
-      </div>
+      </Card>
 
       <div className="rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -274,7 +273,7 @@ export function BrowserLogsPage() {
           style={{ maxHeight: 'calc(100vh - 280px)' }}
         >
           {filtered.length === 0 ? (
-            <div className="py-16 text-center text-sm text-[var(--color-text-muted)]">暂无日志</div>
+            <div className="py-10 text-center text-sm text-[var(--color-text-muted)]">暂无日志</div>
           ) : (
             <table className="min-w-full">
               <thead className="sticky top-0 z-10 bg-[var(--color-bg-muted)]">

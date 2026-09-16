@@ -74,6 +74,18 @@ func (a *App) backupEmitExportUploadProgress(channelLabel, artifactName string, 
 	if total > 0 && transferred > total {
 		transferred = total
 	}
+	if transfer.Stage == channels.UploadProgressStageAwaitingResponse || transfer.Stage == channels.UploadProgressStageVerifying {
+		message := fmt.Sprintf(`已发送%s到%s，等待远端确认`, artifactName, channelLabel)
+		if transfer.Stage == channels.UploadProgressStageVerifying {
+			message = fmt.Sprintf(`已上传%s到%s，正在校验远端文件`, artifactName, channelLabel)
+		}
+		a.backupEmitProgressWithTransfer("backup:export:progress", "verifying", endProgress, message, nil, &backupTransferProgress{
+			BytesTransferred: transferred,
+			TotalBytes:       total,
+			BytesPerSecond:   transfer.BytesPerSecond,
+		})
+		return
+	}
 	progress := startProgress
 	if total > 0 {
 		ratio := float64(transferred) / float64(total)

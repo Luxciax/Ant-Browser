@@ -156,9 +156,9 @@ func (s *LaunchServer) Start() error {
 
 	log := logger.New("LaunchServer")
 	if preferredPort <= 0 {
-		log.Info("LaunchServer 使用随机端口", logger.F("port", port))
+		log.Debug("LaunchServer 使用随机端口", logger.F("port", port))
 	} else {
-		log.Info("LaunchServer 使用固定端口", logger.F("port", port))
+		log.Debug("LaunchServer 使用固定端口", logger.F("port", port))
 	}
 	auth := s.apiAuthConfig()
 	if auth.Active() {

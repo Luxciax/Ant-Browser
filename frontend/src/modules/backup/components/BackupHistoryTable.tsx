@@ -967,7 +967,7 @@ export function BackupHistoryTable({
 
   return (
     <Card padding="none">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border-default)] px-5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-border-default)] px-4 py-2.5">
         <div
           className="min-w-[240px] flex-1"
           role="tablist"
@@ -995,21 +995,13 @@ export function BackupHistoryTable({
         </div>
         <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
           {actions}
-          {filter === 'local' && localDirectory && (
-            <span
-              className="max-w-[260px] truncate text-xs text-[var(--color-text-muted)]"
-              title={localDirectory}
-            >
-              {localDirectory}
-            </span>
-          )}
           <Button size="sm" variant="secondary" className="!border-[var(--color-border-default)] !bg-[var(--color-bg-muted)] !text-[var(--color-text-primary)] hover:!border-[var(--color-border-strong)] hover:!bg-[var(--color-border-default)]" onClick={handleRefresh} loading={busy === 'list'} disabled={busy !== 'none' || pendingRestoreItem !== null || restoreConfirming || profileImportPreview !== null || profileImportBusy || openingLocationId !== ''}>
             <RefreshCw className="h-4 w-4" />
             刷新
           </Button>
         </div>
       </div>
-      <div className="space-y-3 p-5">
+      <div className="space-y-3 p-4">
         {error && <p role="alert" className="text-sm text-[var(--color-error)]">{error}</p>}
         <Table
           columns={tableColumns}

@@ -4,9 +4,12 @@ import (
 	"ant-chrome/backend/internal/backup/channels"
 	"bytes"
 	"context"
+	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,7 +22,6 @@ import (
 )
 
 const (
-	methodMKCOL    = `MKCOL`
 	methodMOVE     = `MOVE`
 	methodPROPFIND = `PROPFIND`
 	propfindBody   = `<?xml version='1.0' encoding='utf-8'?><d:propfind xmlns:d='DAV:'><d:prop><d:displayname/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/></d:prop></d:propfind>`
@@ -41,9 +43,10 @@ type Config struct {
 type File = channels.File
 
 type Client struct {
-	config     Config
-	baseURL    *url.URL
-	httpClient *http.Client
+	config         Config
+	baseURL        *url.URL
+	httpClient     *http.Client
+	controlTimeout time.Duration
 }
 
 func (c *Client) ID() channels.ID {
@@ -69,22 +72,62 @@ func NewClient(cfg Config) (*Client, error) {
 	cfg.BaseURL = baseURL.String()
 	cfg.RemotePath = remotePath
 	return &Client{
-		config:     cfg,
-		baseURL:    baseURL,
-		httpClient: &http.Client{Timeout: TransferTimeout},
+		config:         cfg,
+		baseURL:        baseURL,
+		httpClient:     newHTTPClient(),
+		controlTimeout: ControlTimeout,
 	}, nil
 }
 
+func newHTTPClient() *http.Client {
+	client := &http.Client{
+		Timeout: TransferTimeout,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return client
+	}
+	transport = transport.Clone()
+	transport.ResponseHeaderTimeout = ControlTimeout
+	client.Transport = transport
+	return client
+}
+
+func (c *Client) controlContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	timeout := c.controlTimeout
+	if timeout <= 0 {
+		timeout = ControlTimeout
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func (c *Client) cleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	} else {
+		ctx = context.WithoutCancel(ctx)
+	}
+	return c.controlContext(ctx)
+}
+
 func (c *Client) Test(ctx context.Context) error {
-	if err := c.ensureRemoteDirectory(ctx); err != nil {
+	if err := c.probeRemoteDirectory(ctx, `/`, false); err != nil {
+		return fmt.Errorf(`WebDAV endpoint check failed: %w`, err)
+	}
+	if err := c.validateRemoteDirectory(ctx); err != nil {
 		return err
 	}
-	_, err := c.propfind(ctx, ``, `0`)
-	return err
+	return nil
 }
 
 func (c *Client) List(ctx context.Context) ([]File, error) {
-	items, err := c.propfind(ctx, ``, `1`)
+	items, err := c.propfindDirectory(ctx, ``, `1`)
 	if err != nil {
 		return nil, err
 	}
@@ -123,13 +166,23 @@ func (c *Client) Upload(ctx context.Context, localPath, fileName string) (File, 
 	if err != nil {
 		return File{}, err
 	}
-	return c.uploadFile(ctx, localPath, cleanName, `backup`, nil)
+	outcome, err := c.uploadFile(ctx, localPath, cleanName, `backup`, nil)
+	return outcome.File, err
 }
 
 func (c *Client) UploadWithProgress(ctx context.Context, localPath, fileName string, progress channels.UploadProgressFunc) (File, error) {
 	cleanName, err := cleanFileName(fileName)
 	if err != nil {
 		return File{}, err
+	}
+	outcome, err := c.uploadFile(ctx, localPath, cleanName, `backup`, progress)
+	return outcome.File, err
+}
+
+func (c *Client) UploadWithProgressOutcome(ctx context.Context, localPath, fileName string, progress channels.UploadProgressFunc) (channels.UploadOutcome, error) {
+	cleanName, err := cleanFileName(fileName)
+	if err != nil {
+		return channels.UploadOutcome{}, err
 	}
 	return c.uploadFile(ctx, localPath, cleanName, `backup`, progress)
 }
@@ -139,7 +192,8 @@ func (c *Client) UploadMetadata(ctx context.Context, localPath, fileName string)
 	if err != nil {
 		return File{}, err
 	}
-	return c.uploadFile(ctx, localPath, cleanName, `backup metadata`, nil)
+	outcome, err := c.uploadFile(ctx, localPath, cleanName, `backup metadata`, nil)
+	return outcome.File, err
 }
 
 func (c *Client) UploadMetadataWithProgress(ctx context.Context, localPath, fileName string, progress channels.UploadProgressFunc) (File, error) {
@@ -147,44 +201,119 @@ func (c *Client) UploadMetadataWithProgress(ctx context.Context, localPath, file
 	if err != nil {
 		return File{}, err
 	}
-	return c.uploadFile(ctx, localPath, cleanName, `backup metadata`, progress)
+	outcome, err := c.uploadFile(ctx, localPath, cleanName, `backup metadata`, progress)
+	return outcome.File, err
 }
 
-func (c *Client) uploadFile(ctx context.Context, localPath, cleanName, artifactName string, progress channels.UploadProgressFunc) (File, error) {
+func (c *Client) uploadFile(ctx context.Context, localPath, cleanName, artifactName string, progress channels.UploadProgressFunc) (channels.UploadOutcome, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	info, err := os.Stat(localPath)
 	if err != nil {
-		return File{}, fmt.Errorf(`stat local %s failed: %w`, artifactName, err)
+		return channels.UploadOutcome{}, fmt.Errorf(`stat local %s failed: %w`, artifactName, err)
 	}
 	if info.IsDir() {
-		return File{}, fmt.Errorf(`local %s path is a directory`, artifactName)
+		return channels.UploadOutcome{}, fmt.Errorf(`local %s path is a directory`, artifactName)
 	}
-	if err := c.ensureRemoteDirectory(ctx); err != nil {
-		return File{}, err
+	controlCtx, controlCancel := c.controlContext(ctx)
+	err = c.validateRemoteDirectory(controlCtx)
+	controlCancel()
+	if err != nil {
+		return channels.UploadOutcome{}, err
 	}
 	file, err := os.Open(localPath)
 	if err != nil {
-		return File{}, fmt.Errorf(`open local backup failed: %w`, err)
+		return channels.UploadOutcome{}, fmt.Errorf(`open local backup failed: %w`, err)
 	}
 	defer file.Close()
 
-	temporaryName := cleanName + `.uploading`
-	if err := c.put(ctx, temporaryName, file, info.Size(), progress); err != nil {
-		_ = c.delete(ctx, temporaryName)
-		return File{}, fmt.Errorf(`upload %s failed: %w`, artifactName, err)
+	if err := c.put(ctx, cleanName, file, info.Size(), progress); err != nil {
+		committed := isCommittedUploadError(err)
+		if isTimeoutError(err) || committed {
+			reportUploadVerification(progress, info.Size())
+			verifyCtx, verifyCancel := c.cleanupContext(ctx)
+			remoteFile, verifyErr := c.stat(verifyCtx, cleanName)
+			verifyCancel()
+			if verifyErr == nil && remoteFile.Size == info.Size() {
+				return channels.UploadOutcome{
+					File:    remoteFile,
+					Warning: uploadWarning(err, committed),
+				}, nil
+			}
+			if committed {
+				if verifyErr != nil {
+					return channels.UploadOutcome{}, fmt.Errorf(`upload %s failed after OpenList reported the file was written: %w (remote verification failed: %v; remote file was left in place)`, artifactName, err, verifyErr)
+				}
+				return channels.UploadOutcome{}, fmt.Errorf(`upload %s failed after OpenList reported the file was written: %w (remote size mismatch: local=%d remote=%d; remote file was left in place)`, artifactName, err, info.Size(), remoteFile.Size)
+			}
+		}
+		cleanupCtx, cleanupCancel := c.cleanupContext(ctx)
+		_ = c.delete(cleanupCtx, cleanName)
+		cleanupCancel()
+		return channels.UploadOutcome{}, fmt.Errorf(`upload %s failed: %w`, artifactName, err)
 	}
-	if err := c.move(ctx, temporaryName, cleanName); err != nil {
-		_ = c.delete(ctx, temporaryName)
-		return File{}, fmt.Errorf(`finalize remote %s failed: %w`, artifactName, err)
-	}
-	remoteFile, err := c.stat(ctx, cleanName)
+	reportUploadVerification(progress, info.Size())
+	controlCtx, controlCancel = c.controlContext(ctx)
+	remoteFile, err := c.stat(controlCtx, cleanName)
+	controlCancel()
 	if err != nil {
-		return File{}, fmt.Errorf(`verify remote %s failed: %w`, artifactName, err)
+		verifyCtx, verifyCancel := c.cleanupContext(ctx)
+		verifiedFile, verifyErr := c.stat(verifyCtx, cleanName)
+		verifyCancel()
+		if verifyErr == nil && verifiedFile.Size == info.Size() {
+			return channels.UploadOutcome{File: verifiedFile}, nil
+		}
+		cleanupCtx, cleanupCancel := c.cleanupContext(ctx)
+		_ = c.delete(cleanupCtx, cleanName)
+		cleanupCancel()
+		return channels.UploadOutcome{}, fmt.Errorf(`verify remote %s failed: %w`, artifactName, err)
 	}
 	if remoteFile.Size != info.Size() {
-		_ = c.delete(ctx, cleanName)
-		return File{}, fmt.Errorf(`remote %s size mismatch: local=%d remote=%d`, artifactName, info.Size(), remoteFile.Size)
+		cleanupCtx, cleanupCancel := c.cleanupContext(ctx)
+		_ = c.delete(cleanupCtx, cleanName)
+		cleanupCancel()
+		return channels.UploadOutcome{}, fmt.Errorf(`remote %s size mismatch: local=%d remote=%d`, artifactName, info.Size(), remoteFile.Size)
 	}
-	return remoteFile, nil
+	return channels.UploadOutcome{File: remoteFile}, nil
+}
+
+func reportUploadVerification(progress channels.UploadProgressFunc, totalBytes int64) {
+	if progress == nil {
+		return
+	}
+	progress(channels.UploadProgress{
+		BytesTransferred: totalBytes,
+		TotalBytes:       totalBytes,
+		Stage:            channels.UploadProgressStageVerifying,
+	})
+}
+
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var networkError net.Error
+	return errors.As(err, &networkError) && networkError.Timeout()
+}
+
+func isCommittedUploadError(err error) bool {
+	var responseErr *remoteHTTPError
+	return errors.As(err, &responseErr) && responseErr.uploadCommitted
+}
+
+func uploadWarning(err error, committed bool) string {
+	if !committed {
+		return ``
+	}
+	var responseErr *remoteHTTPError
+	if errors.As(err, &responseErr) && strings.TrimSpace(responseErr.committedMessage) != `` {
+		return fmt.Sprintf(`%s；远端文件大小已校验`, strings.TrimSpace(responseErr.committedMessage))
+	}
+	return `OpenList 已报告文件写入虚拟盘，但目标同步失败；远端文件大小已校验`
 }
 
 func (c *Client) Download(ctx context.Context, fileName, localPath string) error {
@@ -229,7 +358,53 @@ func (c *Client) Download(ctx context.Context, fileName, localPath string) error
 	return nil
 }
 
-func (c *Client) ensureRemoteDirectory(ctx context.Context) error {
+func (c *Client) DownloadMetadata(ctx context.Context, fileName, localPath string) error {
+	cleanName, err := cleanMetadataFileName(fileName)
+	if err != nil {
+		return err
+	}
+	response, err := c.request(ctx, http.MethodGet, cleanName, nil, -1, nil)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if !isSuccess(response.StatusCode) {
+		return responseError(response)
+	}
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+		return fmt.Errorf(`create local backup metadata directory failed: %w`, err)
+	}
+	temporaryPath := localPath + `.tmp`
+	file, err := os.Create(temporaryPath)
+	if err != nil {
+		return fmt.Errorf(`create downloaded backup metadata failed: %w`, err)
+	}
+	written, copyErr := io.Copy(file, io.LimitReader(response.Body, channels.MaxBackupMetadataBytes+1))
+	closeErr := file.Close()
+	if copyErr != nil {
+		_ = os.Remove(temporaryPath)
+		return fmt.Errorf(`download backup metadata failed: %w`, copyErr)
+	}
+	if closeErr != nil {
+		_ = os.Remove(temporaryPath)
+		return fmt.Errorf(`close downloaded backup metadata failed: %w`, closeErr)
+	}
+	if written > channels.MaxBackupMetadataBytes {
+		_ = os.Remove(temporaryPath)
+		return fmt.Errorf(`downloaded backup metadata exceeds %d bytes`, channels.MaxBackupMetadataBytes)
+	}
+	if response.ContentLength >= 0 && written != response.ContentLength {
+		_ = os.Remove(temporaryPath)
+		return fmt.Errorf(`downloaded backup metadata size mismatch: expected=%d actual=%d`, response.ContentLength, written)
+	}
+	if err := os.Rename(temporaryPath, localPath); err != nil {
+		_ = os.Remove(temporaryPath)
+		return fmt.Errorf(`replace downloaded backup metadata failed: %w`, err)
+	}
+	return nil
+}
+
+func (c *Client) validateRemoteDirectory(ctx context.Context) error {
 	segments, err := cleanPathSegments(c.config.RemotePath, true)
 	if err != nil {
 		return err
@@ -241,22 +416,14 @@ func (c *Client) ensureRemoteDirectory(ctx context.Context) error {
 		} else {
 			current = pathpkg.Join(current, segment)
 		}
-		response, requestErr := c.requestAtPath(ctx, methodMKCOL, current, nil, -1, nil, false)
-		if requestErr != nil {
-			return requestErr
+		exists, probeErr := c.remoteDirectoryExists(ctx, current, false)
+		if probeErr != nil {
+			return fmt.Errorf(`check remote directory %q failed: %w`, current, probeErr)
 		}
-		if isSuccess(response.StatusCode) {
-			_ = response.Body.Close()
+		if exists {
 			continue
 		}
-		statusCode := response.StatusCode
-		_ = response.Body.Close()
-		if statusCode != http.StatusMethodNotAllowed && statusCode != http.StatusConflict {
-			return fmt.Errorf(`create remote directory failed: HTTP %d`, statusCode)
-		}
-		if _, statErr := c.propfindAtPath(ctx, current, `0`, false); statErr != nil {
-			return fmt.Errorf(`create remote directory failed: %w`, statErr)
-		}
+		return fmt.Errorf(`remote directory %q does not exist`, current)
 	}
 	return nil
 }
@@ -324,6 +491,19 @@ func (c *Client) propfind(ctx context.Context, remotePath, depth string) ([]File
 	return c.propfindAtPath(ctx, remotePath, depth, true)
 }
 
+func (c *Client) propfindDirectory(ctx context.Context, remotePath, depth string) ([]File, error) {
+	return c.propfindDirectoryAtPath(ctx, remotePath, depth, true)
+}
+
+func (c *Client) propfindDirectoryAtPath(ctx context.Context, remotePath, depth string, includeRoot bool) ([]File, error) {
+	directoryPath := directoryRemotePath(remotePath)
+	items, err := c.propfindAtPath(ctx, directoryPath, depth, includeRoot)
+	if err == nil || (!isRemoteHTTPStatus(err, http.StatusNotFound) && !isRemoteHTTPStatus(err, http.StatusMethodNotAllowed)) {
+		return items, err
+	}
+	return c.propfindAtPath(ctx, remotePath, depth, includeRoot)
+}
+
 func (c *Client) propfindAtPath(ctx context.Context, remotePath, depth string, includeRoot bool) ([]File, error) {
 	body := bytes.NewReader([]byte(propfindBody))
 	response, err := c.requestAtPath(ctx, methodPROPFIND, remotePath, body, int64(len(propfindBody)), map[string]string{
@@ -342,6 +522,118 @@ func (c *Client) propfindAtPath(ctx context.Context, remotePath, depth string, i
 		return nil, fmt.Errorf(`read remote directory failed: %w`, err)
 	}
 	return parsePropfind(data)
+}
+
+func (c *Client) probeRemoteDirectory(ctx context.Context, remotePath string, includeRoot bool) error {
+	if _, err := c.propfindDirectoryAtPath(ctx, remotePath, `0`, includeRoot); err == nil {
+		return nil
+	} else if !isRemoteHTTPStatus(err, http.StatusMethodNotAllowed) {
+		return err
+	} else {
+		exists, headErr := c.headDirectoryAtPath(ctx, remotePath, includeRoot)
+		if headErr == nil && exists {
+			return nil
+		}
+		if isRemoteHTTPStatus(headErr, http.StatusMethodNotAllowed) {
+			if exists, optionsErr := c.optionsDirectoryAtPath(ctx, remotePath, includeRoot); optionsErr == nil && exists {
+				return nil
+			} else if optionsErr != nil && !isRemoteHTTPStatus(optionsErr, http.StatusNotFound) && !isRemoteHTTPStatus(optionsErr, http.StatusMethodNotAllowed) {
+				return fmt.Errorf(`%w (PROPFIND fallback: %v)`, optionsErr, err)
+			}
+		} else if headErr != nil && !isRemoteHTTPStatus(headErr, http.StatusNotFound) {
+			return headErr
+		}
+		return err
+	}
+}
+
+func (c *Client) remoteDirectoryExists(ctx context.Context, remotePath string, includeRoot bool) (bool, error) {
+	if _, err := c.propfindDirectoryAtPath(ctx, remotePath, `0`, includeRoot); err == nil {
+		return true, nil
+	} else if isRemoteHTTPStatus(err, http.StatusNotFound) {
+		return false, nil
+	} else if !isRemoteHTTPStatus(err, http.StatusMethodNotAllowed) {
+		return false, err
+	} else {
+		exists, headErr := c.headDirectoryAtPath(ctx, remotePath, includeRoot)
+		if headErr == nil {
+			return exists, nil
+		}
+		if isRemoteHTTPStatus(headErr, http.StatusMethodNotAllowed) {
+			if exists, optionsErr := c.optionsDirectoryAtPath(ctx, remotePath, includeRoot); optionsErr == nil {
+				return exists, nil
+			} else if isRemoteHTTPStatus(optionsErr, http.StatusNotFound) {
+				return false, nil
+			} else if !isRemoteHTTPStatus(optionsErr, http.StatusMethodNotAllowed) {
+				return false, fmt.Errorf(`%w (PROPFIND fallback: %v)`, optionsErr, err)
+			}
+			return false, headErr
+		}
+		if isRemoteHTTPStatus(headErr, http.StatusNotFound) {
+			return false, nil
+		}
+		return false, headErr
+	}
+}
+
+func (c *Client) headDirectoryAtPath(ctx context.Context, remotePath string, includeRoot bool) (bool, error) {
+	directoryPath := directoryRemotePath(remotePath)
+	exists, err := c.headDirectoryAtPathRaw(ctx, directoryPath, includeRoot)
+	if err == nil || (!isRemoteHTTPStatus(err, http.StatusNotFound) && !isRemoteHTTPStatus(err, http.StatusMethodNotAllowed)) {
+		return exists, err
+	}
+	return c.headDirectoryAtPathRaw(ctx, remotePath, includeRoot)
+}
+
+func (c *Client) headDirectoryAtPathRaw(ctx context.Context, remotePath string, includeRoot bool) (bool, error) {
+	response, err := c.requestAtPath(ctx, http.MethodHead, remotePath, nil, -1, nil, includeRoot)
+	if err != nil {
+		return false, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound {
+		return false, responseError(response)
+	}
+	if !isSuccess(response.StatusCode) {
+		return false, responseError(response)
+	}
+	contentType := strings.ToLower(strings.TrimSpace(response.Header.Get(`Content-Type`)))
+	if contentType != `httpd/unix-directory` && !strings.HasPrefix(contentType, `httpd/unix-directory;`) {
+		return false, fmt.Errorf(`remote path is not a directory`)
+	}
+	return true, nil
+}
+
+func (c *Client) optionsDirectoryAtPath(ctx context.Context, remotePath string, includeRoot bool) (bool, error) {
+	directoryPath := directoryRemotePath(remotePath)
+	exists, err := c.optionsDirectoryAtPathRaw(ctx, directoryPath, includeRoot)
+	if err == nil || (!isRemoteHTTPStatus(err, http.StatusNotFound) && !isRemoteHTTPStatus(err, http.StatusMethodNotAllowed)) {
+		return exists, err
+	}
+	return c.optionsDirectoryAtPathRaw(ctx, remotePath, includeRoot)
+}
+
+func (c *Client) optionsDirectoryAtPathRaw(ctx context.Context, remotePath string, includeRoot bool) (bool, error) {
+	response, err := c.requestAtPath(ctx, http.MethodOptions, remotePath, nil, -1, nil, includeRoot)
+	if err != nil {
+		return false, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound {
+		return false, responseError(response)
+	}
+	if !isSuccess(response.StatusCode) {
+		return false, responseError(response)
+	}
+	dav := strings.TrimSpace(response.Header.Get(`DAV`))
+	allow := strings.ToUpper(response.Header.Get(`Allow`))
+	if !strings.Contains(allow, methodPROPFIND) {
+		if dav == `` {
+			return false, fmt.Errorf(`remote path does not advertise WebDAV directory listing`)
+		}
+		return false, fmt.Errorf(`remote path does not advertise WebDAV directory listing in Allow header`)
+	}
+	return true, nil
 }
 
 func (c *Client) request(ctx context.Context, method, remotePath string, body io.Reader, contentLength int64, headers map[string]string) (*http.Response, error) {
@@ -398,7 +690,21 @@ func (c *Client) resourceURLAtPath(remotePath string, includeRoot bool) (*url.UR
 		result.Path = pathpkg.Join(result.Path, cleanPath)
 	}
 	result.RawPath = ``
+	if strings.HasSuffix(strings.TrimSpace(remotePath), `/`) && !strings.HasSuffix(result.Path, `/`) {
+		result.Path += `/`
+	}
 	return &result, nil
+}
+
+func directoryRemotePath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == `` || value == `/` {
+		return `/`
+	}
+	if strings.HasSuffix(value, `/`) {
+		return value
+	}
+	return value + `/`
 }
 
 func normalizeBaseURL(value string) (*url.URL, error) {
@@ -411,6 +717,9 @@ func normalizeBaseURL(value string) (*url.URL, error) {
 	}
 	if parsed.Host == `` {
 		return nil, fmt.Errorf(`OpenList URL host is empty`)
+	}
+	if strings.Trim(parsed.Path, `/`) == `` {
+		return nil, fmt.Errorf(`OpenList URL cannot be the site root; use the full WebDAV endpoint`)
 	}
 	if parsed.RawQuery != `` || parsed.Fragment != `` {
 		return nil, fmt.Errorf(`OpenList URL must not contain query or fragment`)
@@ -580,16 +889,71 @@ func hrefBaseName(value string) string {
 	return pathpkg.Base(strings.TrimRight(pathValue, `/`))
 }
 
+type remoteHTTPError struct {
+	statusCode       int
+	message          string
+	uploadCommitted  bool
+	committedMessage string
+}
+
+func (e *remoteHTTPError) Error() string {
+	return e.message
+}
+
+func isRemoteHTTPStatus(err error, statusCode int) bool {
+	var responseErr *remoteHTTPError
+	return errors.As(err, &responseErr) && responseErr.statusCode == statusCode
+}
+
 func responseError(response *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
 	message := strings.TrimSpace(string(body))
+	uploadCommitted, committedMessage := committedUploadResponse(response.StatusCode, body)
 	if response.StatusCode == http.StatusRequestEntityTooLarge {
 		return fmt.Errorf(`remote request failed: HTTP 413 Request Entity Too Large：远端反向代理拒绝了过大的请求体（通常是 OpenResty/Nginx 的 client_max_body_size），请将其调大到超过备份文件大小；客户端限速和超时无法绕过此限制`)
+	}
+	if isRedirectStatus(response.StatusCode) {
+		if location := strings.TrimSpace(response.Header.Get(`Location`)); location != `` {
+			message = fmt.Sprintf(`WebDAV endpoint redirected to %s; configure the final HTTPS WebDAV URL`, location)
+		}
 	}
 	if message == `` {
 		message = http.StatusText(response.StatusCode)
 	}
-	return fmt.Errorf(`remote request failed: HTTP %d: %s`, response.StatusCode, message)
+	return &remoteHTTPError{
+		statusCode:       response.StatusCode,
+		message:          fmt.Sprintf(`remote request failed: HTTP %d: %s`, response.StatusCode, message),
+		uploadCommitted:  uploadCommitted,
+		committedMessage: committedMessage,
+	}
+}
+
+func committedUploadResponse(statusCode int, body []byte) (bool, string) {
+	if statusCode < http.StatusBadRequest {
+		return false, ``
+	}
+	var payload struct {
+		Message    string            `json:"message"`
+		RemotePath string            `json:"remotePath"`
+		Targets    []json.RawMessage `json:"targets"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(body), &payload); err != nil {
+		return false, ``
+	}
+	if strings.TrimSpace(payload.RemotePath) == `` || len(payload.Targets) == 0 {
+		return false, ``
+	}
+	message := strings.ToLower(strings.TrimSpace(payload.Message))
+	written := strings.Contains(message, `写入`) || strings.Contains(message, `written`) || strings.Contains(message, `uploaded`)
+	synchronized := strings.Contains(message, `同步`) || strings.Contains(message, `sync`)
+	if !written || !synchronized {
+		return false, ``
+	}
+	return true, strings.TrimSpace(payload.Message)
+}
+
+func isRedirectStatus(statusCode int) bool {
+	return statusCode == http.StatusMovedPermanently || statusCode == http.StatusFound || statusCode == http.StatusSeeOther || statusCode == http.StatusTemporaryRedirect || statusCode == http.StatusPermanentRedirect
 }
 
 func isSuccess(statusCode int) bool {

@@ -100,7 +100,9 @@ func (a *App) BackupSaveLocalDirectory(directory string) (BackupLocalSettings, e
 		return BackupLocalSettings{}, fmt.Errorf("本地备份路径不是目录: %s", absDirectory)
 	}
 
-	a.maintenanceMu.Lock()
+	if err := a.lockMaintenanceWithNotice(nil); err != nil {
+		return BackupLocalSettings{}, err
+	}
 	defer a.maintenanceMu.Unlock()
 	if err := a.backupSetLocalDirectoryLocked(absDirectory); err != nil {
 		return BackupLocalSettings{}, err

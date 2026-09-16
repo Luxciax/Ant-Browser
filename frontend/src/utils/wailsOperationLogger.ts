@@ -13,16 +13,11 @@ function stringifyError(error: unknown) {
   }
 }
 
-function shouldLogSuccess(method: string) {
-  if (SKIP_METHODS.has(method)) return false
-  return MUTATION_METHOD_PATTERN.test(method)
-}
-
 function shouldLogFailure(method: string) {
   return !SKIP_METHODS.has(method)
 }
 
-function recordOperation(level: 'info' | 'error', method: string, success: boolean, durationMs: number, message = '') {
+function recordOperation(level: 'debug' | 'info' | 'error', method: string, success: boolean, durationMs: number, message = '') {
   const app = (window as any)?.go?.main?.App
   const logger = app?.FrontendOperationLog
   if (typeof logger !== 'function') return
@@ -31,6 +26,11 @@ function recordOperation(level: 'info' | 'error', method: string, success: boole
   } catch {
     // Logging must never break user operations.
   }
+}
+
+function successLogLevel(method: string): 'debug' | 'info' | null {
+  if (SKIP_METHODS.has(method)) return null
+  return MUTATION_METHOD_PATTERN.test(method) ? 'info' : 'debug'
 }
 
 export function installWailsOperationLogger() {
@@ -50,8 +50,9 @@ export function installWailsOperationLogger() {
         const result = original(...args)
         if (result && typeof result.then === 'function') {
           return result.then((value: unknown) => {
-            if (shouldLogSuccess(method)) {
-              recordOperation('info', method, true, performance.now() - startedAt)
+            const level = successLogLevel(method)
+            if (level) {
+              recordOperation(level, method, true, performance.now() - startedAt)
             }
             return value
           }).catch((error: unknown) => {
@@ -61,8 +62,9 @@ export function installWailsOperationLogger() {
             throw error
           })
         }
-        if (shouldLogSuccess(method)) {
-          recordOperation('info', method, true, performance.now() - startedAt)
+        const level = successLogLevel(method)
+        if (level) {
+          recordOperation(level, method, true, performance.now() - startedAt)
         }
         return result
       } catch (error) {

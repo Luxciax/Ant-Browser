@@ -82,16 +82,20 @@ func newBackupArchiveStats() backupArchiveStats {
 }
 
 func (s *backupArchiveStats) addFile(archivePath, sourcePath string, destination io.Writer) error {
+	return s.addFileWithProgress(archivePath, sourcePath, destination, nil)
+}
+
+func (s *backupArchiveStats) addFileWithProgress(archivePath, sourcePath string, destination io.Writer, progress func(int64)) error {
 	in, err := os.Open(sourcePath)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
 
-	return s.addReader(archivePath, in, destination)
+	return s.addReader(archivePath, in, destination, progress)
 }
 
-func (s *backupArchiveStats) addReader(archivePath string, source io.Reader, destination io.Writer) error {
+func (s *backupArchiveStats) addReader(archivePath string, source io.Reader, destination io.Writer, progress func(int64)) error {
 	if s.digest == nil {
 		s.digest = sha256.New()
 	}
@@ -102,6 +106,9 @@ func (s *backupArchiveStats) addReader(archivePath string, source io.Reader, des
 	if destination != nil {
 		target = io.MultiWriter(destination, s.digest)
 	}
+	if progress != nil {
+		target = &backupArchiveProgressWriter{writer: target, progress: progress}
+	}
 	written, err := io.Copy(target, source)
 	if err != nil {
 		return err
@@ -109,6 +116,21 @@ func (s *backupArchiveStats) addReader(archivePath string, source io.Reader, des
 	s.fileCount++
 	s.byteSize += written
 	return nil
+}
+
+type backupArchiveProgressWriter struct {
+	writer   io.Writer
+	progress func(int64)
+	written  int64
+}
+
+func (w *backupArchiveProgressWriter) Write(data []byte) (int, error) {
+	written, err := w.writer.Write(data)
+	if written > 0 {
+		w.written += int64(written)
+		w.progress(w.written)
+	}
+	return written, err
 }
 
 func (s backupArchiveStats) sha256() string {

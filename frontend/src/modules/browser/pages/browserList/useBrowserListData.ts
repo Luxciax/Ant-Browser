@@ -4,9 +4,10 @@ import { fetchBrowserProfiles, fetchBrowserProxies, fetchGroups } from '../../ap
 import { EventsOn } from '../../../../wailsjs/runtime/runtime'
 
 const PROFILE_LIST_FALLBACK_REFRESH_MS = 15_000
+const APP_READY_EVENT = 'app:ready'
 
 interface UseBrowserListDataOptions {
-  loadCores: () => void
+  loadCores: () => Promise<void>
 }
 
 export function useBrowserListData({ loadCores }: UseBrowserListDataOptions) {
@@ -18,6 +19,8 @@ export function useBrowserListData({ loadCores }: UseBrowserListDataOptions) {
   const [stoppingIds, setStoppingIds] = useState<Set<string>>(new Set())
   const profilesRef = useRef<BrowserProfile[]>([])
   const silentRefreshInFlightRef = useRef(false)
+  const initialLoadInFlightRef = useRef(false)
+  const initialLoadQueuedRef = useRef(false)
 
   const updatePendingIds = (
     setter: React.Dispatch<React.SetStateAction<Set<string>>>,
@@ -102,10 +105,33 @@ export function useBrowserListData({ loadCores }: UseBrowserListDataOptions) {
   }
 
   useEffect(() => {
-    void loadProfiles()
-    loadGroups()
-    fetchBrowserProxies().then(setProxies)
-    loadCores()
+    let disposed = false
+    let runtimeRetryTimer: number | null = null
+    let runtimeSubscriptionFailed = false
+    const runtimeUnsubscribers: Array<() => void> = []
+
+    const loadInitialData = () => {
+      if (disposed) return
+      if (initialLoadInFlightRef.current) {
+        initialLoadQueuedRef.current = true
+        return
+      }
+
+      initialLoadQueuedRef.current = false
+      initialLoadInFlightRef.current = true
+      void Promise.allSettled([
+        loadProfiles(),
+        loadGroups(),
+        fetchBrowserProxies().then(setProxies),
+        loadCores(),
+      ]).finally(() => {
+        initialLoadInFlightRef.current = false
+        if (!disposed && initialLoadQueuedRef.current) {
+          initialLoadQueuedRef.current = false
+          loadInitialData()
+        }
+      })
+    }
 
     const clearPending = (payload: any) => {
       const profileId = typeof payload === 'string' ? payload : payload?.profileId
@@ -115,22 +141,58 @@ export function useBrowserListData({ loadCores }: UseBrowserListDataOptions) {
       }
     }
 
-    const offStarted = EventsOn('browser:instance:started', (payload: any) => {
-      clearPending(payload)
-      void loadProfiles({ silent: true, syncRuntimeState: true })
-    })
-    const offUpdated = EventsOn('browser:instance:updated', (payload: any) => {
-      clearPending(payload)
-      void loadProfiles({ silent: true, syncRuntimeState: true })
-    })
-    const offStopped = EventsOn('browser:instance:stopped', (payload: any) => {
-      clearPending(payload)
-      void loadProfiles({ silent: true, syncRuntimeState: true })
-    })
-    const offCrashed = EventsOn('browser:instance:crashed', (payload: any) => {
-      clearPending(payload)
-      void loadProfiles({ silent: true, syncRuntimeState: true })
-    })
+    loadInitialData()
+
+    const subscribeRuntimeEvents = () => {
+      if (disposed) return
+      const subscriptions: Array<() => void> = []
+      try {
+        const subscribe = (eventName: string, handler: (...data: any[]) => void) => {
+          const unsubscribe = EventsOn(eventName, handler)
+          if (typeof unsubscribe !== 'function') {
+            throw new Error('runtime event subscription unavailable')
+          }
+          subscriptions.push(unsubscribe)
+        }
+
+        subscribe('browser:instance:started', (payload: any) => {
+          clearPending(payload)
+          void loadProfiles({ silent: true, syncRuntimeState: true })
+        })
+        subscribe('browser:instance:updated', (payload: any) => {
+          clearPending(payload)
+          void loadProfiles({ silent: true, syncRuntimeState: true })
+        })
+        subscribe('browser:instance:stopped', (payload: any) => {
+          clearPending(payload)
+          void loadProfiles({ silent: true, syncRuntimeState: true })
+        })
+        subscribe('browser:instance:crashed', (payload: any) => {
+          clearPending(payload)
+          void loadProfiles({ silent: true, syncRuntimeState: true })
+        })
+        subscribe(APP_READY_EVENT, () => {
+          loadInitialData()
+        })
+
+        runtimeUnsubscribers.push(...subscriptions)
+        if (runtimeSubscriptionFailed) {
+          runtimeSubscriptionFailed = false
+          loadInitialData()
+        }
+      } catch {
+        subscriptions.forEach(unsubscribe => unsubscribe())
+        runtimeSubscriptionFailed = true
+        if (runtimeRetryTimer === null) {
+          runtimeRetryTimer = window.setTimeout(() => {
+            runtimeRetryTimer = null
+            subscribeRuntimeEvents()
+          }, 250)
+        }
+      }
+    }
+
+    subscribeRuntimeEvents()
 
     const timer = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return
@@ -138,11 +200,12 @@ export function useBrowserListData({ loadCores }: UseBrowserListDataOptions) {
     }, PROFILE_LIST_FALLBACK_REFRESH_MS)
 
     return () => {
+      disposed = true
       window.clearInterval(timer)
-      offStarted?.()
-      offUpdated?.()
-      offStopped?.()
-      offCrashed?.()
+      if (runtimeRetryTimer !== null) {
+        window.clearTimeout(runtimeRetryTimer)
+      }
+      runtimeUnsubscribers.forEach(unsubscribe => unsubscribe())
     }
   }, [])
 

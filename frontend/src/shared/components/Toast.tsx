@@ -11,6 +11,7 @@ import {
   type NotificationType,
 } from '../../store/notificationProtocol'
 import { notificationVisuals } from '../notifications/presentation'
+import { NotificationMessage } from '../notifications/NotificationMessage'
 
 interface Toast extends NotificationPayload {
   id: string
@@ -20,14 +21,6 @@ interface Toast extends NotificationPayload {
 type ToastOptions = Omit<NotificationInput, 'type' | 'message'>
 
 const TOAST_DEDUPE_WINDOW_MS = 10_000
-const TOAST_SUCCESS_BACKDROP_DURATION = 1_200
-const TOAST_BACKDROP_EXIT_DURATION = 460
-const TOAST_BACKDROP_EXIT_DURATIONS: Record<NotificationType, number> = {
-  success: TOAST_BACKDROP_EXIT_DURATION,
-  info: 360,
-  warning: 360,
-  error: 360,
-}
 const TOAST_FOCUS_PRIORITY: Record<NotificationType, number> = {
   success: 1,
   info: 2,
@@ -38,7 +31,13 @@ const TOAST_EXIT_DURATIONS: Record<NotificationType, number> = {
   success: 560,
   info: 360,
   warning: 360,
-  error: 360,
+  error: 320,
+}
+const TOAST_BACKDROP_EXIT_DURATIONS: Record<NotificationType, number> = {
+  success: TOAST_EXIT_DURATIONS.success,
+  info: TOAST_EXIT_DURATIONS.info,
+  warning: TOAST_EXIT_DURATIONS.warning,
+  error: TOAST_EXIT_DURATIONS.error,
 }
 const toastDedupeTimestamps = new Map<string, number>()
 
@@ -104,7 +103,9 @@ function shouldShowToast(dedupeKey?: string) {
 }
 
 function selectToastFocus(toasts: Toast[]) {
-  return [...toasts].sort((left, right) => TOAST_FOCUS_PRIORITY[right.type] - TOAST_FOCUS_PRIORITY[left.type])[0] ?? null
+  return [...toasts]
+    .filter((toast) => toast.type !== 'success')
+    .sort((left, right) => TOAST_FOCUS_PRIORITY[right.type] - TOAST_FOCUS_PRIORITY[left.type])[0] ?? null
 }
 
 function getToastDuration(toast: Pick<Toast, 'type' | 'duration'>) {
@@ -114,7 +115,6 @@ function getToastDuration(toast: Pick<Toast, 'type' | 'duration'>) {
 }
 
 function getToastBackdropDuration(toast: Toast) {
-  if (toast.type === 'success') return TOAST_SUCCESS_BACKDROP_DURATION
   return getToastDuration(toast)
 }
 
@@ -170,7 +170,7 @@ function ToastItem({ toast: t, onManualDismiss }: { toast: Toast; onManualDismis
       </span>
       <div className="min-w-0 flex-1">
         <p className={`text-sm leading-5 ${titleClass}`}>{t.title}</p>
-        <p className="mt-0.5 break-words text-sm leading-5 text-[var(--color-text-secondary)]">{t.message}</p>
+        <NotificationMessage message={t.message} className='mt-0.5 text-[var(--color-text-secondary)]' compact />
         {t.action?.type === 'navigate' && (
           <Link
             to={t.action.path}
@@ -286,7 +286,8 @@ export function ToastContainer() {
         <div
           key={`${focus.id}-${focus.type}`}
           aria-hidden="true"
-          className={`toast-focus-backdrop toast-focus-${focus.type} pointer-events-none fixed inset-0 z-[9995] ${focus.phase === 'leave' ? 'toast-focus-leaving' : ''}`}
+          onClick={() => dismissFocus(focus.id)}
+          className={`toast-focus-backdrop toast-focus-${focus.type} fixed inset-0 z-[9995] ${focus.phase === 'leave' ? 'pointer-events-none' : 'pointer-events-auto cursor-pointer'} ${focus.phase === 'leave' ? 'toast-focus-leaving' : ''}`}
         />
       ) : null}
       <div className="pointer-events-none fixed right-3 top-3 z-[10000] flex max-h-[calc(100vh-1.5rem)] w-[min(480px,calc(100vw-1.5rem))] flex-col gap-3 overflow-y-auto overscroll-contain sm:right-4 sm:top-4 sm:w-[min(480px,calc(100vw-2rem))]">

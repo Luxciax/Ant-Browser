@@ -158,3 +158,81 @@ func TestPrepareBackupLocalConfigMovesS3ConfigOutOfConfigFile(t *testing.T) {
 		}
 	}
 }
+
+func TestPrepareBackupLocalConfigMigratesLegacyFileToStablePath(t *testing.T) {
+	root := t.TempDir()
+	stableRoot := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.Backup.Channels.S3.Endpoint = "https://s3.example.com"
+	cfg.Backup.Channels.S3.Bucket = "backup-bucket"
+	cfg.Backup.Channels.S3.AccessKeyID = "access-key"
+	cfg.Backup.Channels.S3.SecretAccessKey = "secret-key"
+
+	legacyPath := filepath.Join(root, backupLocalConfigFileName)
+	if err := saveBackupLocalConfig(legacyPath, cfg.Backup); err != nil {
+		t.Fatalf("save legacy S3 config: %v", err)
+	}
+
+	app := NewApp(root)
+	app.config = cfg
+	app.backupLocalConfigPathOverride = filepath.Join(stableRoot, backupLocalConfigFileName)
+	if err := app.prepareBackupLocalConfig(); err != nil {
+		t.Fatalf("migrate backup local config: %v", err)
+	}
+
+	stableSettings, exists, err := loadBackupLocalConfig(app.backupLocalConfigPath(), config.DefaultConfig().Backup)
+	if err != nil {
+		t.Fatalf("load stable S3 config: %v", err)
+	}
+	if !exists {
+		t.Fatal("stable S3 config should exist after migration")
+	}
+	if stableSettings.Channels.S3.Endpoint != "https://s3.example.com" ||
+		stableSettings.Channels.S3.Bucket != "backup-bucket" ||
+		stableSettings.Channels.S3.AccessKeyID != "access-key" ||
+		stableSettings.Channels.S3.SecretAccessKey != "secret-key" {
+		t.Fatalf("migrated S3 settings = %+v", stableSettings.Channels.S3)
+	}
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy S3 config still exists, stat error: %v", err)
+	}
+}
+
+func TestBackupS3SaveSettingsUsesStableLocalConfigPath(t *testing.T) {
+	root := t.TempDir()
+	stableRoot := t.TempDir()
+	app := NewApp(root)
+	app.config = config.DefaultConfig()
+	app.backupLocalConfigPathOverride = filepath.Join(stableRoot, backupLocalConfigFileName)
+	defer app.stopBackupScheduler()
+
+	if _, err := app.BackupS3SaveSettings(map[string]string{
+		"endpoint":        "https://s3.example.com",
+		"region":          "us-west-2",
+		"bucket":          "backup-bucket",
+		"accessKeyID":     "access-key",
+		"secretAccessKey": "secret-key",
+	}); err != nil {
+		t.Fatalf("save S3 settings: %v", err)
+	}
+
+	if _, err := os.Stat(app.backupLocalConfigPath()); err != nil {
+		t.Fatalf("stable local config does not exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, backupLocalConfigFileName)); !os.IsNotExist(err) {
+		t.Fatalf("legacy local config should not be created, stat error: %v", err)
+	}
+
+	reloaded := NewApp(root)
+	reloaded.config = config.DefaultConfig()
+	reloaded.backupLocalConfigPathOverride = app.backupLocalConfigPathOverride
+	defer reloaded.stopBackupScheduler()
+	settings, err := reloaded.BackupS3GetSettings()
+	if err != nil {
+		t.Fatalf("reload S3 settings: %v", err)
+	}
+	if settings["endpoint"] != "https://s3.example.com" || settings["bucket"] != "backup-bucket" ||
+		settings["credentialsConfigured"] != true {
+		t.Fatalf("reloaded S3 settings = %+v", settings)
+	}
+}

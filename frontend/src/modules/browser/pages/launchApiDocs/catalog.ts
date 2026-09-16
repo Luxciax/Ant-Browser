@@ -20,7 +20,6 @@ import { getStructuredApiHiddenDocItems } from './structuredApiDocs'
 
 export interface LaunchDocDemoConfig {
   title: string
-  subtitle: string
   primaryDocLabel: string
   actionKeys: AutomationDemoActionKey[]
 }

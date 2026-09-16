@@ -243,7 +243,7 @@ export function KeywordInlineRow({ keywords }: KeywordInlineRowProps) {
   }
 
   return (
-    <div className="flex items-start gap-4 w-full min-w-0">
+    <div className="flex items-start gap-3 w-full min-w-0">
       <div
         ref={containerRef}
         className={`flex flex-wrap gap-2 flex-1 min-w-0 transition-all duration-300 ${expanded ? '' : 'overflow-hidden max-h-[32px]'}`}

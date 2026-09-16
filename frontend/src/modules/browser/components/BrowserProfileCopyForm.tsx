@@ -46,7 +46,7 @@ export function BrowserProfileCopyForm({
   const selectedAutomationCount = copyOptions.automationTargets.length
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="space-y-4">
         {sourceName ? (
           <div className="rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] px-3 py-2 text-sm text-[var(--color-text-secondary)]">

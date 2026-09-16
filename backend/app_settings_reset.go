@@ -72,7 +72,7 @@ func (a *App) resetManagedSettings() error {
 		}
 	}
 
-	if err := saveBackupLocalConfig(a.resolveAppPath(backupLocalConfigFileName), defaults.Backup); err != nil {
+	if err := a.removeBackupLocalConfigs(); err != nil {
 		rollbackErr := a.rollbackManagedSettings(previous, previousServerPort)
 		if rollbackErr != nil {
 			return fmt.Errorf("删除本地备份凭据失败：%w；恢复设置失败：%v", err, rollbackErr)

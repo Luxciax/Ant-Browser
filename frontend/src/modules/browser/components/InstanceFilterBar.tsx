@@ -48,7 +48,7 @@ export function InstanceFilterBar({ filters, onChange, proxies, cores, allTags, 
   const activeCount = [searchValue, filters.status, filters.proxyId, filters.coreId, filters.groupId].filter(Boolean).length + filters.tags.size
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <div
         className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors"
         onClick={() => setCollapsed(prev => !prev)}
@@ -65,7 +65,7 @@ export function InstanceFilterBar({ filters, onChange, proxies, cores, allTags, 
 
       {!collapsed && (
         <>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <Input
               value={searchValue}
               onChange={e => onChange({ ...filters, keyword: e.target.value, kwSearch: '' })}

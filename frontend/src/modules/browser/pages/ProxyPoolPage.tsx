@@ -340,7 +340,7 @@ export function ProxyPoolPage() {
     handleDeleteConfirm,
   } = useProxyDeleteFlow({ proxies, saveProxies, removeSelectedId })
   return (
-    <div className="space-y-5 animate-fade-in">
+    <div className="space-y-4 animate-fade-in">
       <ProxyPoolHeader
         checkingAllIPHealth={checkingAllIPHealth}
         currentConnectorStatus={currentCoreStatus?.message || '未知'}

@@ -107,7 +107,7 @@ export function AutomationScriptDetailPanels({
     "!h-8 !shrink-0 !whitespace-nowrap !border !px-3 hover:!opacity-90";
 
   return (
-    <div className="space-y-5 animate-fade-in">
+    <div className="space-y-4 animate-fade-in">
       <section className="rounded-2xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-4 py-3 shadow-[var(--shadow-sm)]">
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="secondary" size="sm" onClick={onLeavePage}>
@@ -205,7 +205,7 @@ export function AutomationScriptDetailPanels({
         </div>
       </section>
 
-      <div className="grid grid-cols-1 items-stretch gap-4 2xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+      <div className="grid grid-cols-1 items-stretch gap-3 2xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
         <DetailPanel title="基础信息" className="h-full">
           <FormItem label="描述">
             <Textarea

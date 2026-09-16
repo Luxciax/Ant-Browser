@@ -537,16 +537,16 @@ export function BrowserEditPage() {
   }
 
   return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="space-y-4 animate-fade-in">
+      <Card padding="none" className="shadow-[var(--shadow-sm)]">
+        <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">{isCreate ? '新建配置' : '编辑配置'}</h1>
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            <Button variant="secondary" size="sm" onClick={handleBack}>返回列表</Button>
+            <Button size="sm" onClick={handleSave} loading={saving}>保存配置</Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={handleBack}>返回列表</Button>
-          <Button size="sm" onClick={handleSave} loading={saving}>保存配置</Button>
-        </div>
-      </div>
+      </Card>
 
       <Card title="基础配置">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -735,7 +735,7 @@ export function BrowserEditPage() {
       <Card padding="none">
         <button
           type="button"
-          className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-[var(--color-bg-hover)] transition-colors"
+          className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-[var(--color-bg-hover)] transition-colors"
           onClick={() => setLaunchArgsOpen(current => !current)}
         >
           <span className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
@@ -763,7 +763,7 @@ export function BrowserEditPage() {
           {launchArgsOpen ? <ChevronUp className="w-4 h-4 text-[var(--color-text-muted)]" /> : <ChevronDown className="w-4 h-4 text-[var(--color-text-muted)]" />}
         </button>
         {launchArgsOpen && (
-          <div className="space-y-3 px-5 pb-5 border-t border-[var(--color-border-muted)] pt-4">
+          <div className="space-y-3 px-4 pb-4 border-t border-[var(--color-border-muted)] pt-3">
             <Textarea
               value={launchArgsText}
               onChange={e => { setLaunchArgsText(e.target.value); setIsDirty(true) }}

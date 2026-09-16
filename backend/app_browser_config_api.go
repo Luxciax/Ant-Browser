@@ -59,31 +59,52 @@ func (a *App) SaveBrowserSettings(settings BrowserSettings) error {
 }
 
 func (a *App) BrowserCoreList() []BrowserCore {
+	if a == nil || a.browserMgr == nil {
+		return []BrowserCore{}
+	}
 	return a.browserMgr.ListCores()
 }
 
 func (a *App) BrowserCoreSave(input BrowserCoreInput) error {
+	if a == nil || a.browserMgr == nil {
+		return fmt.Errorf(`browser manager is nil`)
+	}
 	return a.browserMgr.SaveCore(input)
 }
 
 func (a *App) BrowserCoreDelete(coreId string) error {
+	if a == nil || a.browserMgr == nil {
+		return fmt.Errorf(`browser manager is nil`)
+	}
 	return a.browserMgr.DeleteCore(coreId)
 }
 
 func (a *App) BrowserCoreSetDefault(coreId string) error {
+	if a == nil || a.browserMgr == nil {
+		return fmt.Errorf(`browser manager is nil`)
+	}
 	return a.browserMgr.SetDefaultCore(coreId)
 }
 
 func (a *App) BrowserCoreValidate(corePath string) BrowserCoreValidateResult {
+	if a == nil || a.browserMgr == nil {
+		return BrowserCoreValidateResult{Valid: false, Message: `browser manager is nil`}
+	}
 	return a.browserMgr.ValidateCorePath(corePath)
 }
 
 func (a *App) BrowserCoreExtendedInfo() []BrowserCoreExtendedInfo {
+	if a == nil || a.browserMgr == nil {
+		return []BrowserCoreExtendedInfo{}
+	}
 	return a.browserMgr.GetCoresExtendedInfo()
 }
 
 // BrowserCoreScan 重新扫描 chrome 目录，自动注册新内核
 func (a *App) BrowserCoreScan() []BrowserCore {
+	if a == nil || a.browserMgr == nil {
+		return []BrowserCore{}
+	}
 	a.autoDetectCores()
 	return a.browserMgr.ListCores()
 }

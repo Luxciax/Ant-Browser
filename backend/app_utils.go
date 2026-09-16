@@ -262,7 +262,7 @@ func (a *App) loadProxies() {
 			log.Error("从数据库读取代理失败", logger.F("error", err.Error()))
 		} else if len(list) > 0 {
 			a.config.Browser.Proxies = list
-			log.Info("代理数据从数据库加载完成", logger.F("count", len(list)))
+			log.Debug("代理数据从数据库加载完成", logger.F("count", len(list)))
 			return
 		}
 	}

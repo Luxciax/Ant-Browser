@@ -1,12 +1,27 @@
 package browser
 
-func ListProxiesWithFallback(proxyDAO ProxyDAO, fallback []Proxy) []Proxy {
-	if proxyDAO != nil {
-		if list, err := proxyDAO.List(); err == nil {
+func ensureBuiltinDirectProxy(list []Proxy) []Proxy {
+	for _, item := range list {
+		if item.ProxyId == directProxyID {
 			return list
 		}
 	}
-	return append([]Proxy{}, fallback...)
+
+	builtin := Proxy{
+		ProxyId:     directProxyID,
+		ProxyName:   `直连（不走代理）`,
+		ProxyConfig: `direct://`,
+	}
+	return append([]Proxy{builtin}, list...)
+}
+
+func ListProxiesWithFallback(proxyDAO ProxyDAO, fallback []Proxy) []Proxy {
+	if proxyDAO != nil {
+		if list, err := proxyDAO.List(); err == nil {
+			return ensureBuiltinDirectProxy(list)
+		}
+	}
+	return ensureBuiltinDirectProxy(append([]Proxy{}, fallback...))
 }
 
 func ListProxyGroups(proxyDAO ProxyDAO) []string {
@@ -37,8 +52,8 @@ func ListProxiesByGroupWithFallback(proxyDAO ProxyDAO, groupName string, fallbac
 func LatestProxiesWithFallback(proxyDAO ProxyDAO, fallback []Proxy) []Proxy {
 	if proxyDAO != nil {
 		if list, err := proxyDAO.List(); err == nil && len(list) > 0 {
-			return list
+			return ensureBuiltinDirectProxy(list)
 		}
 	}
-	return fallback
+	return ensureBuiltinDirectProxy(fallback)
 }

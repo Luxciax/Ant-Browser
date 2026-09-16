@@ -119,24 +119,23 @@ export function BookmarkSettingsPage() {
   const handleDragEnd = () => setDragIndex(null)
 
   return (
-    <div className="space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="space-y-4 animate-fade-in">
+      <Card padding="none" className="shadow-[var(--shadow-sm)]">
+        <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-xl font-semibold text-[var(--color-text-primary)]">默认书签</h1>
-          <p className="text-sm text-[var(--color-text-muted)] mt-1">新建实例首次启动时自动写入书签栏，已有书签不受影响</p>
+          <div className="flex flex-wrap gap-2 sm:justify-end">
+            <Button variant="secondary" size="sm" onClick={() => setSyncOpen(true)} loading={syncing}>
+              <RefreshCw className="w-4 h-4 mr-1.5" />
+              手动同步
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setResetOpen(true)}>
+              <RotateCcw className="w-4 h-4 mr-1.5" />
+              恢复默认
+            </Button>
+            <Button size="sm" onClick={handleSave} loading={saving}>保存</Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setSyncOpen(true)} loading={syncing}>
-            <RefreshCw className="w-4 h-4 mr-1.5" />
-            手动同步
-          </Button>
-          <Button variant="secondary" size="sm" onClick={() => setResetOpen(true)}>
-            <RotateCcw className="w-4 h-4 mr-1.5" />
-            恢复默认
-          </Button>
-          <Button size="sm" onClick={handleSave} loading={saving}>保存</Button>
-        </div>
-      </div>
+      </Card>
 
       <Card title={`内置检测（${protectedItems.length} 项）`}>
         <div className="space-y-2">
@@ -173,7 +172,7 @@ export function BookmarkSettingsPage() {
         </div>
       </Card>
 
-      <Card title={`书签列表（${regularItems.length} 项）`} subtitle="拖拽左侧图标可调整顺序">
+      <Card title={`书签列表（${regularItems.length} 项）`}>
         <div className="space-y-2">
           {regularItems.map(({ item, index }) => (
             <div

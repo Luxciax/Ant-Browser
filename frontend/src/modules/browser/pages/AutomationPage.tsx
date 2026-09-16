@@ -366,7 +366,7 @@ export function AutomationPage() {
     busyAction === "export" ? "none" : busyAction;
 
   return (
-    <div className="space-y-5 animate-fade-in">
+    <div className="space-y-4 animate-fade-in">
       <AutomationPageHeader
         refreshing={refreshing}
         exporting={busyAction === "export"}
