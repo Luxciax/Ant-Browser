@@ -260,6 +260,11 @@ export function FishSettingsPage() {
               <label className="fish-field"><span>首选端口</span><input className="fish-input" type="number" min={1} max={65535} value={launch.preferredPort} onChange={(event) => setLaunch({ ...launch, preferredPort: Number(event.target.value) || 19876 })} /></label>
             </div>
             <button className="fish-btn" disabled={saving} onClick={() => void saveLaunch()}>保存端口</button>
+            <div className="fish-setting-row">
+              <div><strong>MCP Server</strong><span>{launch.mcp.enabled ? `${launch.mcp.toolCount} 个工具 · 复用 Launch API 鉴权` : '未启用'}</span></div>
+              <span className="fish-inline-note success">{launch.mcp.path || '/mcp'}</span>
+            </div>
+            <label className="fish-field"><span>MCP URL</span><input className="fish-input" readOnly value={launch.mcp.url} /></label>
           </div>
         </section>
       ) : null}

@@ -3,6 +3,7 @@ package backend
 import (
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/launchcode"
+	"ant-chrome/backend/internal/mcpserver"
 	"fmt"
 	"time"
 )
@@ -134,11 +135,23 @@ func (a *App) GetLaunchServerInfo() map[string]interface{} {
 			"enabled":    authEnabled,
 			"header":     authHeader,
 		},
+		"mcp": map[string]interface{}{
+			"enabled":   false,
+			"path":      "",
+			"url":       "",
+			"toolCount": mcpserver.ToolCount(),
+		},
 	}
 	if actualPort > 0 {
 		info["baseUrl"] = fmt.Sprintf("http://127.0.0.1:%d", actualPort)
 		info["cdpUrl"] = fmt.Sprintf("http://127.0.0.1:%d", actualPort)
 		if a.launchServer != nil {
+			info["mcp"] = map[string]interface{}{
+				"enabled":   a.launchServer.MCPPath() != "",
+				"path":      a.launchServer.MCPPath(),
+				"url":       a.launchServer.MCPURL(),
+				"toolCount": mcpserver.ToolCount(),
+			}
 			info["activeDebugPort"] = a.launchServer.ActiveDebugPort()
 			activeProfileID, activeProfileName, _ := a.launchServer.ActiveProfile()
 			info["activeProfileId"] = activeProfileID

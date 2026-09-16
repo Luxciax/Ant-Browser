@@ -8,6 +8,7 @@ import (
 	"ant-chrome/backend/internal/database"
 	"ant-chrome/backend/internal/launchcode"
 	"ant-chrome/backend/internal/logger"
+	"ant-chrome/backend/internal/mcpserver"
 	"ant-chrome/backend/internal/proxy"
 	"context"
 	"fmt"
@@ -179,6 +180,8 @@ func (a *App) startupInitLaunchServer(log *logger.Logger) {
 		APIKey:  a.config.LaunchServer.Auth.APIKey,
 		Header:  a.config.LaunchServer.Auth.Header,
 	})
+	mcpService := mcpserver.New(a.launchServer, a.appVersion())
+	a.launchServer.SetMCPHandler(mcpserver.DefaultPath, mcpService.Handler(mcpserver.Options{}))
 	if err := a.launchServer.Start(); err != nil {
 		log.Error("LaunchServer 启动失败", logger.F("error", err))
 		return

@@ -7,6 +7,7 @@ import (
 
 	"ant-chrome/backend/internal/launchcode"
 	"ant-chrome/backend/internal/logger"
+	"ant-chrome/backend/internal/mcpserver"
 )
 
 func (a *App) SaveLaunchServerSettings(port int) (map[string]interface{}, error) {
@@ -70,6 +71,8 @@ func (a *App) restartLaunchServer(port int) error {
 		APIKey:  a.config.LaunchServer.Auth.APIKey,
 		Header:  a.config.LaunchServer.Auth.Header,
 	})
+	mcpService := mcpserver.New(server, a.appVersion())
+	server.SetMCPHandler(mcpserver.DefaultPath, mcpService.Handler(mcpserver.Options{}))
 	if err := server.Start(); err != nil {
 		if previousServer != nil {
 			if restoreErr := previousServer.Start(); restoreErr != nil {

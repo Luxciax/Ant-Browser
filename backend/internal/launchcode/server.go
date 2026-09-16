@@ -125,6 +125,9 @@ type LaunchServer struct {
 	proxy       ProxyProvider
 	pageMu      sync.RWMutex
 	page        PageDriver
+	mcpMu       sync.RWMutex
+	mcpHandler  http.Handler
+	mcpPath     string
 }
 
 // NewLaunchServer 创建 LaunchServer
@@ -299,4 +302,44 @@ func (s *LaunchServer) activeTarget() (int, string, string) {
 func (s *LaunchServer) ActiveProfile() (string, string, int) {
 	port, profileID, profileName := s.activeTarget()
 	return profileID, profileName, port
+}
+
+func (s *LaunchServer) SetMCPHandler(path string, handler http.Handler) {
+	s.mcpMu.Lock()
+	s.mcpPath = normalizeMountPath(path)
+	s.mcpHandler = handler
+	s.mcpMu.Unlock()
+}
+
+func (s *LaunchServer) mcpMount() (string, http.Handler) {
+	s.mcpMu.RLock()
+	defer s.mcpMu.RUnlock()
+	return s.mcpPath, s.mcpHandler
+}
+
+func (s *LaunchServer) MCPPath() string {
+	path, handler := s.mcpMount()
+	if handler == nil {
+		return ""
+	}
+	return path
+}
+
+func (s *LaunchServer) MCPURL() string {
+	path := s.MCPPath()
+	if path == "" || s.CDPURL() == "" {
+		return ""
+	}
+	return s.CDPURL() + path
+}
+
+func normalizeMountPath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return ""
+	}
+	if !strings.HasPrefix(trimmed, "/") {
+		trimmed = "/" + trimmed
+	}
+	return strings.TrimRight(trimmed, "/")
 }

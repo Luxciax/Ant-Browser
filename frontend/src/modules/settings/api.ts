@@ -69,6 +69,12 @@ export interface LaunchServerSettings {
   preferredPort: number
   baseUrl: string
   ready: boolean
+  mcp: {
+    enabled: boolean
+    path: string
+    url: string
+    toolCount: number
+  }
 }
 
 export const defaultAutomationState: AutomationState = {
@@ -280,6 +286,12 @@ function normalizeLaunchServerSettings(payload: any): LaunchServerSettings {
     preferredPort,
     baseUrl: String(payload?.baseUrl || (effectivePort > 0 ? `http://${host}:${effectivePort}` : '')),
     ready: !!payload?.ready && port > 0,
+    mcp: {
+      enabled: !!payload?.mcp?.enabled,
+      path: String(payload?.mcp?.path || ''),
+      url: String(payload?.mcp?.url || ''),
+      toolCount: Number(payload?.mcp?.toolCount) || 0,
+    },
   }
 }
 

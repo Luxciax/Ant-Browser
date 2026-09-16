@@ -67,7 +67,7 @@ func (s *LaunchServer) APIAuthEnabled() bool {
 
 func (s *LaunchServer) apiAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/") {
+		if !s.requiresAPIAuth(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -90,4 +90,15 @@ func (s *LaunchServer) apiAuthMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *LaunchServer) requiresAPIAuth(path string) bool {
+	if strings.HasPrefix(path, "/api/") {
+		return true
+	}
+	mcpPath := s.MCPPath()
+	if mcpPath == "" {
+		return false
+	}
+	return path == mcpPath || strings.HasPrefix(path, mcpPath+"/")
 }

@@ -20,6 +20,9 @@ func (s *LaunchServer) buildMux() *http.ServeMux {
 	mux.HandleFunc("/api/launch/logs", s.handleLaunchLogs)
 	mux.HandleFunc("/api/launch/tasks", s.handleLaunchTasks)
 	mux.Handle("/api/launch/", s.trackLaunchTask(http.HandlerFunc(s.handleLaunch)))
+	if path, handler := s.mcpMount(); path != "" && handler != nil {
+		mux.Handle(path, handler)
+	}
 	mux.HandleFunc("/", s.handleCDPProxy)
 	return mux
 }

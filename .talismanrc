@@ -1,0 +1,10 @@
+fileignoreconfig:
+- filename: go.sum
+  checksum: 282edf631b1b2d9949fd58ed0d48c2e015712b5c75180604cb68c4054a80026e
+- filename: backend/internal/launchcode/server_mcp_test.go
+  checksum: 19dc8c5c9f6d3715d6d26d6ce2e0e959f40805a33706ae485a4904461d9c85d9
+- filename: backend/internal/mcpserver/tools_page_types.go
+  checksum: 04f63fd5d4f3d1cbc9355aacbc5abc20ac99e92cb70019c3206b043c92de2da7
+- filename: backend/internal/mcpserver/tools_instance.go
+  checksum: 8ce245514792632f66e2db7778e9a923594269568ac4b74b9f28f7ac6bb89b39
+version: "1.0"
