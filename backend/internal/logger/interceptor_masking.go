@@ -97,7 +97,20 @@ func (m *MethodInterceptor) maskSensitiveValue(fieldName string, value interface
 func (m *MethodInterceptor) isSensitiveField(fieldName string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.sensitiveFields[strings.ToLower(fieldName)]
+	name := strings.ToLower(strings.TrimSpace(fieldName))
+	if name == "" {
+		return false
+	}
+	if m.sensitiveFields[name] {
+		return true
+	}
+	for sensitive := range m.sensitiveFields {
+		sensitive = strings.ToLower(strings.TrimSpace(sensitive))
+		if sensitive != "" && strings.Contains(name, sensitive) {
+			return true
+		}
+	}
+	return false
 }
 
 // AddSensitiveField 添加敏感字段
