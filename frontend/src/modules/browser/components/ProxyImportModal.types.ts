@@ -30,7 +30,7 @@ export interface DirectImportForm {
 }
 
 export interface ChainHopForm {
-  protocol: 'http' | 'socks5'
+  protocol: 'http' | 'https' | 'socks5'
   server: string
   port: string
   username: string
@@ -38,7 +38,7 @@ export interface ChainHopForm {
 }
 
 export type ChainFirstHopMode = 'standard' | 'node'
-export type ChainNodeProtocol = 'vless' | 'vmess' | 'trojan' | 'ss' | 'hysteria2'
+export type ChainNodeProtocol = 'vless' | 'vmess' | 'trojan' | 'ss' | 'hysteria' | 'hysteria2' | 'tuic' | 'anytls' | 'mieru' | 'wireguard'
 export type ChainNodeSource = 'pool' | 'manual'
 
 export interface ChainImportForm {
@@ -47,6 +47,7 @@ export interface ChainImportForm {
   firstMode: ChainFirstHopMode
   firstNodeProtocol: ChainNodeProtocol
   firstNodeSource: ChainNodeSource
+  firstProxyId: string
   firstProxyConfig: string
   first: ChainHopForm
   second: ChainHopForm
@@ -59,7 +60,12 @@ export const CHAIN_FIRST_PROTOCOL_OPTIONS = [
   { value: 'vmess', label: 'VMess' },
   { value: 'trojan', label: 'Trojan' },
   { value: 'ss', label: 'SS' },
+  { value: 'hysteria', label: 'Hysteria' },
   { value: 'hysteria2', label: 'HY2' },
+  { value: 'tuic', label: 'TUIC' },
+  { value: 'anytls', label: 'AnyTLS' },
+  { value: 'mieru', label: 'Mieru' },
+  { value: 'wireguard', label: 'WireGuard' },
 ] as const
 
 export const DIRECT_PROXY_PROTOCOL_OPTIONS = [
@@ -83,6 +89,7 @@ export const INITIAL_CHAIN_IMPORT_FORM: ChainImportForm = {
   firstMode: 'standard',
   firstNodeProtocol: 'vless',
   firstNodeSource: 'pool',
+  firstProxyId: '',
   firstProxyConfig: '',
   first: {
     protocol: 'http',
@@ -117,6 +124,7 @@ export interface ProxyDisplayInfo {
 }
 
 export const CHAIN_SOCKS5_PREFIX = 'chain+socks5://'
+export const CHAIN_PROXY_PREFIX = 'chain+proxy://'
 
 export interface ChainSocks5HopConfig {
   protocol?: 'http' | 'socks5'
@@ -131,4 +139,12 @@ export interface ChainSocks5Config {
   localPort?: number
   first: ChainSocks5HopConfig
   second: ChainSocks5HopConfig
+}
+
+export interface ChainProxyConfig {
+  version: 2
+  frontProxyId: string
+  landing: ChainSocks5HopConfig
+  localPort?: number
+  preferredKernel?: string
 }

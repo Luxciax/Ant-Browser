@@ -1,6 +1,22 @@
 import yaml from 'js-yaml'
 import type { BrowserProxy } from '../types'
-import { CHAIN_SOCKS5_PREFIX, type ChainImportForm, type ChainHopForm, type ChainSocks5Config, type ChainSocks5HopConfig, type ClashProxy, type DirectImportForm, type ImportCandidate, type ProxyDisplayInfo } from './ProxyImportModal.types'
+import { CHAIN_PROXY_PREFIX, CHAIN_SOCKS5_PREFIX, type ChainImportForm, type ChainHopForm, type ChainProxyConfig, type ChainSocks5Config, type ChainSocks5HopConfig, type ClashProxy, type DirectImportForm, type ImportCandidate, type ProxyDisplayInfo } from './ProxyImportModal.types'
+
+function parseChainProxyConfig(proxyConfig: string): ChainProxyConfig | null {
+  const cfg = proxyConfig.trim()
+  if (!cfg.toLowerCase().startsWith(CHAIN_PROXY_PREFIX)) return null
+  const encoded = cfg.slice(CHAIN_PROXY_PREFIX.length)
+  if (!encoded) return null
+  try {
+    const parsed = JSON.parse(decodeURIComponent(encoded)) as ChainProxyConfig
+    if (!parsed || Number(parsed.version) !== 2 || !String(parsed.frontProxyId || '').trim()) return null
+    const landing = parsed.landing
+    if (!landing || !String(landing.server || '').trim() || !Number.isInteger(Number(landing.port || 0))) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
 
 function parseChainSocks5Config(proxyConfig: string): ChainSocks5Config | null {
   const cfg = proxyConfig.trim()
@@ -50,6 +66,15 @@ function parseChainSocks5Config(proxyConfig: string): ChainSocks5Config | null {
 export function parseProxyInfo(proxyConfig: string): { type: string; server: string; port: number } {
   const cfg = proxyConfig.trim()
   if (cfg === 'direct://') return { type: 'direct', server: '-', port: 0 }
+
+  const referencedChain = parseChainProxyConfig(cfg)
+  if (referencedChain) {
+    return {
+      type: 'chain-proxy',
+      server: `${referencedChain.frontProxyId} → ${referencedChain.landing.server || '-'}`,
+      port: Number(referencedChain.landing.port || 0),
+    }
+  }
 
   const chain = parseChainSocks5Config(cfg)
   if (chain) {
@@ -284,15 +309,35 @@ export function buildChainImportCandidate(form: ChainImportForm): ImportCandidat
     throw new Error('本地监听端口必须在 1-65535 之间')
   }
 
+  const second = parseHop('第二层', form.second)
+
+  if (form.firstMode === 'node' && form.firstNodeSource === 'pool') {
+    const frontProxyId = form.firstProxyId.trim()
+    if (!frontProxyId) throw new Error('请选择第一层代理池节点')
+    const payload: ChainProxyConfig = {
+      version: 2,
+      frontProxyId,
+      landing: second,
+      localPort: localPort > 0 ? localPort : undefined,
+    }
+    return {
+      proxyName: form.proxyName.trim() || `链式代理-${form.firstNodeProtocol.toUpperCase()}-${second.server}`,
+      proxyConfig: `${CHAIN_PROXY_PREFIX}${encodeURIComponent(JSON.stringify(payload))}`,
+    }
+  }
+
+  if (form.firstMode === 'node' && ['hysteria', 'tuic', 'anytls', 'mieru', 'wireguard'].includes(form.firstNodeProtocol)) {
+    throw new Error(`${form.firstNodeProtocol.toUpperCase()} 仅支持从代理池引用节点`)
+  }
+
   const first: ChainSocks5HopConfig = form.firstMode === 'node'
     ? (() => {
         const proxyConfig = form.firstProxyConfig.trim()
         if (!proxyConfig) throw new Error('请输入第一层机场节点配置')
-        if (/^chain\+socks5:\/\//i.test(proxyConfig)) throw new Error('第一层不支持嵌套链式代理')
+        if (/^chain\+(?:socks5|proxy):\/\//i.test(proxyConfig)) throw new Error('第一层不支持嵌套链式代理')
         return { proxyConfig }
       })()
     : parseHop('第一层', form.first)
-  const second = parseHop('第二层', form.second)
   const payload: ChainSocks5Config = { first, second, localPort: localPort > 0 ? localPort : undefined }
   const firstLabel = first.proxyConfig
     ? (first.proxyConfig.match(/^([a-zA-Z0-9+.-]+):\/\//)?.[1]?.toUpperCase() || 'NODE')

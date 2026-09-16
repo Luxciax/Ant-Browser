@@ -98,8 +98,12 @@ export function ProxyImportModalView({
   onConfirmImport,
 }: ProxyImportModalViewProps) {
   const chainProtocolLabel = chainImportForm.firstNodeProtocol === 'hysteria2' ? 'HY2' : chainImportForm.firstNodeProtocol.toUpperCase()
-  const chainNodeOptions = fetchProxyOptions.filter(proxy => detectProxyNodeProtocol(proxy.proxyConfig) === chainImportForm.firstNodeProtocol)
-  const selectedChainNodeId = chainNodeOptions.find(proxy => proxy.proxyConfig.trim() === chainImportForm.firstProxyConfig.trim())?.proxyId || ''
+  const chainNodeOptions = fetchProxyOptions.filter(proxy => {
+    const config = proxy.proxyConfig.trim().toLowerCase()
+    return !!config && config !== 'direct://' && !config.startsWith('chain+') && detectProxyNodeProtocol(proxy.proxyConfig) === chainImportForm.firstNodeProtocol
+  })
+  const selectedChainNodeId = chainImportForm.firstProxyId || chainNodeOptions.find(proxy => proxy.proxyConfig.trim() === chainImportForm.firstProxyConfig.trim())?.proxyId || ''
+  const referenceOnlyNode = ['hysteria', 'tuic', 'anytls', 'mieru', 'wireguard'].includes(chainImportForm.firstNodeProtocol)
 
   return (
     <>
@@ -295,7 +299,14 @@ export function ProxyImportModalView({
                           onChainImportFormChange(prev => ({ ...prev, firstMode: 'standard' }))
                           onUpdateChainHop('first', 'protocol', value)
                         } else {
-                          onChainImportFormChange(prev => ({ ...prev, firstMode: 'node', firstNodeProtocol: value as ChainImportForm['firstNodeProtocol'], ...(prev.firstNodeSource === 'pool' ? { firstProxyConfig: '' } : {}) }))
+                          const nextProtocol = value as ChainImportForm['firstNodeProtocol']
+                          const referenceOnly = ['hysteria', 'tuic', 'anytls', 'mieru', 'wireguard'].includes(nextProtocol)
+                          onChainImportFormChange(prev => ({
+                            ...prev,
+                            firstMode: 'node',
+                            firstNodeProtocol: nextProtocol,
+                            ...(referenceOnly ? { firstNodeSource: 'pool' as const, firstProxyId: '', firstProxyConfig: '' } : prev.firstNodeSource === 'pool' ? { firstProxyId: '', firstProxyConfig: '' } : {}),
+                          }))
                         }
                       }}
                       options={[...CHAIN_FIRST_PROTOCOL_OPTIONS]}
@@ -305,8 +316,10 @@ export function ProxyImportModalView({
                     <FormItem label="节点来源">
                       <Select
                         value={chainImportForm.firstNodeSource}
-                        onChange={e => onChainImportFormChange(prev => ({ ...prev, firstNodeSource: e.target.value as ChainImportForm['firstNodeSource'], ...(e.target.value === 'pool' ? { firstProxyConfig: '' } : {}) }))}
-                        options={[{ value: 'pool', label: '从代理池选择' }, { value: 'manual', label: '手动输入' }]}
+                        onChange={e => onChainImportFormChange(prev => ({ ...prev, firstNodeSource: e.target.value as ChainImportForm['firstNodeSource'], firstProxyId: '', ...(e.target.value === 'pool' ? { firstProxyConfig: '' } : {}) }))}
+                        options={referenceOnlyNode
+                          ? [{ value: 'pool', label: '从代理池选择' }]
+                          : [{ value: 'pool', label: '从代理池选择' }, { value: 'manual', label: '手动输入' }]}
                       />
                     </FormItem>
                   )}
@@ -317,7 +330,7 @@ export function ProxyImportModalView({
                       value={selectedChainNodeId}
                       onChange={e => {
                         const proxy = chainNodeOptions.find(item => item.proxyId === e.target.value)
-                        onChainImportFormChange(prev => ({ ...prev, firstProxyConfig: proxy?.proxyConfig || '' }))
+                        onChainImportFormChange(prev => ({ ...prev, firstProxyId: proxy?.proxyId || '', firstProxyConfig: proxy?.proxyConfig || '' }))
                       }}
                       options={[
                         { value: '', label: chainNodeOptions.length ? '请选择节点' : `暂无 ${chainProtocolLabel} 节点` },
@@ -330,7 +343,7 @@ export function ProxyImportModalView({
                   <FormItem label={`${chainProtocolLabel} 节点配置`} required>
                     <Textarea
                       value={chainImportForm.firstProxyConfig}
-                      onChange={e => onChainImportFormChange(prev => ({ ...prev, firstProxyConfig: e.target.value }))}
+                      onChange={e => onChainImportFormChange(prev => ({ ...prev, firstProxyId: '', firstProxyConfig: e.target.value }))}
                       rows={7}
                       placeholder={`${chainImportForm.firstNodeProtocol}://...（也支持兼容 Clash 单节点 YAML）`}
                     />
