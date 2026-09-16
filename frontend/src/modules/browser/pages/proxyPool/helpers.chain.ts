@@ -3,8 +3,14 @@ import type { ChainHopForm, ChainImportForm, ChainProxyConfig, ChainSocks5Config
 import { CHAIN_PROXY_PREFIX, CHAIN_SOCKS5_PREFIX, INITIAL_CHAIN_IMPORT_FORM } from './helpers.types'
 
 function detectChainNodeProtocol(proxyConfig: string): ChainImportForm['firstNodeProtocol'] {
-  const scheme = proxyConfig.trim().match(/^([a-zA-Z0-9+.-]+):\/\//)?.[1]?.toLowerCase()
+  const source = proxyConfig.trim()
+  const scheme = source.match(/^([a-zA-Z0-9+.-]+):\/\//)?.[1]?.toLowerCase()
   if (scheme === 'hysteria2' || scheme === 'hy2') return 'hysteria2'
+  if (scheme === 'hysteria' || scheme === 'tuic' || scheme === 'anytls' || scheme === 'mieru' || scheme === 'wireguard') return scheme
+  const lower = source.toLowerCase()
+  for (const type of ['hysteria', 'hysteria2', 'tuic', 'anytls', 'mieru', 'wireguard'] as const) {
+    if (lower.includes(`type: ${type}`) || lower.includes(`type:${type}`)) return type
+  }
   return scheme === 'vmess' || scheme === 'trojan' || scheme === 'ss' ? scheme : 'vless'
 }
 function normalizeChainHop(raw: unknown, allowProxyConfig: boolean): ChainSocks5HopConfig | null {
@@ -198,6 +204,10 @@ export function buildChainImportCandidate(form: ChainImportForm): ImportCandidat
       proxyName: form.proxyName.trim() || `链式代理-${second.server}`,
       proxyConfig: `${CHAIN_PROXY_PREFIX}${encodeURIComponent(JSON.stringify(payload))}`,
     }
+  }
+
+  if (form.firstMode === 'node' && !['vless', 'vmess', 'trojan', 'ss', 'hysteria2'].includes(form.firstNodeProtocol)) {
+    throw new Error(`${form.firstNodeProtocol.toUpperCase()} 仅支持引用代理池节点作为第一层`)
   }
 
   const first: ChainSocks5HopConfig = form.firstMode === 'node'

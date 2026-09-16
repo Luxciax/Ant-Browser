@@ -41,6 +41,24 @@ function latencyLabel(value: number | undefined) {
   return `${value} ms`
 }
 
+function chainAllowedKernels(form: ChainImportForm): string[] {
+  if (form.firstMode !== 'node') return ['xray']
+  switch (form.firstNodeProtocol) {
+    case 'hysteria':
+    case 'hysteria2':
+    case 'tuic':
+    case 'anytls':
+      return form.firstNodeSource === 'pool' ? ['sing-box', 'mihomo'] : ['sing-box']
+    case 'mieru':
+    case 'wireguard':
+      return ['mihomo']
+    case 'ss':
+      return form.firstNodeSource === 'pool' ? ['xray', 'mihomo'] : ['xray']
+    default:
+      return ['xray']
+  }
+}
+
 export function FishProxyPoolPage() {
   const [proxies, setProxies] = useState<BrowserProxy[]>([])
   const [displayList, setDisplayList] = useState<ProxyDisplayInfo[]>([])
@@ -129,9 +147,8 @@ export function FishProxyPoolPage() {
     } catch (error) { toast.error(error instanceof Error ? error.message : '代理配置无效'); return }
     let preferredKernel = editForm.preferredKernel
     if (chainEditMode) {
-      const hy2Chain = chainEditForm.firstMode === 'node' && chainEditForm.firstNodeProtocol === 'hysteria2'
-      const allowedKernel = hy2Chain ? 'sing-box' : 'xray'
-      if (preferredKernel !== 'auto' && preferredKernel !== allowedKernel) preferredKernel = 'auto'
+      const allowedKernels = chainAllowedKernels(chainEditForm)
+      if (preferredKernel !== 'auto' && !allowedKernels.includes(preferredKernel)) preferredKernel = 'auto'
     }
     setSaving(true)
     try {

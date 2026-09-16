@@ -75,6 +75,9 @@ func TestReferencedChainKernelFollowsFrontProtocol(t *testing.T) {
 		{name: "vless uses xray", front: "vless://11111111-1111-1111-1111-111111111111@example.com:443?security=tls&sni=example.com#front", wantFirst: ProxyKernelXray},
 		{name: "hy2 uses sing-box", front: "hysteria2://password@example.com:443?sni=example.com", wantFirst: ProxyKernelSingBox},
 		{name: "anytls uses sing-box", front: "anytls://password@example.com:443?sni=example.com", wantFirst: ProxyKernelSingBox},
+		{name: "tuic uses sing-box", front: "tuic://00000000-0000-0000-0000-000000000001:test-password@tuic.example.com:443?sni=example.com", wantFirst: ProxyKernelSingBox},
+		{name: "mieru uses mihomo", front: mieruClashNode, wantFirst: ProxyKernelMihomo},
+		{name: "wireguard uses mihomo", front: "name: wg-front\ntype: wireguard\nserver: wg.example.com\nport: 51820\nip: 172.16.0.2\nprivate-key: private\npublic-key: public\n", wantFirst: ProxyKernelMihomo},
 	}
 
 	for _, tt := range tests {

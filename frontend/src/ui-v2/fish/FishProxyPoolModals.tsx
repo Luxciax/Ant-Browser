@@ -38,6 +38,7 @@ function Field({ label, children, hint }: { label: string; children: React.React
 function ChainFields({ form, proxies, onFormChange, onHopChange }: { form: ChainImportForm; proxies: BrowserProxy[]; onFormChange: (patch: Partial<ChainImportForm>) => void; onHopChange: (hop: 'first' | 'second', field: keyof ChainImportForm['first'], value: string) => void }) {
   const standardHopFields = (hop: 'first' | 'second', showProtocol = true) => <div className="fish-form-grid two">{showProtocol ? <Field label="协议"><select className="fish-select" value={form[hop].protocol} onChange={(e) => onHopChange(hop, 'protocol', e.target.value)}><option value="http">HTTP</option><option value="socks5">SOCKS5</option></select></Field> : null}<Field label="代理地址"><input className="fish-input" value={form[hop].server} onChange={(e) => onHopChange(hop, 'server', e.target.value)} /></Field><Field label="代理端口"><input className="fish-input" value={form[hop].port} onChange={(e) => onHopChange(hop, 'port', e.target.value)} /></Field><Field label="账号"><input className="fish-input" value={form[hop].username} onChange={(e) => onHopChange(hop, 'username', e.target.value)} /></Field><Field label="密码"><input className="fish-input" type="password" value={form[hop].password} onChange={(e) => onHopChange(hop, 'password', e.target.value)} /></Field></div>
   const firstProtocol = form.firstMode === 'node' ? form.firstNodeProtocol : form.first.protocol
+  const manualNodeSupported = ['vless', 'vmess', 'trojan', 'ss', 'hysteria2'].includes(form.firstNodeProtocol)
   const nodeOptions = proxies.filter((proxy) => {
     const config = proxy.proxyConfig.trim().toLowerCase()
     return !!config && config !== 'direct://' && !config.startsWith('chain+') && detectProxyNodeProtocol(proxy.proxyConfig) === form.firstNodeProtocol
@@ -49,9 +50,12 @@ function ChainFields({ form, proxies, onFormChange, onHopChange }: { form: Chain
       onHopChange('first', 'protocol', value)
       return
     }
-    onFormChange({ firstMode: 'node', firstNodeProtocol: value as ChainImportForm['firstNodeProtocol'], ...(form.firstNodeSource === 'pool' ? { firstProxyId: '', firstProxyConfig: '' } : {}) })
+    const nextProtocol = value as ChainImportForm['firstNodeProtocol']
+    const nextManualSupported = ['vless', 'vmess', 'trojan', 'ss', 'hysteria2'].includes(nextProtocol)
+    onFormChange({ firstMode: 'node', firstNodeProtocol: nextProtocol, ...(!nextManualSupported ? { firstNodeSource: 'pool' as const } : {}), firstProxyId: '', firstProxyConfig: '' })
   }
   const changeNodeSource = (value: ChainImportForm['firstNodeSource']) => {
+    if (value === 'manual' && !manualNodeSupported) return
     onFormChange({ firstNodeSource: value, firstProxyId: '', ...(value === 'pool' ? { firstProxyConfig: '' } : {}) })
   }
   const choosePoolNode = (proxyId: string) => {

@@ -57,6 +57,7 @@ export function detectProxyNodeProtocol(proxyConfig: string): ChainNodeProtocol 
   const type = parseProxyInfo(proxyConfig).type.trim().toLowerCase()
   if (type === 'vless' || type === 'vmess' || type === 'trojan' || type === 'ss') return type
   if (type === 'hysteria2' || type === 'hy2') return 'hysteria2'
+  if (type === 'hysteria' || type === 'tuic' || type === 'anytls' || type === 'mieru' || type === 'wireguard') return type
   if (type === 'shadowsocks') return 'ss'
   return null
 }

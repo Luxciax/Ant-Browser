@@ -34,7 +34,7 @@ export interface ChainHopForm {
 }
 
 export type ChainFirstHopMode = 'standard' | 'node'
-export type ChainNodeProtocol = 'vless' | 'vmess' | 'trojan' | 'ss' | 'hysteria2'
+export type ChainNodeProtocol = 'vless' | 'vmess' | 'trojan' | 'ss' | 'hysteria' | 'hysteria2' | 'tuic' | 'anytls' | 'mieru' | 'wireguard'
 export type ChainNodeSource = 'pool' | 'manual'
 
 export interface ChainImportForm {
@@ -106,7 +106,12 @@ export const CHAIN_FIRST_PROTOCOL_OPTIONS = [
   { value: 'vmess', label: 'VMess' },
   { value: 'trojan', label: 'Trojan' },
   { value: 'ss', label: 'SS' },
+  { value: 'hysteria', label: 'Hysteria' },
   { value: 'hysteria2', label: 'HY2' },
+  { value: 'tuic', label: 'TUIC' },
+  { value: 'anytls', label: 'AnyTLS' },
+  { value: 'mieru', label: 'Mieru' },
+  { value: 'wireguard', label: 'WireGuard' },
 ] as const
 
 export const DIRECT_PROXY_PROTOCOL_OPTIONS = [
