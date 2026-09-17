@@ -37,6 +37,13 @@ type ExtensionLookupResult struct {
 	Message     string `json:"message"`
 }
 
+type ExtensionSearchResult struct {
+	ExtensionID string `json:"extensionId"`
+	Name        string `json:"name"`
+	StoreURL    string `json:"storeUrl"`
+	IconURL     string `json:"iconUrl"`
+}
+
 type ProfileExtensionSettings struct {
 	ProfileID    string   `json:"profileId"`
 	Configured   bool     `json:"configured"`

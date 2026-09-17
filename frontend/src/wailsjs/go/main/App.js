@@ -334,6 +334,14 @@ export function BrowserExtensionOpenManualDownloadDir() {
   return window['go']['main']['App']['BrowserExtensionOpenManualDownloadDir']();
 }
 
+export function BrowserExtensionSearch(arg1) {
+  return window['go']['main']['App']['BrowserExtensionSearch'](arg1);
+}
+
+export function BrowserExtensionSearchWithProxy(arg1) {
+  return window['go']['main']['App']['BrowserExtensionSearchWithProxy'](arg1);
+}
+
 export function BrowserExtensionSetDefaultInstall(arg1, arg2) {
   return window['go']['main']['App']['BrowserExtensionSetDefaultInstall'](arg1, arg2);
 }

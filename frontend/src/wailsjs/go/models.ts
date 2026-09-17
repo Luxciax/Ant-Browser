@@ -1581,6 +1581,24 @@ export namespace browser {
 	        this.message = source["message"];
 	    }
 	}
+	export class ExtensionSearchResult {
+	    extensionId: string;
+	    name: string;
+	    storeUrl: string;
+	    iconUrl: string;
+
+	    static createFrom(source: any = {}) {
+	        return new ExtensionSearchResult(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.extensionId = source["extensionId"];
+	        this.name = source["name"];
+	        this.storeUrl = source["storeUrl"];
+	        this.iconUrl = source["iconUrl"];
+	    }
+	}
 	export class Group {
 	    groupId: string;
 	    groupName: string;

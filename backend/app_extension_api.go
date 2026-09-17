@@ -5,6 +5,7 @@ import (
 	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/logger"
 	"ant-chrome/backend/internal/proxy"
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 type BrowserExtension = browser.Extension
 type BrowserExtensionLookupResult = browser.ExtensionLookupResult
+type BrowserExtensionSearchResult = browser.ExtensionSearchResult
 type BrowserProfileExtensionSettings = browser.ProfileExtensionSettings
 
 type BrowserExtensionWebStoreRequest struct {
@@ -60,6 +62,21 @@ func (a *App) BrowserExtensionLookupWithProxy(input BrowserExtensionWebStoreRequ
 		return BrowserExtensionLookupResult{}, fmt.Errorf("下载代理配置错误: %w", err)
 	}
 	return a.browserMgr.LookupExtensionWithHTTPClient(input.Query, client)
+}
+
+func (a *App) BrowserExtensionSearch(query string) ([]BrowserExtensionSearchResult, error) {
+	return a.BrowserExtensionSearchWithProxy(BrowserExtensionWebStoreRequest{Query: query})
+}
+
+func (a *App) BrowserExtensionSearchWithProxy(input BrowserExtensionWebStoreRequest) ([]BrowserExtensionSearchResult, error) {
+	if a.browserMgr == nil {
+		return nil, fmt.Errorf("浏览器管理器未初始化")
+	}
+	client, err := a.extensionDownloadHTTPClient(input.UseProxy, input.ProxyConfig)
+	if err != nil {
+		return nil, fmt.Errorf("下载代理配置错误: %w", err)
+	}
+	return a.browserMgr.SearchChromeWebStoreWithHTTPClient(context.Background(), input.Query, client)
 }
 
 func (a *App) BrowserExtensionInstall(query string) (BrowserExtension, error) {

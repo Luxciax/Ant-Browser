@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -54,6 +55,14 @@ func BuildChromeWebStoreURL(extensionID string) string {
 	return "https://chromewebstore.google.com/detail/" + normalizedID
 }
 
+func BuildChromeWebStoreSearchURL(query string) string {
+	value := strings.TrimSpace(query)
+	if value == "" {
+		return ""
+	}
+	return "https://chromewebstore.google.com/search/" + url.PathEscape(value)
+}
+
 func BuildChromeExtensionDownloadURL(extensionID string) string {
 	normalizedID := NormalizeExtensionID(extensionID)
 	if normalizedID == "" {
@@ -80,21 +89,25 @@ func (m *Manager) LookupExtensionWithHTTPClient(query string, client *http.Clien
 	}
 	data, err := downloadChromeExtensionCRX(context.Background(), extensionID, client)
 	if err != nil {
+		result.Installable = false
 		result.Message = "已识别插件 ID，但暂时无法读取商店元信息: " + err.Error()
 		return result, nil
 	}
 	zipData, err := normalizeExtensionArchiveData(data)
 	if err != nil {
+		result.Installable = false
 		result.Message = "已识别插件 ID，但插件包格式无法解析: " + err.Error()
 		return result, nil
 	}
 	manifestData, err := readExtensionManifestFromZip(zipData)
 	if err != nil {
+		result.Installable = false
 		result.Message = "已识别插件 ID，但 manifest 无法解析: " + err.Error()
 		return result, nil
 	}
 	manifest, err := parseExtensionManifest(manifestData)
 	if err != nil {
+		result.Installable = false
 		result.Message = "已识别插件 ID，但 manifest 无法解析: " + err.Error()
 		return result, nil
 	}
@@ -113,6 +126,14 @@ func (m *Manager) LookupExtensionWithHTTPClient(query string, client *http.Clien
 		Installable: result.Installable,
 		Message:     result.Message,
 	}, nil
+}
+
+func (m *Manager) SearchChromeWebStore(query string) ([]ExtensionSearchResult, error) {
+	return m.SearchChromeWebStoreWithHTTPClient(context.Background(), query, nil)
+}
+
+func (m *Manager) SearchChromeWebStoreWithHTTPClient(ctx context.Context, query string, client *http.Client) ([]ExtensionSearchResult, error) {
+	return searchChromeWebStore(ctx, query, client)
 }
 
 func (m *Manager) InstallExtensionFromWebStore(ctx context.Context, query string) (Extension, error) {
@@ -192,6 +213,7 @@ func (m *Manager) InstallExtensionPackageBytes(extensionID string, sourceURL str
 		PackagePath:  packagePath,
 		PackageHash:  packageHash,
 		Enabled:      true,
+		DefaultInstall: true,
 	}
 	if m.ExtensionDAO != nil {
 		if err := m.ExtensionDAO.Upsert(extension); err != nil {

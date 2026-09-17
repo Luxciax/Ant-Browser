@@ -176,6 +176,10 @@ export function BrowserExtensionManualInstallGuide(arg1:string):Promise<backend.
 
 export function BrowserExtensionOpenManualDownloadDir():Promise<void>;
 
+export function BrowserExtensionSearch(arg1:string):Promise<Array<browser.ExtensionSearchResult>>;
+
+export function BrowserExtensionSearchWithProxy(arg1:backend.BrowserExtensionWebStoreRequest):Promise<Array<browser.ExtensionSearchResult>>;
+
 export function BrowserExtensionSetDefaultInstall(arg1:string,arg2:boolean):Promise<browser.Extension>;
 
 export function BrowserExtensionSetEnabled(arg1:string,arg2:boolean):Promise<browser.Extension>;

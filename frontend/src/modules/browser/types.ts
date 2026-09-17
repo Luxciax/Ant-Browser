@@ -432,6 +432,13 @@ export interface BrowserExtensionLookupResult {
   message: string
 }
 
+export interface BrowserExtensionSearchResult {
+  extensionId: string
+  name: string
+  storeUrl: string
+  iconUrl: string
+}
+
 export interface BrowserProfileExtensionSettings {
   profileId: string
   configured: boolean

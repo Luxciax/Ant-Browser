@@ -1,4 +1,4 @@
-import type { BrowserExtension, BrowserExtensionLookupResult, BrowserProfileExtensionSettings } from '../types'
+import type { BrowserExtension, BrowserExtensionLookupResult, BrowserExtensionSearchResult, BrowserProfileExtensionSettings } from '../types'
 import { getBindings, getGoApp } from './runtime'
 
 export interface BrowserExtensionManualInstallGuide {
@@ -48,6 +48,15 @@ function normalizeLookup(payload: any): BrowserExtensionLookupResult {
   }
 }
 
+function normalizeSearchResult(payload: any): BrowserExtensionSearchResult {
+  return {
+    extensionId: String(payload?.extensionId || ''),
+    name: String(payload?.name || ''),
+    storeUrl: String(payload?.storeUrl || ''),
+    iconUrl: String(payload?.iconUrl || ''),
+  }
+}
+
 function normalizeManualInstallGuide(payload: any): BrowserExtensionManualInstallGuide {
   return {
     extensionId: String(payload?.extensionId || ''),
@@ -86,6 +95,20 @@ export async function lookupBrowserExtension(query: string, proxyConfig = '', us
     return normalizeLookup(await bindings.BrowserExtensionLookup(query))
   }
   throw new Error('当前环境不支持插件查询')
+}
+
+export async function searchBrowserExtensions(query: string, proxyConfig = '', useProxy = false): Promise<BrowserExtensionSearchResult[]> {
+  const bindings: any = await getBindings()
+  if (bindings?.BrowserExtensionSearchWithProxy) {
+    const result = await bindings.BrowserExtensionSearchWithProxy({ query, useProxy, proxyConfig })
+    return Array.isArray(result) ? result.map(normalizeSearchResult) : []
+  }
+  if (useProxy) throw new Error('当前后端版本不支持扩展商店搜索代理，请重启或更新应用')
+  if (bindings?.BrowserExtensionSearch) {
+    const result = await bindings.BrowserExtensionSearch(query)
+    return Array.isArray(result) ? result.map(normalizeSearchResult) : []
+  }
+  throw new Error('当前后端版本不支持扩展商店搜索，请重启或更新应用')
 }
 
 export async function installBrowserExtension(query: string, proxyConfig = '', useProxy = false): Promise<BrowserExtension> {

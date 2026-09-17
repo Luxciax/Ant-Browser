@@ -17,7 +17,156 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/net/html"
 )
+
+const extensionSearchResultLimit = 12
+
+func searchChromeWebStore(ctx context.Context, query string, client *http.Client) ([]ExtensionSearchResult, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, fmt.Errorf("请输入扩展名称")
+	}
+	if client == nil {
+		client = &http.Client{Timeout: extensionDownloadTimeout}
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, BuildChromeWebStoreSearchURL(query), nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36")
+	request.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("搜索 Chrome Web Store 失败: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("搜索 Chrome Web Store 失败: HTTP %d", response.StatusCode)
+	}
+	doc, err := html.Parse(io.LimitReader(response.Body, 8<<20))
+	if err != nil {
+		return nil, fmt.Errorf("解析 Chrome Web Store 搜索结果失败: %w", err)
+	}
+	return parseChromeWebStoreSearchResults(doc, extensionSearchResultLimit), nil
+}
+
+func parseChromeWebStoreSearchResults(root *html.Node, limit int) []ExtensionSearchResult {
+	if root == nil || limit <= 0 {
+		return nil
+	}
+	results := make([]ExtensionSearchResult, 0, limit)
+	seen := make(map[string]struct{}, limit)
+	var walk func(*html.Node)
+	walk = func(node *html.Node) {
+		if node == nil || len(results) >= limit {
+			return
+		}
+		if node.Type == html.ElementNode {
+			extensionID := NormalizeExtensionID(htmlNodeAttr(node, "data-item-id"))
+			if extensionID != "" {
+				if _, exists := seen[extensionID]; !exists {
+					name := strings.TrimSpace(firstDescendantText(node, "h2"))
+					if name == "" {
+						name = extensionID
+					}
+					results = append(results, ExtensionSearchResult{
+						ExtensionID: extensionID,
+						Name:        name,
+						StoreURL:    BuildChromeWebStoreURL(extensionID),
+						IconURL:     firstDescendantAttr(node, "img", "src"),
+					})
+					seen[extensionID] = struct{}{}
+				}
+			}
+		}
+		for child := node.FirstChild; child != nil && len(results) < limit; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(root)
+	return results
+}
+
+func htmlNodeAttr(node *html.Node, name string) string {
+	if node == nil {
+		return ""
+	}
+	for _, attr := range node.Attr {
+		if strings.EqualFold(attr.Key, name) {
+			return strings.TrimSpace(attr.Val)
+		}
+	}
+	return ""
+}
+
+func firstDescendantText(root *html.Node, tag string) string {
+	if root == nil {
+		return ""
+	}
+	var result string
+	var walk func(*html.Node)
+	walk = func(node *html.Node) {
+		if node == nil || result != "" {
+			return
+		}
+		if node.Type == html.ElementNode && strings.EqualFold(node.Data, tag) {
+			result = strings.TrimSpace(nodeTextContent(node))
+			return
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(root)
+	return result
+}
+
+func firstDescendantAttr(root *html.Node, tag string, attrName string) string {
+	if root == nil {
+		return ""
+	}
+	var result string
+	var walk func(*html.Node)
+	walk = func(node *html.Node) {
+		if node == nil || result != "" {
+			return
+		}
+		if node.Type == html.ElementNode && strings.EqualFold(node.Data, tag) {
+			result = htmlNodeAttr(node, attrName)
+			if result != "" {
+				return
+			}
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(root)
+	return result
+}
+
+func nodeTextContent(node *html.Node) string {
+	if node == nil {
+		return ""
+	}
+	if node.Type == html.TextNode {
+		return node.Data
+	}
+	var builder strings.Builder
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		text := strings.TrimSpace(nodeTextContent(child))
+		if text == "" {
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteByte(' ')
+		}
+		builder.WriteString(text)
+	}
+	return strings.TrimSpace(builder.String())
+}
 
 func extractExtensionIDFromURL(rawURL string) string {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
