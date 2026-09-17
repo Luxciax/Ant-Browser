@@ -33,6 +33,8 @@ type extensionLegacyPreferences struct {
 
 func (m *Manager) PrepareProfileExtensions(profile *Profile, chromeBinaryPath string, userDataDir string, installArgs []string) ([]string, []error) {
 	warnings := make([]error, 0, 1)
+	preparedDirs := make([]string, 0)
+	_ = installArgs
 	if m == nil || m.ExtensionDAO == nil || profile == nil {
 		return nil, warnings
 	}
@@ -67,9 +69,13 @@ func (m *Manager) PrepareProfileExtensions(profile *Profile, chromeBinaryPath st
 	desired := make(map[string]Extension, len(extensions))
 	for _, extension := range extensions {
 		desired[extension.ExtensionID] = extension
-		if _, installErr := m.ensurePersistentExtensionInstalled(profile, userDataDir, chromeBinaryPath, extension, installArgs); installErr != nil {
+		artifactPath, installErr := m.ensurePersistentExtensionInstalled(profile, userDataDir, chromeBinaryPath, extension, nil)
+		if installErr != nil {
 			warnings = append(warnings, installErr)
 			continue
+		}
+		if strings.TrimSpace(artifactPath) != "" {
+			preparedDirs = append(preparedDirs, artifactPath)
 		}
 	}
 
@@ -115,7 +121,7 @@ func (m *Manager) PrepareProfileExtensions(profile *Profile, chromeBinaryPath st
 		}
 	}
 
-	return nil, warnings
+	return preparedDirs, warnings
 }
 func (m *Manager) RemoveExtensionFromStoppedProfiles(extensionID string) error {
 	if m == nil || m.ExtensionDAO == nil {
@@ -291,13 +297,6 @@ func (m *Manager) ensurePersistentExtensionInstalled(profile *Profile, userDataD
 		if artifactPath, recovered, recoverErr := m.recoverExistingPersistentExtensionRuntime(profile, userDataDir, packagePath, packageHash, extension); recoverErr != nil {
 			return "", recoverErr
 		} else if recovered {
-			runtimeID, idErr := runtimeExtensionIDFromPackage(packagePath, extension)
-			if idErr != nil {
-				return "", idErr
-			}
-			if err := ensurePersistentExternalExtensionRegistry(runtimeID, packagePath, extension.Version); err != nil {
-				return "", err
-			}
 			return artifactPath, nil
 		}
 	}
@@ -306,9 +305,6 @@ func (m *Manager) ensurePersistentExtensionInstalled(profile *Profile, userDataD
 		expectedArtifactPath := persistentExtensionCodePath(userDataDir, runtimeState.RuntimeExtensionID, extension.Version)
 		if artifactPath := persistentExtensionArtifactPath(userDataDir, runtimeState.RuntimeExtensionID, extension.Version); artifactPath != "" && sameProfileExtensionPath(artifactPath, expectedArtifactPath) {
 			if err := ensureProfileExtensionRegistration(userDataDir, artifactPath, runtimeState.RuntimeExtensionID, packagePath); err == nil {
-				if err := ensurePersistentExternalExtensionRegistry(runtimeState.RuntimeExtensionID, packagePath, extension.Version); err != nil {
-					return "", err
-				}
 				runtimeState.LastVerifiedAt = time.Now().Format(time.RFC3339)
 				runtimeState.LastError = ""
 				if err := m.ExtensionDAO.UpsertProfileExtensionRuntime(runtimeState); err != nil {
@@ -332,18 +328,11 @@ func (m *Manager) ensurePersistentExtensionInstalled(profile *Profile, userDataD
 	if err != nil {
 		return "", err
 	}
-	runtimeExtensionID, err := installCRXIntoProfile(userDataDir, chromeBinaryPath, packagePath, extension, installArgs)
+	runtimeExtensionID, err := installExtensionPackageIntoProfile(userDataDir, packagePath, extension)
 	if err != nil {
 		_ = restoreProfileExtensionState(userDataDir, backupPath, legacyRuntimeIDs, "")
 		m.recordProfileExtensionRuntimeError(profile.ProfileId, extension, runtimeState, packageHash, backupPath, err)
 		return "", fmt.Errorf("插件持久安装失败（%s）：%w；安装前备份已保留在 %s", extension.Name, err, backupPath)
-	}
-
-	if err := ensurePersistentExternalExtensionRegistry(runtimeExtensionID, packagePath, extension.Version); err != nil {
-		installErr := fmt.Errorf("persistent external extension registration failed: %w", err)
-		_ = restoreProfileExtensionState(userDataDir, backupPath, legacyRuntimeIDs, runtimeExtensionID)
-		m.recordProfileExtensionRuntimeError(profile.ProfileId, extension, runtimeState, packageHash, backupPath, installErr)
-		return "", fmt.Errorf("plugin persistent installation failed (%s): %w; backup retained at %s", extension.Name, installErr, backupPath)
 	}
 
 	for _, legacyRuntimeID := range legacyRuntimeIDs {

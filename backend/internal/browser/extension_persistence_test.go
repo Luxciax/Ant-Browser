@@ -99,6 +99,57 @@ func TestInstallExtensionPackageIntoProfileWritesProfileScopedCode(t *testing.T)
 	}
 }
 
+func TestPrepareProfileExtensionsUsesLocalPackageWithoutLaunchingBrowserHelper(t *testing.T) {
+	appRoot := t.TempDir()
+	userDataDir := filepath.Join(appRoot, "profile")
+	packagePath := filepath.Join(appRoot, "extension.crx")
+	const version = "1.0.0"
+	identityBytes := []byte("prepare-profile-local-package-key")
+	runtimeID := extensionIDFromPublicKey(identityBytes)
+	packageData := buildTestCRX2Package(t, identityBytes, version)
+	if err := os.WriteFile(packagePath, packageData, 0o644); err != nil {
+		t.Fatalf("WriteFile package returned error: %v", err)
+	}
+
+	manager := NewManager(config.DefaultConfig(), appRoot)
+	manager.ExtensionDAO = newTestExtensionDAO(t, appRoot)
+	if err := manager.ExtensionDAO.Upsert(Extension{
+		ExtensionID:    runtimeID,
+		Name:           "Local package",
+		Version:        version,
+		PackagePath:    packagePath,
+		PackageHash:    extensionPackageHash(packageData),
+		InstallMode:    ExtensionInstallModePersistent,
+		Enabled:        true,
+		DefaultInstall: true,
+	}); err != nil {
+		t.Fatalf("Upsert extension returned error: %v", err)
+	}
+
+	profile := &Profile{ProfileId: "profile", ProfileName: "profile", UserDataDir: userDataDir}
+	dirs, warnings := manager.PrepareProfileExtensions(profile, `Z:\definitely-missing\chrome.exe`, userDataDir, []string{"--remote-debugging-port=9222"})
+	if len(warnings) != 0 {
+		t.Fatalf("PrepareProfileExtensions warnings = %v, want none", warnings)
+	}
+	if len(dirs) != 1 {
+		t.Fatalf("PrepareProfileExtensions dirs = %#v, want one prepared extension", dirs)
+	}
+	expectedPath := persistentExtensionCodePath(userDataDir, runtimeID, version)
+	if !sameProfileExtensionPath(dirs[0], expectedPath) {
+		t.Fatalf("prepared extension path = %q, want %q", dirs[0], expectedPath)
+	}
+	if _, err := os.Stat(filepath.Join(expectedPath, "manifest.json")); err != nil {
+		t.Fatalf("prepared manifest missing: %v", err)
+	}
+	runtimeState, err := manager.ExtensionDAO.GetProfileExtensionRuntime(profile.ProfileId, runtimeID)
+	if err != nil {
+		t.Fatalf("GetProfileExtensionRuntime returned error: %v", err)
+	}
+	if runtimeState.Status != ExtensionRuntimeStatusInstalled || runtimeState.RuntimeExtensionID != runtimeID {
+		t.Fatalf("runtime state = %#v, want locally installed runtime", runtimeState)
+	}
+}
+
 func TestProfileExtensionRegistrationUsesChromeRelativePathAndClearsMAC(t *testing.T) {
 	userDataDir := t.TempDir()
 	runtimeID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

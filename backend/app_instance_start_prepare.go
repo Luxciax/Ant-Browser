@@ -163,13 +163,9 @@ func (a *App) prepareBrowserStartPlan(input browserStartInput, profile *BrowserP
 		return nil, startErr
 	}
 
-	instanceArgs := buildBrowserLaunchArgs(userDataDir, assignedDebugPort, effectiveProxy, fingerprintLaunchArgs, sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs, launchTargets, restoreLastSession)
-	// 插件持久安装助手进程复用实例的调试端口与代理/指纹参数：
-	// 若此时实例浏览器尚未运行，安装助手进程就是实例浏览器本身，
-	// 缺少调试端口会导致后续正式启动被 Chrome 单实例交接、误报“就绪前退出”。
-	extensionInstallArgs := buildBrowserExtensionInstallerLaunchArgs(userDataDir, assignedDebugPort, effectiveProxy, fingerprintLaunchArgs, sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs)
-	_, extensionWarnings := a.browserMgr.PrepareProfileExtensions(profile, chromeBinaryPath, userDataDir, extensionInstallArgs)
+	extensionDirs, extensionWarnings := a.browserMgr.PrepareProfileExtensions(profile, chromeBinaryPath, userDataDir, nil)
 	extensionWarning := joinBrowserStartExtensionWarnings(extensionWarnings)
+	instanceArgs := buildBrowserLaunchArgs(userDataDir, assignedDebugPort, effectiveProxy, extensionDirs, fingerprintLaunchArgs, sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs, launchTargets, restoreLastSession)
 
 	return &browserStartPlan{
 		profile:              profile,
@@ -188,27 +184,6 @@ func (a *App) prepareBrowserStartPlan(input browserStartInput, profile *BrowserP
 		maxStartAttempts:     maxStartAttempts,
 		totalReadyTimeout:    totalReadyTimeout,
 	}, nil
-}
-
-func buildBrowserExtensionInstallerLaunchArgs(userDataDir string, debugPort int, proxyConfig string, fingerprintLaunchArgs []string, profileLaunchArgs []string, extraLaunchArgs []string) []string {
-	// Extension preparation must never restore the user's previous browser
-	// session. The installer shares the real profile directory and runs before
-	// the actual profile launch; restoring here can persist an extra Chromium
-	// window into SessionStore and make a single profile start open twice.
-	args := buildBrowserLaunchArgs(userDataDir, debugPort, proxyConfig, fingerprintLaunchArgs, profileLaunchArgs, extraLaunchArgs, nil, false)
-	return filterExtensionInstallerWindowArgs(args)
-}
-
-func filterExtensionInstallerWindowArgs(args []string) []string {
-	filtered := make([]string, 0, len(args))
-	for _, arg := range args {
-		value := strings.ToLower(strings.TrimSpace(arg))
-		if value == "--restore-last-session" || value == "--new-window" || value == "--kiosk" || value == "--start-fullscreen" || value == "--start-maximized" || strings.HasPrefix(value, "--app=") || strings.HasPrefix(value, "--app-id=") {
-			continue
-		}
-		filtered = append(filtered, arg)
-	}
-	return filtered
 }
 
 func joinBrowserStartExtensionWarnings(warnings []error) string {
@@ -334,7 +309,7 @@ func (a *App) prepareBrowserLaunchContext(input browserStartInput, profile *Brow
 	return sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs, fingerprintLaunchArgs, chromeBinaryPath, userDataDir, nil
 }
 
-func buildBrowserLaunchArgs(userDataDir string, debugPort int, effectiveProxy string, fingerprintLaunchArgs []string, sanitizedProfileLaunchArgs []string, sanitizedExtraLaunchArgs []string, launchTargets []string, restoreLastSession bool) []string {
+func buildBrowserLaunchArgs(userDataDir string, debugPort int, effectiveProxy string, extensionDirs []string, fingerprintLaunchArgs []string, sanitizedProfileLaunchArgs []string, sanitizedExtraLaunchArgs []string, launchTargets []string, restoreLastSession bool) []string {
 	args := []string{
 		fmt.Sprintf("--user-data-dir=%s", userDataDir),
 		fmt.Sprintf("--remote-debugging-port=%d", debugPort),
@@ -348,6 +323,10 @@ func buildBrowserLaunchArgs(userDataDir string, debugPort int, effectiveProxy st
 		args = append(args, "--no-proxy-server")
 	} else if effectiveProxy != "" {
 		args = append(args, fmt.Sprintf("--proxy-server=%s", effectiveProxy))
+	}
+	if extensionArg := strings.Join(normalizeNonEmptyStrings(extensionDirs), ","); extensionArg != "" {
+		args = append(args, fmt.Sprintf("--disable-extensions-except=%s", extensionArg))
+		args = append(args, fmt.Sprintf("--load-extension=%s", extensionArg))
 	}
 
 	args = append(args, normalizeNonEmptyStrings(fingerprintLaunchArgs)...)

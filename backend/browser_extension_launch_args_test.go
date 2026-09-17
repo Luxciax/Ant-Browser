@@ -2,28 +2,25 @@ package backend
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
 func TestBuildBrowserLaunchArgsDoesNotLoadExtensionsFromStartupFlags(t *testing.T) {
-	args := buildBrowserLaunchArgs("profile-dir", 9222, "direct://", nil, nil, nil, nil, false)
+	args := buildBrowserLaunchArgs("profile-dir", 9222, "direct://", nil, nil, nil, nil, nil, false)
 	if slices.Contains(args, "--load-extension") || slices.Contains(args, "--disable-extensions-except") {
 		t.Fatalf("args = %#v, production extensions must not be loaded from startup flags", args)
 	}
 }
 
-func TestBuildBrowserExtensionInstallerLaunchArgsNeverRestoresSession(t *testing.T) {
-	profileArgs, _ := sanitizeManagedLaunchArgs([]string{"--restore-last-session", "--disable-sync", "--new-window", "--kiosk", "--app=https://example.com"})
-	args := buildBrowserExtensionInstallerLaunchArgs("profile-dir", 9222, "direct://", []string{"--start-maximized"}, profileArgs, nil)
-	if slices.Contains(args, "--restore-last-session") {
-		t.Fatalf("args = %#v, extension installer must not restore the user session", args)
+func TestBuildBrowserLaunchArgsLoadsPreparedExtensions(t *testing.T) {
+	extensionDirs := []string{`C:\profiles\p1\Default\Extensions\aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\1.0.0_0`, `C:\profiles\p1\Default\Extensions\bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\2.0.0_0`}
+	args := buildBrowserLaunchArgs("profile-dir", 9222, "direct://", extensionDirs, nil, nil, nil, nil, false)
+	want := strings.Join(extensionDirs, ",")
+	if !slices.Contains(args, "--load-extension="+want) {
+		t.Fatalf("args = %#v, missing prepared extension load flag", args)
 	}
-	for _, forbidden := range []string{"--new-window", "--kiosk", "--start-maximized", "--app=https://example.com"} {
-		if slices.Contains(args, forbidden) {
-			t.Fatalf("args = %#v, extension installer must not inherit window-opening arg %q", args, forbidden)
-		}
-	}
-	if !slices.Contains(args, "--remote-debugging-port=9222") {
-		t.Fatalf("args = %#v, extension installer must keep the assigned debugging port", args)
+	if !slices.Contains(args, "--disable-extensions-except="+want) {
+		t.Fatalf("args = %#v, missing prepared extension allowlist flag", args)
 	}
 }
