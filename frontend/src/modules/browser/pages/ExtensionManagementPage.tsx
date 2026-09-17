@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from '../../../shared/components'
-import type { BrowserExtension, BrowserExtensionLookupResult, BrowserProxy } from '../types'
+import type { BrowserExtension, BrowserExtensionLookupResult, BrowserExtensionSearchResult, BrowserProxy } from '../types'
 import {
   deleteBrowserExtension,
   fetchBrowserExtensions,
@@ -12,6 +12,7 @@ import {
   listBrowserExtensionManualDownloadFiles,
   lookupBrowserExtension,
   openBrowserExtensionManualDownloadDir,
+  searchBrowserExtensions,
   setBrowserExtensionEnabled,
   setBrowserExtensionDefaultInstall,
   type BrowserExtensionManualDownloadFile,
@@ -27,6 +28,7 @@ export function ExtensionManagementPage() {
   const [items, setItems] = useState<BrowserExtension[]>([])
   const [query, setQuery] = useState('')
   const [lookup, setLookup] = useState<BrowserExtensionLookupResult | null>(null)
+  const [searchResults, setSearchResults] = useState<BrowserExtensionSearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [querying, setQuerying] = useState(false)
   const [installing, setInstalling] = useState(false)
@@ -102,27 +104,31 @@ export function ExtensionManagementPage() {
 
   const currentProxyLabel = () => (useProxy && selectedProxy ? `使用代理：${selectedProxy.proxyName || selectedProxy.proxyId}` : '直连')
 
+  const lookupByExtensionId = async (value: string) => {
+    const result = await lookupBrowserExtension(value, downloadProxyConfig, useProxy)
+    setQuery(result.extensionId || value)
+    setLookup(result)
+    setSearchResults([])
+    const proxyLabel = currentProxyLabel()
+    setLastLookupProxyLabel(useProxy && selectedProxy ? proxyLabel : '直连查询')
+    appendHistory({
+      action: 'lookup',
+      query: value,
+      extensionId: result.extensionId || '',
+      name: result.name || '',
+      version: result.version || '',
+      storeUrl: result.storeUrl || '',
+      proxyLabel,
+      ok: result.installable,
+      message: result.message || '',
+    })
+    return result
+  }
+
   const handleLookup = async () => {
     const value = query.trim()
     if (!value) {
-      toast.warning('请输入插件 ID 或 Chrome Web Store 链接')
-      return
-    }
-    if (!isBrowserExtensionLookupQuery(value)) {
-      const storeUrl = buildChromeWebStoreQueryURL(value)
-      setLookup(null)
-      window.open(storeUrl, '_blank', 'noopener,noreferrer')
-      appendHistory({
-        action: 'lookup',
-        query: value,
-        extensionId: '',
-        name: '',
-        version: '',
-        storeUrl,
-        proxyLabel: 'Chrome Web Store',
-        ok: true,
-        message: '已打开商店关键词搜索',
-      })
+      toast.warning('请输入扩展名称、插件 ID 或 Chrome Web Store 链接')
       return
     }
     if (useProxy && !downloadProxyConfig) {
@@ -131,23 +137,28 @@ export function ExtensionManagementPage() {
     }
     setQuerying(true)
     try {
-      const result = await lookupBrowserExtension(value, downloadProxyConfig, useProxy)
-      setLookup(result)
-      const proxyLabel = currentProxyLabel()
-      setLastLookupProxyLabel(useProxy && selectedProxy ? proxyLabel : '直连查询')
-      appendHistory({
-        action: 'lookup',
-        query: value,
-        extensionId: result.extensionId || '',
-        name: result.name || '',
-        version: result.version || '',
-        storeUrl: result.storeUrl || '',
-        proxyLabel,
-        ok: result.installable,
-        message: result.message || '',
-      })
+      if (!isBrowserExtensionLookupQuery(value)) {
+        setLookup(null)
+        const results = await searchBrowserExtensions(value, downloadProxyConfig, useProxy)
+        setSearchResults(results)
+        appendHistory({
+          action: 'lookup',
+          query: value,
+          extensionId: '',
+          name: '',
+          version: '',
+          storeUrl: buildChromeWebStoreQueryURL(value),
+          proxyLabel: currentProxyLabel(),
+          ok: results.length > 0,
+          message: results.length > 0 ? `找到 ${results.length} 个 Chrome Web Store 结果` : 'Chrome Web Store 没有找到匹配扩展',
+        })
+        if (!results.length) toast.warning('Chrome Web Store 没有找到匹配扩展')
+        return
+      }
+      await lookupByExtensionId(value)
     } catch (error: any) {
       setLookup(null)
+      setSearchResults([])
       appendHistory({
         action: 'lookup',
         query: value,
@@ -160,6 +171,18 @@ export function ExtensionManagementPage() {
         message: error?.message || '查询插件失败',
       })
       toast.error(error?.message || '查询插件失败')
+    } finally {
+      setQuerying(false)
+    }
+  }
+
+  const handlePickSearchResult = async (item: BrowserExtensionSearchResult) => {
+    setQuerying(true)
+    try {
+      await lookupByExtensionId(item.extensionId)
+    } catch (error: any) {
+      setLookup(null)
+      toast.error(error?.message || '读取扩展信息失败')
     } finally {
       setQuerying(false)
     }
@@ -277,6 +300,7 @@ export function ExtensionManagementPage() {
       })
       toast.success(`已安装 ${installed.name || installed.extensionId}`)
       setLookup(null)
+      setSearchResults([])
       setLastLookupProxyLabel('')
       setQuery('')
       await refresh()
@@ -539,6 +563,7 @@ export function ExtensionManagementPage() {
       <ExtensionInstallCard
         query={query}
         lookup={lookup}
+        searchResults={searchResults}
         querying={querying}
         installing={installing}
         useProxy={useProxy}
@@ -548,8 +573,10 @@ export function ExtensionManagementPage() {
         onQueryChange={(value) => {
           setQuery(value)
           setLookup(null)
+          setSearchResults([])
         }}
         onLookup={() => void handleLookup()}
+        onPickSearchResult={(item) => void handlePickSearchResult(item)}
         onOpenWebStoreQuery={handleOpenWebStoreQuery}
         onOpenManualInstall={handleOpenManualInstall}
         onOpenProxy={() => setProxyModalOpen(true)}

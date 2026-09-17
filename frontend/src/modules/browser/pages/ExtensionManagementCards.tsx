@@ -1,6 +1,6 @@
 import { AlertCircle, CheckCircle2, Download, ExternalLink, FolderOpen, History, Power, Puzzle, RefreshCw, RotateCw, Search, Settings, Trash2, Users } from 'lucide-react'
 import { Badge, Button, Card, Input } from '../../../shared/components'
-import type { BrowserExtension, BrowserExtensionLookupResult, BrowserProxy } from '../types'
+import type { BrowserExtension, BrowserExtensionLookupResult, BrowserExtensionSearchResult, BrowserProxy } from '../types'
 import { extensionStoreURL, formatExtensionSource, formatExtensionTime, getExtensionManifestMeta, getProxySpeedState } from './extensionManagementUtils'
 
 export function ProxyStatePill({ useProxy, proxy }: { useProxy: boolean; proxy?: BrowserProxy }) {
@@ -83,6 +83,7 @@ export function ExtensionManagementHeader({
 export interface ExtensionInstallCardProps {
   query: string
   lookup: BrowserExtensionLookupResult | null
+  searchResults: BrowserExtensionSearchResult[]
   querying: boolean
   installing: boolean
   useProxy: boolean
@@ -91,6 +92,7 @@ export interface ExtensionInstallCardProps {
   lastLookupProxyLabel: string
   onQueryChange: (value: string) => void
   onLookup: () => void
+  onPickSearchResult: (item: BrowserExtensionSearchResult) => void
   onOpenWebStoreQuery: () => void
   onOpenManualInstall: () => void
   onOpenProxy: () => void
@@ -100,6 +102,7 @@ export interface ExtensionInstallCardProps {
 export function ExtensionInstallCard({
   query,
   lookup,
+  searchResults,
   querying,
   installing,
   useProxy,
@@ -108,6 +111,7 @@ export function ExtensionInstallCard({
   lastLookupProxyLabel,
   onQueryChange,
   onLookup,
+  onPickSearchResult,
   onOpenWebStoreQuery,
   onOpenManualInstall,
   onOpenProxy,
@@ -124,7 +128,7 @@ export function ExtensionInstallCard({
           onKeyDown={(event) => {
             if (event.key === 'Enter') onLookup()
           }}
-          placeholder="Chrome Web Store 链接或 32 位插件 ID"
+          placeholder="搜索扩展名称，或输入 Chrome Web Store 链接 / 32 位插件 ID"
           className="flex-1"
         />
         <Button type="button" variant="secondary" onClick={onLookup} loading={querying}>
@@ -147,6 +151,26 @@ export function ExtensionInstallCard({
           切换代理
         </Button>
       </div>
+
+      {searchResults.length > 0 && !lookup ? (
+        <div className="mt-3 rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-subtle)] p-2">
+          <div className="px-2 py-1 text-xs font-medium text-[var(--color-text-secondary)]">Chrome Web Store 搜索结果</div>
+          {searchResults.map((item) => (
+            <div key={item.extensionId} className="flex items-center gap-3 border-t border-[var(--color-border-muted)] px-2 py-2 first:border-t-0">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-bg-muted)] text-[var(--color-text-secondary)]">
+                <Puzzle className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium text-[var(--color-text-primary)]">{item.name || item.extensionId}</div>
+                <div className="truncate font-mono text-xs text-[var(--color-text-muted)]">{item.extensionId}</div>
+              </div>
+              <Button type="button" size="sm" variant="secondary" disabled={querying} onClick={() => onPickSearchResult(item)}>
+                选择
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {lookup ? (
         <div className="mt-3 rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-subtle)] p-4">
