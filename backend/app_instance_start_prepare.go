@@ -167,7 +167,7 @@ func (a *App) prepareBrowserStartPlan(input browserStartInput, profile *BrowserP
 	// 插件持久安装助手进程复用实例的调试端口与代理/指纹参数：
 	// 若此时实例浏览器尚未运行，安装助手进程就是实例浏览器本身，
 	// 缺少调试端口会导致后续正式启动被 Chrome 单实例交接、误报“就绪前退出”。
-	extensionInstallArgs := buildBrowserLaunchArgs(userDataDir, assignedDebugPort, effectiveProxy, fingerprintLaunchArgs, sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs, nil, restoreLastSession)
+	extensionInstallArgs := buildBrowserExtensionInstallerLaunchArgs(userDataDir, assignedDebugPort, effectiveProxy, fingerprintLaunchArgs, sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs)
 	_, extensionWarnings := a.browserMgr.PrepareProfileExtensions(profile, chromeBinaryPath, userDataDir, extensionInstallArgs)
 	extensionWarning := joinBrowserStartExtensionWarnings(extensionWarnings)
 
@@ -188,6 +188,27 @@ func (a *App) prepareBrowserStartPlan(input browserStartInput, profile *BrowserP
 		maxStartAttempts:     maxStartAttempts,
 		totalReadyTimeout:    totalReadyTimeout,
 	}, nil
+}
+
+func buildBrowserExtensionInstallerLaunchArgs(userDataDir string, debugPort int, proxyConfig string, fingerprintLaunchArgs []string, profileLaunchArgs []string, extraLaunchArgs []string) []string {
+	// Extension preparation must never restore the user's previous browser
+	// session. The installer shares the real profile directory and runs before
+	// the actual profile launch; restoring here can persist an extra Chromium
+	// window into SessionStore and make a single profile start open twice.
+	args := buildBrowserLaunchArgs(userDataDir, debugPort, proxyConfig, fingerprintLaunchArgs, profileLaunchArgs, extraLaunchArgs, nil, false)
+	return filterExtensionInstallerWindowArgs(args)
+}
+
+func filterExtensionInstallerWindowArgs(args []string) []string {
+	filtered := make([]string, 0, len(args))
+	for _, arg := range args {
+		value := strings.ToLower(strings.TrimSpace(arg))
+		if value == "--restore-last-session" || value == "--new-window" || value == "--kiosk" || value == "--start-fullscreen" || value == "--start-maximized" || strings.HasPrefix(value, "--app=") || strings.HasPrefix(value, "--app-id=") {
+			continue
+		}
+		filtered = append(filtered, arg)
+	}
+	return filtered
 }
 
 func joinBrowserStartExtensionWarnings(warnings []error) string {

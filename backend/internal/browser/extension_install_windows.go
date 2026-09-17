@@ -63,7 +63,7 @@ func installCRXIntoProfile(userDataDir string, chromeBinaryPath string, packageP
 	} else {
 		commandArgs = append(commandArgs, "--user-data-dir="+userDataDir)
 	}
-	commandArgs = append(commandArgs, "about:blank")
+	commandArgs = appendExtensionInstallerStartupArgs(commandArgs)
 
 	command := exec.Command(chromeBinaryPath, commandArgs...)
 	command.Dir = filepath.Dir(chromeBinaryPath)
@@ -102,6 +102,22 @@ func installCRXIntoProfile(userDataDir string, chromeBinaryPath string, packageP
 	terminateExtensionInstallerProcess(command)
 	<-waitResult
 	return "", fmt.Errorf("等待浏览器完成插件安装超时")
+}
+
+func hasRemoteDebuggingPortArg(args []string) bool {
+	for _, arg := range args {
+		if strings.HasPrefix(strings.TrimSpace(arg), "--remote-debugging-port=") {
+			return true
+		}
+	}
+	return false
+}
+
+func appendExtensionInstallerStartupArgs(args []string) []string {
+	if hasRemoteDebuggingPortArg(args) {
+		return append(args, "--no-startup-window")
+	}
+	return append(args, "about:blank")
 }
 
 func browserExtensionInstallerExitHint(userDataDir string) string {
