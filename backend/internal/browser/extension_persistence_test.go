@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -481,7 +482,7 @@ func buildTestCRX2Package(t *testing.T, publicKey []byte, version string) []byte
 	return append(packageData, archive.Bytes()...)
 }
 
-func TestMigrateExtensionStoragePrefersLegacyData(t *testing.T) {
+func TestMigrateExtensionStoragePreservesExistingTargetData(t *testing.T) {
 	userDataDir := t.TempDir()
 	oldRuntimeID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	newRuntimeID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -503,15 +504,291 @@ func TestMigrateExtensionStoragePrefersLegacyData(t *testing.T) {
 	if err := migrateExtensionStorage(userDataDir, oldRuntimeID, newRuntimeID); err != nil {
 		t.Fatalf("migrateExtensionStorage returned error: %v", err)
 	}
-	legacyData, err := os.ReadFile(filepath.Join(newPath, "legacy.log"))
+	targetData, err := os.ReadFile(filepath.Join(newPath, "default.log"))
 	if err != nil {
-		t.Fatalf("ReadFile migrated data returned error: %v", err)
+		t.Fatalf("ReadFile target data returned error: %v", err)
+	}
+	if string(targetData) != "default" {
+		t.Fatalf("target data = %q, want preserved default data", targetData)
+	}
+	legacyData, err := os.ReadFile(filepath.Join(oldPath, "legacy.log"))
+	if err != nil {
+		t.Fatalf("legacy data was removed on collision: %v", err)
 	}
 	if string(legacyData) != "legacy" {
-		t.Fatalf("migrated data = %q, want legacy data", legacyData)
+		t.Fatalf("legacy data = %q, want preserved legacy data", legacyData)
+	}
+}
+
+func TestMigrateExtensionStorageReplacesEmptyBootstrapTargetWithLegacyData(t *testing.T) {
+	userDataDir := t.TempDir()
+	oldRuntimeID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	newRuntimeID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	root := filepath.Join(userDataDir, "Default", "Local Extension Settings")
+	oldPath := filepath.Join(root, oldRuntimeID)
+	newPath := filepath.Join(root, newRuntimeID)
+	if err := os.MkdirAll(oldPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(newPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacyData := bytes.Repeat([]byte("scriptcat-user-script-data"), 512)
+	if err := os.WriteFile(filepath.Join(oldPath, "000003.log"), legacyData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newPath, "CURRENT"), []byte("MANIFEST-000001\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrateExtensionStorage(userDataDir, oldRuntimeID, newRuntimeID); err != nil {
+		t.Fatalf("migrateExtensionStorage returned error: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(newPath, "000003.log"))
+	if err != nil {
+		t.Fatalf("legacy data was not promoted into target store: %v", err)
+	}
+	if !bytes.Equal(got, legacyData) {
+		t.Fatalf("migrated legacy payload size = %d, want %d", len(got), len(legacyData))
 	}
 	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
-		t.Fatalf("old storage path still exists, stat error = %v", err)
+		t.Fatalf("legacy source still exists after safe promotion: %v", err)
+	}
+}
+
+func TestFindLegacyRuntimeExtensionIDsMatchesLocation8LegacyManagedPath(t *testing.T) {
+	userDataDir := t.TempDir()
+	oldRuntimeID := "kchjplnjlamcjbpfmmjpmfnmdaobpifa"
+	catalogID := "ndcooeababalnlpkfedmmbbbgkljhpjf"
+	legacyPath := filepath.Join(userDataDir, "AntiBrowserExtensions", catalogID)
+	installDir := filepath.Join(t.TempDir(), "data", "extensions", catalogID)
+	securePreferencesPath := filepath.Join(userDataDir, "Default", "Secure Preferences")
+	if err := os.MkdirAll(filepath.Dir(securePreferencesPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	preferences := map[string]any{
+		"extensions": map[string]any{
+			"settings": map[string]any{
+				oldRuntimeID: map[string]any{
+					"location": 8,
+					"path":     legacyPath,
+				},
+			},
+		},
+	}
+	data, err := json.Marshal(preferences)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(securePreferencesPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ids, err := findLegacyRuntimeExtensionIDs(userDataDir, installDir)
+	if err != nil {
+		t.Fatalf("findLegacyRuntimeExtensionIDs returned error: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != oldRuntimeID {
+		t.Fatalf("legacy ids = %#v, want [%s]", ids, oldRuntimeID)
+	}
+}
+
+func TestRepairLegacyProfileExtensionStorageRecoversScriptCatStyleLegacyData(t *testing.T) {
+	appRoot := t.TempDir()
+	userDataDir := filepath.Join(appRoot, "data", "profile-a")
+	oldRuntimeID := "kchjplnjlamcjbpfmmjpmfnmdaobpifa"
+	currentRuntimeID := "ndcooeababalnlpkfedmmbbbgkljhpjf"
+	installDir := filepath.Join(appRoot, "data", "extensions", currentRuntimeID)
+	legacyPath := filepath.Join(userDataDir, "AntiBrowserExtensions", currentRuntimeID)
+	securePreferencesPath := filepath.Join(userDataDir, "Default", "Secure Preferences")
+	if err := os.MkdirAll(filepath.Dir(securePreferencesPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	preferences := map[string]any{
+		"extensions": map[string]any{
+			"settings": map[string]any{
+				oldRuntimeID: map[string]any{
+					"location": 8,
+					"path":     legacyPath,
+				},
+				currentRuntimeID: map[string]any{
+					"location": 1,
+					"path":     filepath.Join(currentRuntimeID, "1.4.0_0"),
+				},
+			},
+		},
+	}
+	preferencesData, err := json.Marshal(preferences)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(securePreferencesPath, preferencesData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldStore := filepath.Join(userDataDir, "Default", "Local Extension Settings", oldRuntimeID)
+	newStore := filepath.Join(userDataDir, "Default", "Local Extension Settings", currentRuntimeID)
+	if err := os.MkdirAll(oldStore, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(newStore, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacyData := bytes.Repeat([]byte("scriptcat-script-storage"), 2048)
+	if err := os.WriteFile(filepath.Join(oldStore, "000003.log"), legacyData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newStore, "CURRENT"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	manager := NewManager(config.DefaultConfig(), appRoot)
+	profile := &Profile{ProfileId: "profile-a", ProfileName: "Profile A"}
+	extension := Extension{
+		ExtensionID: currentRuntimeID,
+		Name:        "ScriptCat",
+		Version:     "1.4.0",
+		InstallDir:  installDir,
+	}
+	backupPath, err := manager.repairLegacyProfileExtensionStorage(profile, userDataDir, extension, currentRuntimeID)
+	if err != nil {
+		t.Fatalf("repairLegacyProfileExtensionStorage returned error: %v", err)
+	}
+	if strings.TrimSpace(backupPath) == "" {
+		t.Fatal("repair did not retain a rollback backup")
+	}
+	if _, err := os.Stat(backupPath); err != nil {
+		t.Fatalf("rollback backup missing: %v", err)
+	}
+	recovered, err := os.ReadFile(filepath.Join(newStore, "000003.log"))
+	if err != nil {
+		t.Fatalf("recovered ScriptCat data missing: %v", err)
+	}
+	if !bytes.Equal(recovered, legacyData) {
+		t.Fatalf("recovered ScriptCat data size = %d, want %d", len(recovered), len(legacyData))
+	}
+	if _, err := os.Stat(oldStore); !os.IsNotExist(err) {
+		t.Fatalf("legacy store still exists after promotion: %v", err)
+	}
+	root, err := readProfileJSON(securePreferencesPath, false)
+	if err != nil {
+		t.Fatalf("read repaired Secure Preferences returned error: %v", err)
+	}
+	extensions, err := ensureProfileJSONMapIfPresent(root, "extensions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := ensureProfileJSONMapIfPresent(extensions, "settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := settings[oldRuntimeID]; exists {
+		t.Fatalf("legacy ScriptCat registration %s was not removed", oldRuntimeID)
+	}
+	if _, exists := settings[currentRuntimeID]; !exists {
+		t.Fatalf("current ScriptCat registration %s was removed", currentRuntimeID)
+	}
+}
+
+func TestMigrateExtensionStorageDoesNotLetSecondLegacyIDOverwriteFirst(t *testing.T) {
+	userDataDir := t.TempDir()
+	firstRuntimeID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	secondRuntimeID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	newRuntimeID := "cccccccccccccccccccccccccccccccc"
+	root := filepath.Join(userDataDir, "Default", "Local Extension Settings")
+	firstPath := filepath.Join(root, firstRuntimeID)
+	secondPath := filepath.Join(root, secondRuntimeID)
+	newPath := filepath.Join(root, newRuntimeID)
+	for path, contents := range map[string]string{
+		filepath.Join(firstPath, "first.log"):   "first",
+		filepath.Join(secondPath, "second.log"): "second",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := migrateExtensionStorage(userDataDir, firstRuntimeID, newRuntimeID); err != nil {
+		t.Fatalf("first migration returned error: %v", err)
+	}
+	if err := migrateExtensionStorage(userDataDir, secondRuntimeID, newRuntimeID); err != nil {
+		t.Fatalf("second migration returned error: %v", err)
+	}
+	firstData, err := os.ReadFile(filepath.Join(newPath, "first.log"))
+	if err != nil || string(firstData) != "first" {
+		t.Fatalf("first migrated data was overwritten: data=%q err=%v", firstData, err)
+	}
+	secondData, err := os.ReadFile(filepath.Join(secondPath, "second.log"))
+	if err != nil || string(secondData) != "second" {
+		t.Fatalf("second legacy data was not preserved: data=%q err=%v", secondData, err)
+	}
+}
+
+func TestHealConfiguredProfileDefaultExtensionsAddsOnlyDefaultsInstalledAfterSnapshot(t *testing.T) {
+	appRoot := t.TempDir()
+	dao := newTestExtensionDAO(t, appRoot)
+	manager := NewManager(config.DefaultConfig(), appRoot)
+	manager.ExtensionDAO = dao
+
+	selected := Extension{
+		ExtensionID:    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Name:           "selected",
+		Version:        "1.0.0",
+		Enabled:        true,
+		DefaultInstall: true,
+		InstalledAt:    "2020-01-01T00:00:00Z",
+	}
+	excludedBeforeSnapshot := Extension{
+		ExtensionID:    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		Name:           "explicitly excluded",
+		Version:        "1.0.0",
+		Enabled:        true,
+		DefaultInstall: true,
+		InstalledAt:    "2020-01-01T00:00:00Z",
+	}
+	for _, extension := range []Extension{selected, excludedBeforeSnapshot} {
+		if err := dao.Upsert(extension); err != nil {
+			t.Fatalf("Upsert existing extension returned error: %v", err)
+		}
+	}
+	settings, err := dao.SetProfileSettings("profile-a", []string{selected.ExtensionID}, true)
+	if err != nil {
+		t.Fatalf("SetProfileSettings returned error: %v", err)
+	}
+	installedAfterSnapshot := Extension{
+		ExtensionID:    "cccccccccccccccccccccccccccccccc",
+		Name:           "new default",
+		Version:        "1.0.0",
+		Enabled:        true,
+		DefaultInstall: true,
+		InstalledAt:    "2099-01-01T00:00:00Z",
+	}
+	if err := dao.Upsert(installedAfterSnapshot); err != nil {
+		t.Fatalf("Upsert new extension returned error: %v", err)
+	}
+
+	healed, err := manager.healConfiguredProfileDefaultExtensions(settings)
+	if err != nil {
+		t.Fatalf("healConfiguredProfileDefaultExtensions returned error: %v", err)
+	}
+	got := map[string]bool{}
+	for _, id := range healed.ExtensionIDs {
+		got[id] = true
+	}
+	if !got[selected.ExtensionID] || !got[installedAfterSnapshot.ExtensionID] {
+		t.Fatalf("healed IDs = %#v, want selected and newly installed default", healed.ExtensionIDs)
+	}
+	if got[excludedBeforeSnapshot.ExtensionID] {
+		t.Fatalf("healed IDs re-enabled an extension excluded by the existing snapshot: %#v", healed.ExtensionIDs)
+	}
+	persisted, err := dao.GetProfileSettings("profile-a")
+	if err != nil {
+		t.Fatalf("GetProfileSettings returned error: %v", err)
+	}
+	if len(persisted.ExtensionIDs) != 2 {
+		t.Fatalf("persisted IDs = %#v, want healed snapshot", persisted.ExtensionIDs)
 	}
 }
 
@@ -577,6 +854,64 @@ func TestBackupProfileExtensionStateIncludesIndexedDBAndServiceWorker(t *testing
 	for _, path := range []string{indexedDBPath, serviceWorkerPath} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("restored entry %q not found: %v", path, err)
+		}
+	}
+}
+
+func TestRestoreProfileExtensionStateDoesNotDeleteOtherExtensionData(t *testing.T) {
+	appRoot := t.TempDir()
+	userDataDir := filepath.Join(appRoot, "profile")
+	runtimeID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	otherRuntimeID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	aLocal := filepath.Join(userDataDir, "Default", "Local Extension Settings", runtimeID, "state.log")
+	bLocal := filepath.Join(userDataDir, "Default", "Local Extension Settings", otherRuntimeID, "state.log")
+	aIndexed := filepath.Join(userDataDir, "Default", "IndexedDB", "chrome-extension_"+runtimeID+"_0.indexeddb.leveldb", "data.ldb")
+	bIndexed := filepath.Join(userDataDir, "Default", "IndexedDB", "chrome-extension_"+otherRuntimeID+"_0.indexeddb.leveldb", "data.ldb")
+	for path, contents := range map[string]string{
+		aLocal:   "a-original",
+		bLocal:   "b-before",
+		aIndexed: "a-indexed-original",
+		bIndexed: "b-indexed-before",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	manager := NewManager(config.DefaultConfig(), appRoot)
+	backupPath, err := manager.backupProfileExtensionState("profile", runtimeID, userDataDir, []string{runtimeID})
+	if err != nil {
+		t.Fatalf("backupProfileExtensionState returned error: %v", err)
+	}
+	for path, contents := range map[string]string{
+		aLocal:   "a-mutated",
+		bLocal:   "b-current",
+		aIndexed: "a-indexed-mutated",
+		bIndexed: "b-indexed-current",
+	} {
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := restoreProfileExtensionState(userDataDir, backupPath, []string{runtimeID}, runtimeID); err != nil {
+		t.Fatalf("restoreProfileExtensionState returned error: %v", err)
+	}
+	for path, want := range map[string]string{
+		aLocal:   "a-original",
+		bLocal:   "b-current",
+		aIndexed: "a-indexed-original",
+		bIndexed: "b-indexed-current",
+	} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile %q returned error: %v", path, err)
+		}
+		if string(data) != want {
+			t.Fatalf("%q = %q, want %q", path, data, want)
 		}
 	}
 }

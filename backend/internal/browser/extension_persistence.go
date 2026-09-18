@@ -69,6 +69,13 @@ func (m *Manager) PrepareProfileExtensionsContext(ctx context.Context, profile *
 		warnings = append(warnings, fmt.Errorf("读取实例插件配置失败：%w", err))
 		return nil, warnings, nil
 	}
+	if settings.Configured {
+		healedSettings, healErr := m.healConfiguredProfileDefaultExtensions(settings)
+		settings = healedSettings
+		if healErr != nil {
+			warnings = append(warnings, fmt.Errorf("同步实例新默认插件失败：%w", healErr))
+		}
+	}
 	var extensions []Extension
 	if settings.Configured {
 		extensions, err = m.ExtensionDAO.ListByIDs(settings.ExtensionIDs)
@@ -148,6 +155,59 @@ func (m *Manager) PrepareProfileExtensionsContext(ctx context.Context, profile *
 	}
 
 	return preparedDirs, warnings, nil
+}
+
+// healConfiguredProfileDefaultExtensions keeps a profile-specific extension
+// snapshot from permanently hiding extensions that did not exist when the
+// snapshot was saved. A default extension installed after UpdatedAt could not
+// have been explicitly excluded by that snapshot, so it is safe to add it.
+// Extensions installed before the snapshot remain untouched, preserving an
+// explicit per-profile exclusion.
+func (m *Manager) healConfiguredProfileDefaultExtensions(settings ProfileExtensionSettings) (ProfileExtensionSettings, error) {
+	if m == nil || m.ExtensionDAO == nil || !settings.Configured {
+		return settings, nil
+	}
+	configuredAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(settings.UpdatedAt))
+	if err != nil {
+		return settings, nil
+	}
+	defaults, err := m.ExtensionDAO.ListDefaultInstall()
+	if err != nil {
+		return settings, err
+	}
+	ids := normalizeExtensionIDs(settings.ExtensionIDs)
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		seen[id] = struct{}{}
+	}
+	changed := false
+	for _, extension := range defaults {
+		id := strings.TrimSpace(extension.ExtensionID)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		installedAt, parseErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(extension.InstalledAt))
+		if parseErr != nil || !installedAt.After(configuredAt) {
+			continue
+		}
+		ids = append(ids, id)
+		seen[id] = struct{}{}
+		changed = true
+	}
+	if !changed {
+		settings.ExtensionIDs = ids
+		return settings, nil
+	}
+	settings.ExtensionIDs = ids
+	persisted, persistErr := m.ExtensionDAO.SetProfileSettings(settings.ProfileID, ids, true)
+	if persistErr != nil {
+		// Use the healed snapshot for this launch even if persistence failed.
+		return settings, persistErr
+	}
+	return persisted, nil
 }
 func (m *Manager) RemoveExtensionFromStoppedProfiles(extensionID string) error {
 	if m == nil || m.ExtensionDAO == nil {
@@ -507,6 +567,13 @@ func (m *Manager) ensurePersistentExtensionInstalledContext(ctx context.Context,
 		expectedArtifactPath := persistentExtensionCodePath(userDataDir, runtimeState.RuntimeExtensionID, extension.Version)
 		if artifactPath := persistentExtensionArtifactPath(userDataDir, runtimeState.RuntimeExtensionID, extension.Version); artifactPath != "" && sameProfileExtensionPath(artifactPath, expectedArtifactPath) {
 			if err := ensureProfileExtensionRegistration(userDataDir, artifactPath, runtimeState.RuntimeExtensionID, packagePath); err == nil {
+				legacyBackupPath, repairErr := m.repairLegacyProfileExtensionStorage(profile, userDataDir, extension, runtimeState.RuntimeExtensionID)
+				if repairErr != nil {
+					return "", fmt.Errorf("修复旧插件数据失败（%s）：%w", extension.Name, repairErr)
+				}
+				if strings.TrimSpace(runtimeState.BackupPath) == "" && strings.TrimSpace(legacyBackupPath) != "" {
+					runtimeState.BackupPath = legacyBackupPath
+				}
 				runtimeState.LastVerifiedAt = time.Now().Format(time.RFC3339)
 				runtimeState.LastError = ""
 				if err := m.ExtensionDAO.UpsertProfileExtensionRuntime(runtimeState); err != nil {
@@ -1447,6 +1514,7 @@ func findLegacyRuntimeExtensionIDs(userDataDir string, installDir string) ([]str
 		return nil, fmt.Errorf("读取插件旧安装记录失败: %w", err)
 	}
 	installDir = filepath.Clean(strings.TrimSpace(installDir))
+	installBase := filepath.Base(installDir)
 	ids := make([]string, 0)
 	for extensionID, setting := range preferences.Extensions.Settings {
 		if !extensionIDPattern.MatchString(extensionID) || (setting.Location != 3 && setting.Location != 8) {
@@ -1456,11 +1524,62 @@ func findLegacyRuntimeExtensionIDs(userDataDir string, installDir string) ([]str
 		if settingPath == "" {
 			continue
 		}
-		if strings.EqualFold(settingPath, installDir) || (setting.Location == 3 && strings.EqualFold(filepath.Base(settingPath), filepath.Base(installDir))) {
+		settingBase := filepath.Base(settingPath)
+		baseMatches := installBase != "." && installBase != "" &&
+			settingBase != "." && settingBase != "" &&
+			strings.EqualFold(settingBase, installBase)
+		if strings.EqualFold(settingPath, installDir) || baseMatches {
 			ids = append(ids, extensionID)
 		}
 	}
 	return uniqueExtensionIDs(ids), nil
+}
+
+func (m *Manager) repairLegacyProfileExtensionStorage(profile *Profile, userDataDir string, extension Extension, currentRuntimeID string) (string, error) {
+	if m == nil || profile == nil {
+		return "", nil
+	}
+	currentRuntimeID = NormalizeExtensionID(currentRuntimeID)
+	if currentRuntimeID == "" {
+		return "", nil
+	}
+	legacyRuntimeIDs, err := findLegacyRuntimeExtensionIDs(userDataDir, extension.InstallDir)
+	if err != nil {
+		return "", err
+	}
+	filteredLegacyIDs := make([]string, 0, len(legacyRuntimeIDs))
+	for _, runtimeID := range legacyRuntimeIDs {
+		runtimeID = NormalizeExtensionID(runtimeID)
+		if runtimeID == "" || runtimeID == currentRuntimeID {
+			continue
+		}
+		filteredLegacyIDs = append(filteredLegacyIDs, runtimeID)
+	}
+	filteredLegacyIDs = uniqueExtensionIDs(filteredLegacyIDs)
+	if len(filteredLegacyIDs) == 0 {
+		return "", nil
+	}
+
+	backupIDs := uniqueExtensionIDs(append(append([]string{}, filteredLegacyIDs...), currentRuntimeID))
+	backupPath, err := m.backupProfileExtensionState(profile.ProfileId, extension.ExtensionID, userDataDir, backupIDs)
+	if err != nil {
+		return "", err
+	}
+	rollback := func(cause error) error {
+		if restoreErr := restoreProfileExtensionState(userDataDir, backupPath, filteredLegacyIDs, currentRuntimeID); restoreErr != nil {
+			return errors.Join(cause, fmt.Errorf("恢复旧插件迁移备份失败: %w", restoreErr))
+		}
+		return cause
+	}
+	for _, legacyRuntimeID := range filteredLegacyIDs {
+		if err := migrateExtensionStorage(userDataDir, legacyRuntimeID, currentRuntimeID); err != nil {
+			return backupPath, rollback(err)
+		}
+		if err := removeProfileScopedExtensionRegistration(userDataDir, legacyRuntimeID); err != nil {
+			return backupPath, rollback(err)
+		}
+	}
+	return backupPath, nil
 }
 
 func (m *Manager) backupProfileExtensionState(profileID string, extensionID string, userDataDir string, runtimeIDs []string) (string, error) {
@@ -1540,9 +1659,16 @@ func migrateExtensionStorage(userDataDir string, oldRuntimeID string, newRuntime
 			continue
 		}
 		if _, err := os.Stat(newPath); err == nil {
-			if err := os.RemoveAll(newPath); err != nil {
-				return err
+			if shouldReplaceBootstrapExtensionStorage(oldPath, newPath) {
+				if err := replaceBootstrapExtensionStorage(oldPath, newPath); err != nil {
+					return err
+				}
+				continue
 			}
+			// Both IDs contain user state. Never guess which copy is newer and
+			// never delete either side: extension stores (LevelDB, rules, scripts)
+			// are not safe to merge file-by-file.
+			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(newPath), 0o755); err != nil {
 			return err
@@ -1557,6 +1683,62 @@ func migrateExtensionStorage(userDataDir string, oldRuntimeID string, newRuntime
 			return err
 		}
 	}
+	return nil
+}
+
+const extensionBootstrapStorageMaxBytes int64 = 4 << 10
+
+func shouldReplaceBootstrapExtensionStorage(oldPath string, newPath string) bool {
+	oldBytes, oldFiles, oldErr := extensionStorageTreeStats(oldPath)
+	newBytes, newFiles, newErr := extensionStorageTreeStats(newPath)
+	if oldErr != nil || newErr != nil || oldFiles == 0 || newFiles == 0 {
+		return false
+	}
+	if newBytes > extensionBootstrapStorageMaxBytes {
+		return false
+	}
+	return oldBytes > 512 && oldBytes > newBytes*4
+}
+
+func extensionStorageTreeStats(path string) (int64, int, error) {
+	var bytes int64
+	files := 0
+	err := filepath.WalkDir(path, func(_ string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode().IsRegular() {
+			files++
+			bytes += info.Size()
+		}
+		return nil
+	})
+	return bytes, files, err
+}
+
+func replaceBootstrapExtensionStorage(oldPath string, newPath string) error {
+	rollbackPath := fmt.Sprintf("%s.migration-rollback-%d", newPath, time.Now().UnixNano())
+	if err := os.Rename(newPath, rollbackPath); err != nil {
+		return err
+	}
+	restoreTarget := true
+	defer func() {
+		if restoreTarget {
+			_ = os.Rename(rollbackPath, newPath)
+		}
+	}()
+	if err := os.Rename(oldPath, newPath); err != nil {
+		return err
+	}
+	restoreTarget = false
+	_ = os.RemoveAll(rollbackPath)
 	return nil
 }
 
@@ -1585,9 +1767,15 @@ func restoreProfileExtensionState(userDataDir string, backupPath string, legacyR
 		sourcePath := filepath.Join(backupPath, entry.Name())
 		targetPath := filepath.Join(userDataDir, "Default", entry.Name())
 		if entry.Name() == "Preferences" || entry.Name() == "Secure Preferences" {
-			targetPath = filepath.Join(userDataDir, "Default", entry.Name())
+			// These are whole-profile files captured atomically for rollback.
+			// Replacing them is intentional.
+			_ = os.RemoveAll(targetPath)
 		}
-		_ = os.RemoveAll(targetPath)
+		// All other top-level entries (Extensions, IndexedDB, Local Extension
+		// Settings, Service Worker, ...) are shared by every extension in the
+		// profile. The runtime-specific paths above were already removed, so
+		// merge the backup into the shared root instead of deleting that root
+		// and destroying unrelated extensions.
 		if err := copyPath(sourcePath, targetPath); err != nil {
 			return err
 		}
@@ -1616,9 +1804,16 @@ func renameExtensionRuntimeEntries(rootPath string, oldRuntimeID string, newRunt
 	for _, oldPath := range entries {
 		newPath := filepath.Join(filepath.Dir(oldPath), strings.ReplaceAll(filepath.Base(oldPath), oldRuntimeID, newRuntimeID))
 		if _, err := os.Stat(newPath); err == nil {
-			if err := os.RemoveAll(newPath); err != nil {
-				return err
+			if shouldReplaceBootstrapExtensionStorage(oldPath, newPath) {
+				if err := replaceBootstrapExtensionStorage(oldPath, newPath); err != nil {
+					return err
+				}
+				continue
 			}
+			// Preserve both stores on collision. Deleting the destination can
+			// destroy newer IndexedDB/service-worker data, while merging LevelDB
+			// directories is unsafe.
+			continue
 		}
 		if err := os.Rename(oldPath, newPath); err != nil {
 			return err

@@ -139,10 +139,11 @@ func (m *XrayManager) ensureBridgeContext(ctx context.Context, proxyConfig strin
 		return "", "", err
 	}
 
+	// Each attempt runs Xray's config preflight before starting the process.
+	// The runtime phase can still lose a short Windows port-release/process
+	// scheduling race, including when a chain uses a preferred local port.
+	// Give that transient runtime phase one controlled retry.
 	maxLaunchRetries := 2
-	if preferredPort > 0 {
-		maxLaunchRetries = 1
-	}
 	var lastErr error
 	attemptsUsed := 0
 	for attempt := 1; attempt <= maxLaunchRetries; attempt++ {
@@ -212,6 +213,13 @@ func (m *XrayManager) launchBridgeAttempt(log *logger.Logger, key string, binary
 	return m.launchBridgeAttemptContext(context.Background(), log, key, binaryPath, outbounds, routes, preferredPort, dnsServers, pin, attempt)
 }
 
+func xrayBridgeAttemptPort(preferredPort int, attempt int) (int, error) {
+	if preferredPort > 0 && attempt <= 1 {
+		return preferredPort, nil
+	}
+	return nextAvailablePort()
+}
+
 func (m *XrayManager) launchBridgeAttemptContext(ctx context.Context, log *logger.Logger, key string, binaryPath string, outbounds []interface{}, routes []interface{}, preferredPort int, dnsServers string, pin bool, attempt int) (string, *XrayBridge, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -219,14 +227,10 @@ func (m *XrayManager) launchBridgeAttemptContext(ctx context.Context, log *logge
 	if err := ctx.Err(); err != nil {
 		return "", nil, err
 	}
-	port := preferredPort
-	if port <= 0 {
-		var err error
-		port, err = nextAvailablePort()
-		if err != nil {
-			log.Error("端口分配失败", logger.F("error", err), logger.F("attempt", attempt))
-			return "", nil, err
-		}
+	port, err := xrayBridgeAttemptPort(preferredPort, attempt)
+	if err != nil {
+		log.Error("端口分配失败", logger.F("error", err), logger.F("attempt", attempt))
+		return "", nil, err
 	}
 	cfgPath, err := m.buildRuntimeConfigWithRoute(key, outbounds, routes, port, dnsServers)
 	if err != nil {
@@ -438,18 +442,13 @@ func (m *XrayManager) isRetryableBridgeReadyError(err error, cfgPath string, std
 	if err == nil {
 		return false
 	}
-	message := strings.ToLower(err.Error())
-	if !strings.Contains(message, "提前退出") {
-		return true
-	}
-	tail := strings.ToLower(readLogTail(stderrPath, 1200))
-	if tail == "" && strings.TrimSpace(cfgPath) != "" {
-		tail = strings.ToLower(readLogTail(filepath.Join(filepath.Dir(cfgPath), "xray-error.log"), 1200))
-	}
-	return strings.Contains(tail, "address already in use") ||
-		strings.Contains(tail, "only one usage of each socket") ||
-		strings.Contains(tail, "bind:") ||
-		strings.Contains(tail, "bind ")
+	// Permanent config/schema errors are rejected by testRuntimeConfigContext
+	// before the process starts and are wrapped as non-retryable launch errors.
+	// Once that preflight has passed, readiness failures and early exits are
+	// runtime/transient conditions worth retrying once.
+	_ = cfgPath
+	_ = stderrPath
+	return true
 }
 
 func (m *XrayManager) testRuntimeConfig(binaryPath string, cfgPath string, stderrPath string) error {

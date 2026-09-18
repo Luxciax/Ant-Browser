@@ -85,14 +85,38 @@ func TestXrayBridgeReadyErrorRetryPolicy(t *testing.T) {
 		t.Fatalf("write config failed: %v", err)
 	}
 
-	if manager.isRetryableBridgeReadyError(fmt.Errorf("xray 进程提前退出: config invalid"), cfgPath, stderrPath) {
-		t.Fatalf("early process exit without bind evidence should not be retried")
+	if !manager.isRetryableBridgeReadyError(fmt.Errorf("xray 进程提前退出: runtime race"), cfgPath, stderrPath) {
+		t.Fatalf("post-preflight early process exit should be retried once")
 	}
 	if err := os.WriteFile(stderrPath, []byte("listen tcp 127.0.0.1:10001: bind: address already in use"), 0o644); err != nil {
 		t.Fatalf("write stderr failed: %v", err)
 	}
 	if !manager.isRetryableBridgeReadyError(fmt.Errorf("xray 进程提前退出"), cfgPath, stderrPath) {
 		t.Fatalf("bind conflict should be retried with another port")
+	}
+}
+
+func TestXrayBridgeRetryFallsBackFromPreferredPort(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen failed: %v", err)
+	}
+	defer listener.Close()
+	preferredPort := listener.Addr().(*net.TCPAddr).Port
+
+	firstPort, err := xrayBridgeAttemptPort(preferredPort, 1)
+	if err != nil {
+		t.Fatalf("first attempt port returned error: %v", err)
+	}
+	if firstPort != preferredPort {
+		t.Fatalf("first attempt port = %d, want preferred %d", firstPort, preferredPort)
+	}
+	secondPort, err := xrayBridgeAttemptPort(preferredPort, 2)
+	if err != nil {
+		t.Fatalf("second attempt port returned error: %v", err)
+	}
+	if secondPort <= 0 || secondPort == preferredPort {
+		t.Fatalf("second attempt port = %d, want a different available port", secondPort)
 	}
 }
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.8.1-fork.6 - 2026-09-18
+
+- ScriptCat 旧数据恢复：识别旧版 `location=8` 的 `AntiBrowserExtensions` 注册，即使当前 runtime 已标记为 `installed` 也会执行兼容修复；当新 runtime 只有 Chromium 新建的空壳存储、旧 runtime 明显包含真实数据时，先完整备份再把旧 Local/Sync Extension Settings 安全迁入新 ID。
+- 插件数据保护：扩展 runtime ID 迁移遇到双方都存在真实数据时不再删除目标目录；保留新旧两份数据，避免 ScriptCat 等扩展的 Local Extension Settings、IndexedDB、Extension Scripts 被覆盖。
+- 插件回滚隔离：修复单个插件安装/升级失败回滚时删除整个共享 `Extensions`、`Local Extension Settings`、`IndexedDB`、`Service Worker` 根目录的问题；现在只恢复目标插件路径，不影响其他插件。
+- 实例插件同步：已单独配置插件的旧实例，会自动补入“实例快照保存之后才新安装”的全局默认插件；实例曾明确排除的旧插件保持排除。
+- ScriptCat 恢复保护：继续保留 `data/extension-backups` 历史快照，避免修复流程清理已有备份；现有备份可用于后续人工恢复旧脚本数据。
+- Xray 首次启动稳定性：配置预检失败继续快速失败；预检成功后的进程提前退出、SOCKS5 readiness 或 Windows 端口释放竞态会自动受控重试一次；第一次 preferred local port 失败后，第二次改用新的可用端口，避免重复撞同一端口。
+
 ## 1.8.1-fork.5 - 2026-09-18
 
 - 生命周期一致性：统一 `stopped / starting / running / stopping / failed` 状态判定，修复状态查询、打开 URL、指纹自测和 LaunchCode 在过渡态误把实例提前标记为运行中的问题。
