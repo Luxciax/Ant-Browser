@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, Clock3, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Clock3, XCircle } from 'lucide-react'
 
 import { Button, FormItem, Input, Modal, Switch, toast } from '../../../shared/components'
 import {
@@ -47,6 +47,8 @@ function statusLabel(settings: ScheduledBackupSettings) {
       return '执行中'
     case 'success':
       return settings.lastSuccessAt ? `上次成功：${formatDate(settings.lastSuccessAt)}` : '最近一次成功'
+    case 'degraded':
+      return settings.lastError ? `备份已完成，但状态未持久化：${settings.lastError}` : '备份已完成，但状态持久化失败'
     case 'skipped':
       return '上次跳过：实例仍在运行'
     case 'failed':
@@ -185,8 +187,9 @@ export function ScheduledBackupModal({ open, onClose, refreshToken = 0, onReques
             <FormItem label="最近状态">
               <div className="flex h-9 items-center gap-2 rounded-lg border border-[var(--color-border-default)] px-3 text-sm text-[var(--color-text-secondary)]">
                 {settings.status === 'success' && <CheckCircle2 className="h-4 w-4 text-[var(--color-success)]" />}
+                {settings.status === 'degraded' && <AlertTriangle className="h-4 w-4 text-[var(--color-warning)]" />}
                 {settings.status === 'failed' && <XCircle className="h-4 w-4 text-[var(--color-error)]" />}
-                {settings.status !== 'success' && settings.status !== 'failed' && <Clock3 className="h-4 w-4 text-[var(--color-text-muted)]" />}
+                {settings.status !== 'success' && settings.status !== 'degraded' && settings.status !== 'failed' && <Clock3 className="h-4 w-4 text-[var(--color-text-muted)]" />}
                 <span className="min-w-0 truncate" title={settings.lastError || statusLabel(settings)}>{statusLabel(settings)}</span>
               </div>
             </FormItem>

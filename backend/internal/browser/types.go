@@ -31,6 +31,7 @@ type Profile struct {
 	GroupId            string   `json:"groupId"` // 所属分组ID
 	LaunchCode         string   `json:"launchCode"`
 	WindowMarkerCode   string   `json:"windowMarkerCode,omitempty"`
+	RuntimeState       ProfileRuntimeState `json:"runtimeState"`
 	Running            bool     `json:"running"`
 	DebugPort          int      `json:"debugPort"`
 	DebugReady         bool     `json:"debugReady"`
@@ -42,6 +43,44 @@ type Profile struct {
 	DeletedAt          string   `json:"deletedAt"`
 	LastStartAt        string   `json:"lastStartAt"`
 	LastStopAt         string   `json:"lastStopAt"`
+}
+
+type ProfileRuntimeState string
+
+const (
+	RuntimeStopped  ProfileRuntimeState = "stopped"
+	RuntimeStarting ProfileRuntimeState = "starting"
+	RuntimeRunning  ProfileRuntimeState = "running"
+	RuntimeStopping ProfileRuntimeState = "stopping"
+	RuntimeFailed   ProfileRuntimeState = "failed"
+)
+
+func NormalizeProfileRuntimeState(profile *Profile) ProfileRuntimeState {
+	if profile == nil {
+		return RuntimeStopped
+	}
+	switch profile.RuntimeState {
+	case RuntimeStopped, RuntimeStarting, RuntimeRunning, RuntimeStopping, RuntimeFailed:
+		return profile.RuntimeState
+	}
+	if profile.Running || profile.DebugReady || profile.Pid > 0 || profile.DebugPort > 0 {
+		return RuntimeRunning
+	}
+	return RuntimeStopped
+}
+
+func ProfileRuntimeMutationBlocked(profile *Profile) bool {
+	if profile == nil {
+		return false
+	}
+	switch NormalizeProfileRuntimeState(profile) {
+	case RuntimeStarting, RuntimeRunning, RuntimeStopping:
+		return true
+	case RuntimeFailed:
+		return profile.Running || profile.DebugReady || profile.Pid > 0 || profile.DebugPort > 0
+	default:
+		return false
+	}
 }
 
 // ProfileInput 创建/更新配置文件的输入
@@ -140,6 +179,8 @@ type ProfileConfig = config.BrowserProfileConfig
 // CodeProvider 提供 LaunchCode 的接口（由 launchcode.LaunchCodeService 实现）
 type CodeProvider interface {
 	EnsureCode(profileId string) (string, error)
+	LookupCode(profileId string) (string, bool)
+	SetCode(profileId, code string) (string, error)
 	Remove(profileId string) error
 }
 

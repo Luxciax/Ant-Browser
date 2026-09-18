@@ -4,6 +4,7 @@ import (
 	"ant-chrome/backend/internal/backup/channels"
 	"ant-chrome/backend/internal/backup/channels/openlist"
 	"ant-chrome/backend/internal/config"
+	"ant-chrome/backend/internal/fsutil"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -319,57 +320,10 @@ func (a *App) backupDownloadRemoteMetadata(client backupRemoteMetadataDownloader
 }
 
 func publishDownloadedBackupMetadata(sourcePath, targetPath string) error {
-	if err := os.Rename(sourcePath, targetPath); err == nil {
-		return nil
-	} else {
-		renameErr := err
-		backupPath, backupErr := moveExistingBackupMetadataAside(targetPath)
-		if backupErr != nil {
-			return fmt.Errorf(`replace downloaded backup metadata failed: %w`, renameErr)
-		}
-		if err := os.Rename(sourcePath, targetPath); err != nil {
-			if backupPath != `` {
-				if restoreErr := os.Rename(backupPath, targetPath); restoreErr != nil {
-					return fmt.Errorf(`replace downloaded backup metadata failed: %w; restore existing metadata failed: %v`, err, restoreErr)
-				}
-			}
-			return fmt.Errorf(`replace downloaded backup metadata failed: %w`, err)
-		}
-		if backupPath != `` {
-			_ = os.Remove(backupPath)
-		}
-		return nil
+	if err := fsutil.ReplaceFile(sourcePath, targetPath); err != nil {
+		return fmt.Errorf(`replace downloaded backup metadata failed: %w`, err)
 	}
-}
-
-func moveExistingBackupMetadataAside(targetPath string) (string, error) {
-	info, err := os.Stat(targetPath)
-	if os.IsNotExist(err) {
-		return ``, nil
-	}
-	if err != nil {
-		return ``, err
-	}
-	if info.IsDir() {
-		return ``, fmt.Errorf(`metadata target is a directory`)
-	}
-	temporaryFile, err := os.CreateTemp(filepath.Dir(targetPath), `.`+filepath.Base(targetPath)+`.backup-*`)
-	if err != nil {
-		return ``, err
-	}
-	backupPath := temporaryFile.Name()
-	if err := temporaryFile.Close(); err != nil {
-		_ = os.Remove(backupPath)
-		return ``, err
-	}
-	if err := os.Remove(backupPath); err != nil {
-		return ``, err
-	}
-	if err := os.Rename(targetPath, backupPath); err != nil {
-		_ = os.Remove(backupPath)
-		return ``, err
-	}
-	return backupPath, nil
+	return nil
 }
 
 func normalizeDownloadedBackupMetadata(metadataPath, backupFileName string) error {

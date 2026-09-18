@@ -50,6 +50,7 @@ import { EMPTY_FILTERS } from '../../modules/browser/components/InstanceFilterBa
 import { useBrowserListData } from '../../modules/browser/pages/browserList/useBrowserListData'
 import { useBrowserListDerived, useBrowserListViewState } from '../../modules/browser/pages/browserList/useBrowserListViewState'
 import { useBrowserProfileActions } from '../../modules/browser/pages/browserList/useBrowserProfileActions'
+import { isBrowserRuntimeConfigLocked, isBrowserRuntimeStoppable, normalizeBrowserRuntimeState } from '../../modules/browser/utils/runtimeState'
 import {
   BackupV2Modal,
   KeywordsV2Modal,
@@ -154,7 +155,7 @@ export function BrowserListV2Page() {
   }
 
   const handleBatchStart = async () => {
-    const targets = filteredProfiles.filter((profile) => selectedIds.has(profile.profileId) && !profile.running)
+    const targets = filteredProfiles.filter((profile) => selectedIds.has(profile.profileId) && !isBrowserRuntimeConfigLocked(profile))
     if (targets.length === 0) return
     setBulkBusy(true)
     try {
@@ -165,7 +166,7 @@ export function BrowserListV2Page() {
   }
 
   const handleBatchStop = async () => {
-    const targets = filteredProfiles.filter((profile) => selectedIds.has(profile.profileId) && profile.running)
+    const targets = filteredProfiles.filter((profile) => selectedIds.has(profile.profileId) && isBrowserRuntimeStoppable(profile))
     if (targets.length === 0) return
     setBulkBusy(true)
     try {
@@ -177,7 +178,7 @@ export function BrowserListV2Page() {
 
   const handleBatchExport = async () => {
     if (selectedIds.size === 0) return
-    const running = selectedProfiles.filter((profile) => profile.running)
+    const running = selectedProfiles.filter((profile) => isBrowserRuntimeConfigLocked(profile))
     if (running.length > 0) {
       toast.error(`请先停止实例再导出：${running.slice(0, 3).map((profile) => profile.profileName).join('、')}${running.length > 3 ? ' 等' : ''}`)
       return
@@ -229,7 +230,7 @@ export function BrowserListV2Page() {
   }
 
   const handleExportProfile = async (profile: BrowserProfile) => {
-    if (profile.running) {
+    if (isBrowserRuntimeConfigLocked(profile)) {
       toast.error(`请先停止实例再导出：${profile.profileName}`)
       return
     }
@@ -427,9 +428,12 @@ export function BrowserListV2Page() {
           const status = getProfileStatus(profile)
           const starting = isProfileStarting(profile.profileId)
           const stopping = isProfileStopping(profile.profileId)
+          const runtimeState = normalizeBrowserRuntimeState(profile)
+          const runtimeRunning = runtimeState === 'running'
+          const runtimeStoppable = isBrowserRuntimeStoppable(profile)
           const groupName = profile.groupId ? groupNameMap.get(profile.groupId) || profile.groupId : '未分组'
           const proxyName = profile.proxyId ? proxyNameMap.get(profile.proxyId) || profile.proxyId : profile.proxyConfig ? '自定义代理' : '未绑定'
-          const statusClass = profile.lastError ? ' error' : starting || stopping ? ' pending' : profile.running ? '' : ' off'
+          const statusClass = runtimeState === 'failed' || profile.lastError ? ' error' : starting || stopping ? ' pending' : runtimeRunning ? '' : ' off'
           return (
             <div className={`ui-v2-profile-row${viewMode === 'card' ? ' card' : ''}`} key={profile.profileId}>
               <button className={`ui-v2-check${selected ? ' selected' : ''}`} type="button" onClick={() => toggleSelected(profile.profileId)} title="选择实例">
@@ -450,7 +454,7 @@ export function BrowserListV2Page() {
               <div className="ui-v2-core-col"><div className="ui-v2-label">内核</div><div className="ui-v2-value">{getProfileCoreLabel(profile)}</div></div>
               <div className="ui-v2-recent-col"><div className="ui-v2-label">最近启动</div><div className="ui-v2-value">{formatUpdatedAt(profile.lastStartAt || profile.updatedAt)}</div></div>
               <div className="ui-v2-row-actions">
-                <button className={`ui-v2-mini-btn${profile.running ? ' soft' : ''}`} disabled={starting || stopping} type="button" onClick={() => void (profile.running ? handleStop(profile.profileId) : handleStart(profile.profileId))}>{starting ? '启动中' : stopping ? '停止中' : profile.running ? '停止' : '启动'}</button>
+                <button className={`ui-v2-mini-btn${runtimeStoppable ? ' soft' : ''}`} disabled={starting || stopping} type="button" onClick={() => void (runtimeStoppable ? handleStop(profile.profileId) : handleStart(profile.profileId))}>{starting ? '启动中' : stopping ? '停止中' : runtimeStoppable ? '停止' : '启动'}</button>
                 <button className="ui-v2-mini-icon" type="button" title="快速详情" onClick={() => setDetailProfile(profile)}><PanelRightOpen size={16} strokeWidth={1.8} /></button>
                 <button className="ui-v2-mini-icon" type="button" title="更多操作" onClick={(event) => openRowMenu(event, profile)}><MoreHorizontal size={16} strokeWidth={1.8} /></button>
               </div>

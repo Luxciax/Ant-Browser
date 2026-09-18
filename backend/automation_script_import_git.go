@@ -2,14 +2,24 @@ package backend
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
+	"unicode"
 
 	"ant-chrome/backend/internal/automation"
 )
 
 func cloneAutomationGitRepository(repoURL string, ref string) (string, func(), error) {
+	normalizedRepoURL, err := validateAutomationGitRepositoryURL(repoURL)
+	if err != nil {
+		return "", nil, err
+	}
+	normalizedRef, err := validateAutomationGitRef(ref)
+	if err != nil {
+		return "", nil, err
+	}
 	if _, err := exec.LookPath("git"); err != nil {
 		return "", nil, fmt.Errorf("未找到 git，可先安装 git 后再导入仓库脚本")
 	}
@@ -23,15 +33,15 @@ func cloneAutomationGitRepository(repoURL string, ref string) (string, func(), e
 		_ = os.RemoveAll(tempDir)
 	}
 
-	if strings.TrimSpace(ref) == "" {
-		if err := runGitCommand("", "clone", "--depth", "1", repoURL, tempDir); err != nil {
+	if normalizedRef == "" {
+		if err := runGitCommand("", "clone", "--depth", "1", "--", normalizedRepoURL, tempDir); err != nil {
 			cleanup()
 			return "", nil, err
 		}
 		return tempDir, cleanup, nil
 	}
 
-	if err := runGitCommand("", "clone", "--depth", "1", "--branch", ref, "--single-branch", repoURL, tempDir); err == nil {
+	if err := runGitCommand("", "clone", "--depth", "1", "--branch", normalizedRef, "--single-branch", "--", normalizedRepoURL, tempDir); err == nil {
 		return tempDir, cleanup, nil
 	}
 
@@ -44,15 +54,51 @@ func cloneAutomationGitRepository(repoURL string, ref string) (string, func(), e
 		_ = os.RemoveAll(tempDir)
 	}
 
-	if err := runGitCommand("", "clone", repoURL, tempDir); err != nil {
+	if err := runGitCommand("", "clone", "--", normalizedRepoURL, tempDir); err != nil {
 		cleanup()
 		return "", nil, err
 	}
-	if err := runGitCommand(tempDir, "checkout", ref); err != nil {
+	if err := runGitCommand(tempDir, "checkout", "--detach", normalizedRef); err != nil {
 		cleanup()
 		return "", nil, fmt.Errorf("切换 Git 引用失败: %w", err)
 	}
 	return tempDir, cleanup, nil
+}
+
+func validateAutomationGitRepositoryURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("Git 仓库地址不能为空")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || strings.TrimSpace(parsed.Hostname()) == "" {
+		return "", fmt.Errorf("Git 仓库地址格式无效")
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return "", fmt.Errorf("Git 仓库仅支持 https:// 地址")
+	}
+	if parsed.User != nil {
+		return "", fmt.Errorf("Git 仓库地址不能包含内嵌凭据")
+	}
+	return parsed.String(), nil
+}
+
+func validateAutomationGitRef(raw string) (string, error) {
+	ref := strings.TrimSpace(raw)
+	if ref == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(ref, "-") || strings.HasPrefix(ref, ".") || strings.HasSuffix(ref, ".") ||
+		strings.Contains(ref, "..") || strings.Contains(ref, "@{") || strings.Contains(ref, "//") ||
+		strings.HasSuffix(ref, "/") || strings.HasSuffix(strings.ToLower(ref), ".lock") {
+		return "", fmt.Errorf("Git 引用格式无效")
+	}
+	for _, r := range ref {
+		if unicode.IsSpace(r) || unicode.IsControl(r) || strings.ContainsRune("~^:?*[\\", r) {
+			return "", fmt.Errorf("Git 引用格式无效")
+		}
+	}
+	return ref, nil
 }
 
 func runGitCommand(workdir string, args ...string) error {

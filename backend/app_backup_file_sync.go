@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/fsutil"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
@@ -86,24 +87,34 @@ func backupCopyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	tmpPath := dst + ".tmp"
-	out, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+	out, err := os.CreateTemp(filepath.Dir(dst), ".backup-copy-*.tmp")
 	if err != nil {
 		return err
 	}
+	tmpPath := out.Name()
+	committed := false
+	defer func() {
+		if !committed {
+			_ = out.Close()
+			_ = os.Remove(tmpPath)
+		}
+	}()
+	if err := out.Chmod(info.Mode().Perm()); err != nil {
+		return err
+	}
 	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := out.Sync(); err != nil {
 		return err
 	}
 	if err := out.Close(); err != nil {
-		_ = os.Remove(tmpPath)
 		return err
 	}
-	if err := os.Rename(tmpPath, dst); err != nil {
-		_ = os.Remove(tmpPath)
+	if err := fsutil.ReplaceFile(tmpPath, dst); err != nil {
 		return err
 	}
+	committed = true
 	return nil
 }
 

@@ -137,6 +137,138 @@ func TestProfilePackageDatabaseRoundTripSelectedProfile(t *testing.T) {
 	}
 }
 
+func TestProfilePackageRestoresExtensionArtifactOverStaleTargetPath(t *testing.T) {
+	const extensionID = "abcdefghijklmnopabcdefghijklmnop"
+
+	sourceRoot := t.TempDir()
+	sourceDB := newProfilePackageDatabase(t, sourceRoot)
+	sourceCfg := config.DefaultConfig()
+	sourceCfg.Browser.UserDataRoot = filepath.Join(sourceRoot, "user-data")
+	sourceApp := NewApp(sourceRoot)
+	sourceApp.config = sourceCfg
+	sourceApp.db = sourceDB
+	sourceApp.browserMgr = browser.NewManager(sourceCfg, sourceRoot)
+
+	profile := browser.Profile{
+		ProfileId:       "source-profile",
+		ProfileName:     "源实例",
+		UserDataDir:     "source-profile",
+		CoreId:          "source-core",
+		ProxyId:         "source-proxy",
+		ProxyConfig:     "http://source-proxy:8080",
+		ProxyBindName:   "源代理",
+		GroupId:         "source-group",
+		FingerprintArgs: []string{"--fingerprint-platform=Windows"},
+		CreatedAt:       "2026-08-31T00:00:00Z",
+		UpdatedAt:       "2026-08-31T00:00:00Z",
+	}
+	insertProfilePackageDatabaseFixtures(t, sourceDB.GetConn(), profile, "source-parent-group", extensionID)
+	sourceExtensionDir := filepath.Join(sourceRoot, "data", "extensions", extensionID)
+	if err := os.MkdirAll(sourceExtensionDir, 0o755); err != nil {
+		t.Fatalf("create source extension dir failed: %v", err)
+	}
+	manifest := []byte(`{"manifest_version":3,"name":"Portable Fixture","version":"1.0.0"}`)
+	if err := os.WriteFile(filepath.Join(sourceExtensionDir, "manifest.json"), manifest, 0o644); err != nil {
+		t.Fatalf("write source extension manifest failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceExtensionDir, "worker.js"), []byte("console.log('portable');"), 0o644); err != nil {
+		t.Fatalf("write source extension payload failed: %v", err)
+	}
+	sourceExtensionDAO := browser.NewSQLiteExtensionDAO(sourceDB.GetConn())
+	if err := sourceExtensionDAO.Upsert(browser.Extension{
+		ExtensionID:    extensionID,
+		Name:           "Portable Fixture",
+		Version:        "1.0.0",
+		ManifestJSON:   string(manifest),
+		InstallDir:     sourceExtensionDir,
+		InstallMode:    browser.ExtensionInstallModePersistent,
+		Enabled:        true,
+		DefaultInstall: true,
+		InstalledAt:    profile.CreatedAt,
+	}); err != nil {
+		t.Fatalf("update source extension failed: %v", err)
+	}
+
+	zipPath := filepath.Join(sourceRoot, "portable-extension-profile.zip")
+	if _, err := sourceApp.writeProfilePackage(zipPath, []browser.Profile{profile}); err != nil {
+		t.Fatalf("write profile package failed: %v", err)
+	}
+	reader, err := zip.OpenReader(zipPath)
+	if err != nil {
+		t.Fatalf("open profile package failed: %v", err)
+	}
+	var packageManifest ProfilePackageManifest
+	if err := readProfilePackageJSON(reader.File, "manifest.json", &packageManifest); err != nil {
+		_ = reader.Close()
+		t.Fatalf("read profile package manifest failed: %v", err)
+	}
+	if !packageManifest.Extensions.Portable || packageManifest.Extensions.Count != 1 {
+		_ = reader.Close()
+		t.Fatalf("extension manifest = %#v, want portable count 1", packageManifest.Extensions)
+	}
+	if !profilePackageExtensionArtifactPresent(reader.File, extensionID) {
+		_ = reader.Close()
+		t.Fatal("profile package did not include extension artifact")
+	}
+	_ = reader.Close()
+	_ = sourceDB.Close()
+
+	targetRoot := t.TempDir()
+	targetDB := newProfilePackageDatabase(t, targetRoot)
+	targetCfg := config.DefaultConfig()
+	targetCfg.Browser.UserDataRoot = filepath.Join(targetRoot, "user-data")
+	targetApp := NewApp(targetRoot)
+	targetApp.config = targetCfg
+	targetApp.db = targetDB
+	targetApp.browserMgr = browser.NewManager(targetCfg, targetRoot)
+	targetApp.browserMgr.ProfileDAO = browser.NewSQLiteProfileDAO(targetDB.GetConn())
+	targetApp.browserMgr.ProxyDAO = browser.NewSQLiteProxyDAO(targetDB.GetConn())
+	targetApp.browserMgr.CoreDAO = browser.NewSQLiteCoreDAO(targetDB.GetConn())
+	targetApp.browserMgr.GroupDAO = browser.NewSQLiteGroupDAO(targetDB.GetConn())
+	targetExtensionDAO := browser.NewSQLiteExtensionDAO(targetDB.GetConn())
+	targetApp.browserMgr.ExtensionDAO = targetExtensionDAO
+	staleInstallDir := filepath.Join(targetRoot, "old-machine", "missing-extension")
+	if err := targetExtensionDAO.Upsert(browser.Extension{
+		ExtensionID:    extensionID,
+		Name:           "Stale Fixture",
+		Version:        "0.9.0",
+		ManifestJSON:   `{}`,
+		InstallDir:     staleInstallDir,
+		PackagePath:    filepath.Join(targetRoot, "old-machine", extensionID+".crx"),
+		PackageHash:    "stale-hash",
+		InstallMode:    browser.ExtensionInstallModePersistent,
+		Enabled:        true,
+		DefaultInstall: true,
+	}); err != nil {
+		t.Fatalf("insert stale target extension failed: %v", err)
+	}
+
+	result, err := targetApp.importProfilePackageFromPath(zipPath)
+	if err != nil {
+		t.Fatalf("import profile package failed: %v", err)
+	}
+	if result.ImportedCount != 1 {
+		t.Fatalf("imported count = %d, want 1", result.ImportedCount)
+	}
+	expectedInstallDir := filepath.Join(targetRoot, "data", "extensions", extensionID)
+	storedExtension, err := targetExtensionDAO.Get(extensionID)
+	if err != nil {
+		t.Fatalf("read imported extension failed: %v", err)
+	}
+	if !backupSamePath(storedExtension.InstallDir, expectedInstallDir) {
+		t.Fatalf("extension install dir = %q, want %q", storedExtension.InstallDir, expectedInstallDir)
+	}
+	if storedExtension.PackagePath != "" || storedExtension.PackageHash != "" {
+		t.Fatalf("stale package metadata survived import: path=%q hash=%q", storedExtension.PackagePath, storedExtension.PackageHash)
+	}
+	if storedExtension.Version != "1.0.0" || storedExtension.Name != "Portable Fixture" {
+		t.Fatalf("extension catalog metadata was not updated: %#v", storedExtension)
+	}
+	if data, err := os.ReadFile(filepath.Join(expectedInstallDir, "worker.js")); err != nil || string(data) != "console.log('portable');" {
+		t.Fatalf("restored extension payload = %q, err=%v", data, err)
+	}
+}
+
 func TestProfilePackageDatabaseOverwriteMovesTargetToTrash(t *testing.T) {
 	profileID := "target-profile"
 	groupID := "source-group"

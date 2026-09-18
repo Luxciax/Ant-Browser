@@ -2,6 +2,7 @@ package backend
 
 import (
 	"ant-chrome/backend/internal/backup"
+	"ant-chrome/backend/internal/fsutil"
 	"archive/zip"
 	"encoding/json"
 	"fmt"
@@ -23,11 +24,12 @@ func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.M
 	}
 	emit("writing", 18, "正在创建导出文件...", nil)
 
-	tmpPath := zipPath + ".tmp"
-	f, err := os.Create(tmpPath)
+	f, err := os.CreateTemp(filepath.Dir(zipPath), "."+filepath.Base(zipPath)+".tmp-*")
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("创建导出文件失败: %w", err)
 	}
+	tmpPath := f.Name()
+	defer os.Remove(tmpPath)
 	w := zip.NewWriter(f)
 
 	includedEntries := 0
@@ -73,14 +75,14 @@ func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.M
 			entryStats := newBackupArchiveStats()
 			if info.IsDir() {
 				var err error
-				entryStats, err = backupZipAddDir(w, entry.SourcePath, entry.ArchivePath, zipPath, metadataPath, emitEntryProgress)
+				entryStats, err = backupZipAddDir(w, entry.SourcePath, entry.ArchivePath, zipPath, tmpPath, metadataPath, emitEntryProgress)
 				if err != nil {
 					return fmt.Errorf("写入目录失败(%s): %w", entry.ID, err)
 				}
 				fileCount += entryStats.fileCount
 				entryAddedFiles = entryStats.fileCount
 			} else {
-				if backupSamePath(entry.SourcePath, zipPath) || backupSamePath(entry.SourcePath, zipPath+".tmp") || backupSamePath(entry.SourcePath, metadataPath) || backupSamePath(entry.SourcePath, metadataPath+".tmp") {
+				if backupSamePath(entry.SourcePath, zipPath) || backupSamePath(entry.SourcePath, tmpPath) || backupSamePath(entry.SourcePath, metadataPath) || backupSamePath(entry.SourcePath, metadataPath+".tmp") {
 					skippedEntries++
 					progress := 20 + int(float64(i+1)/float64(totalEntries)*70)
 					emit("writing", progress, fmt.Sprintf("组件跳过：%s（导出文件本身）", meta.ComponentName), meta)
@@ -122,6 +124,7 @@ func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.M
 	}()
 
 	closeErr := w.Close()
+	syncErr := f.Sync()
 	fileCloseErr := f.Close()
 	if writeErr != nil {
 		emit("error", 100, writeErr.Error(), nil)
@@ -133,12 +136,17 @@ func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.M
 		_ = os.Remove(tmpPath)
 		return 0, 0, 0, closeErr
 	}
+	if syncErr != nil {
+		emit("error", 100, syncErr.Error(), nil)
+		_ = os.Remove(tmpPath)
+		return 0, 0, 0, syncErr
+	}
 	if fileCloseErr != nil {
 		emit("error", 100, fileCloseErr.Error(), nil)
 		_ = os.Remove(tmpPath)
 		return 0, 0, 0, fileCloseErr
 	}
-	if err := os.Rename(tmpPath, zipPath); err != nil {
+	if err := fsutil.ReplaceFile(tmpPath, zipPath); err != nil {
 		emit("error", 100, err.Error(), nil)
 		_ = os.Remove(tmpPath)
 		return 0, 0, 0, fmt.Errorf("写入导出文件失败: %w", err)
@@ -149,7 +157,7 @@ func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.M
 	return includedEntries, skippedEntries, fileCount, nil
 }
 
-func backupZipAddDir(w *zip.Writer, srcDir, archiveBase, outputZipPath, outputMetadataPath string, progress func(int64)) (backupArchiveStats, error) {
+func backupZipAddDir(w *zip.Writer, srcDir, archiveBase, outputZipPath, outputTempPath, outputMetadataPath string, progress func(int64)) (backupArchiveStats, error) {
 	base := strings.TrimSuffix(filepath.ToSlash(strings.TrimSpace(archiveBase)), "/")
 	if base == "" {
 		return backupArchiveStats{}, fmt.Errorf("archive base 不能为空")
@@ -162,7 +170,7 @@ func backupZipAddDir(w *zip.Writer, srcDir, archiveBase, outputZipPath, outputMe
 		if err != nil {
 			return err
 		}
-		if backupSamePath(path, outputZipPath) || backupSamePath(path, outputZipPath+".tmp") || backupSamePath(path, outputMetadataPath) || backupSamePath(path, outputMetadataPath+".tmp") {
+		if backupSamePath(path, outputZipPath) || backupSamePath(path, outputTempPath) || backupSamePath(path, outputMetadataPath) || backupSamePath(path, outputMetadataPath+".tmp") {
 			return nil
 		}
 		if d.Type()&os.ModeSymlink != 0 {

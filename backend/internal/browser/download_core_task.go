@@ -238,23 +238,38 @@ func replaceCoreDirectory(targetDir string, tempExtractDir string, replaceExisti
 	}
 
 	backupDir := targetDir + ".backup_" + time.Now().Format("20060102150405")
+	hadOriginal := false
 	if _, err := os.Stat(targetDir); err == nil {
+		hadOriginal = true
 		if err := os.Rename(targetDir, backupDir); err != nil {
-			return err
+			return fmt.Errorf("备份现有内核目录失败: %w", err)
 		}
 	} else if err != nil && !os.IsNotExist(err) {
-		return err
+		return fmt.Errorf("检查现有内核目录失败: %w", err)
 	}
 
 	if err := os.Rename(tempExtractDir, targetDir); err != nil {
-		if backupDir != "" {
-			_ = os.Rename(backupDir, targetDir)
+		commitErr := fmt.Errorf("提交新内核目录失败: %w", err)
+		if hadOriginal {
+			if restoreErr := restoreCoreDirectoryBackup(backupDir, targetDir); restoreErr != nil {
+				return fmt.Errorf("%w; CORE_ROLLBACK_FAILED: %v", commitErr, restoreErr)
+			}
 		}
-		return err
+		return commitErr
 	}
 
-	if backupDir != "" {
+	if hadOriginal {
 		_ = os.RemoveAll(backupDir)
+	}
+	return nil
+}
+
+func restoreCoreDirectoryBackup(backupDir string, targetDir string) error {
+	if err := os.Rename(backupDir, targetDir); err != nil {
+		return fmt.Errorf("恢复旧内核目录失败: %w", err)
+	}
+	if _, err := os.Stat(targetDir); err != nil {
+		return fmt.Errorf("验证恢复后的旧内核目录失败: %w", err)
 	}
 	return nil
 }

@@ -22,14 +22,14 @@ func ZipDir(src, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-
 	w := zip.NewWriter(f)
-	defer w.Close()
 
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("快照不允许包含符号链接: %s", path)
 		}
 		rel, err := filepath.Rel(src, path)
 		if err != nil {
@@ -51,10 +51,26 @@ func ZipDir(src, dest string) error {
 		if err != nil {
 			return err
 		}
-		defer file.Close()
-		_, err = io.Copy(fw, file)
-		return err
+		_, copyErr := io.Copy(fw, file)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		return closeErr
 	})
+	closeZipErr := w.Close()
+	syncErr := f.Sync()
+	closeFileErr := f.Close()
+	if walkErr != nil {
+		return walkErr
+	}
+	if closeZipErr != nil {
+		return closeZipErr
+	}
+	if syncErr != nil {
+		return syncErr
+	}
+	return closeFileErr
 }
 
 func UnzipTo(src, dest string) error {

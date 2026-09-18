@@ -1,6 +1,7 @@
 package automation
 
 import (
+	"ant-chrome/backend/internal/fsutil"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -147,38 +148,7 @@ func (s *ScriptStore) writeRecord(dir string, record ScriptRecord, existing Scri
 }
 
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-
-	tmpFile, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmpFile.Name()
-
-	defer func() {
-		_ = os.Remove(tmpPath)
-	}()
-
-	if _, err := tmpFile.Write(data); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Chmod(mode); err != nil {
-		_ = tmpFile.Close()
-		return err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err == nil {
-		return nil
-	}
-	if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
-		return removeErr
-	}
-	return os.Rename(tmpPath, path)
+	return fsutil.AtomicWriteFile(path, data, mode)
 }
 
 func collectScriptStoreBundleFiles(root string) ([]ImportedBundleFile, error) {

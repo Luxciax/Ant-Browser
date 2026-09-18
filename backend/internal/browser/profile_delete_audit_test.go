@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,8 +72,51 @@ func TestPermanentlyDeleteRemovesUserDataDirAndWritesAudit(t *testing.T) {
 	}
 }
 
+func TestPermanentlyDeleteRestoresDirectoriesWhenProfileDeleteFails(t *testing.T) {
+	appRoot := t.TempDir()
+	manager := NewManager(&config.Config{}, appRoot)
+	manager.Config.Browser.UserDataRoot = "data"
+
+	profile := &Profile{
+		ProfileId:   "profile-delete-rollback",
+		ProfileName: "回滚删除实例",
+		UserDataDir: "profile-delete-rollback",
+		DeletedAt:   time.Now().Add(-4 * 24 * time.Hour).Format(time.RFC3339),
+	}
+	dao := &profileDeleteAuditTestDAO{profiles: map[string]*Profile{profile.ProfileId: profile}, failDelete: true}
+	manager.ProfileDAO = dao
+
+	paths := []string{
+		filepath.Join(appRoot, "data", profile.UserDataDir, "Default"),
+		filepath.Join(appRoot, "data", "snapshots", profile.ProfileId),
+		filepath.Join(appRoot, "data", "fingerprint-check", profile.ProfileId),
+	}
+	for _, dir := range paths {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "sentinel.txt"), []byte("keep"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := manager.PermanentlyDelete(profile.ProfileId); err == nil {
+		t.Fatal("PermanentlyDelete should fail when ProfileDAO.Delete fails")
+	}
+	if _, exists := dao.profiles[profile.ProfileId]; !exists {
+		t.Fatal("profile record disappeared after failed permanent delete")
+	}
+	for _, dir := range paths {
+		data, err := os.ReadFile(filepath.Join(dir, "sentinel.txt"))
+		if err != nil || string(data) != "keep" {
+			t.Fatalf("directory was not restored after failed delete: dir=%s data=%q err=%v", dir, string(data), err)
+		}
+	}
+}
+
 type profileDeleteAuditTestDAO struct {
-	profiles map[string]*Profile
+	profiles   map[string]*Profile
+	failDelete bool
 }
 
 func (d *profileDeleteAuditTestDAO) List() ([]*Profile, error) { return nil, nil }
@@ -93,6 +137,9 @@ func (d *profileDeleteAuditTestDAO) Upsert(profile *Profile) error {
 }
 
 func (d *profileDeleteAuditTestDAO) Delete(profileId string) error {
+	if d.failDelete {
+		return fmt.Errorf("forced profile delete failure")
+	}
 	delete(d.profiles, profileId)
 	return nil
 }

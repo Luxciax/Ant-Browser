@@ -28,8 +28,8 @@ func (a *App) FetchRemoteAuthorProfile(rawURL string, timeoutMs int) (map[string
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
 		return nil, fmt.Errorf("远程作者配置地址无效")
 	}
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return nil, fmt.Errorf("远程作者配置仅支持 HTTP/HTTPS 地址")
+	if err := validateRemoteHTTPURL(parsedURL); err != nil {
+		return nil, fmt.Errorf("远程作者配置地址无效: %w", err)
 	}
 
 	if timeoutMs <= 0 {
@@ -50,7 +50,10 @@ func (a *App) FetchRemoteAuthorProfile(rawURL string, timeoutMs int) (map[string
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "AntBrowser/1.0 profile-fetch")
 
-	client := &http.Client{}
+	client, err := newSafeRemoteHTTPClient(&http.Client{}, timeout)
+	if err != nil {
+		return nil, fmt.Errorf("创建安全远程请求客户端失败: %w", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		log := logger.New("ProfileConfig")

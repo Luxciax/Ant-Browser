@@ -96,6 +96,9 @@ func (s *LaunchServer) requiresAPIAuth(path string) bool {
 	if strings.HasPrefix(path, "/api/") {
 		return true
 	}
+	if path == "/json" || strings.HasPrefix(path, "/json/") || strings.HasPrefix(path, "/devtools/") {
+		return true
+	}
 	mcpPath := s.MCPPath()
 	if mcpPath == "" {
 		return false

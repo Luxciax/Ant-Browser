@@ -5,13 +5,17 @@ import (
 	"ant-chrome/backend/internal/database"
 	"archive/zip"
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestPersistentExtensionArtifactMatchesVersionedDirectory(t *testing.T) {
@@ -354,7 +358,7 @@ func TestRecoverExistingPersistentExtensionRuntimePreservesBrowserStorage(t *tes
 		filepath.Join(userDataDir, "Default", "Local Extension Settings", runtimeID, "CURRENT"):                         "scriptcat-local-settings",
 		filepath.Join(userDataDir, "Default", "Sync Extension Settings", runtimeID, "CURRENT"):                          "scriptcat-sync-settings",
 		filepath.Join(userDataDir, "Default", "IndexedDB", "chrome-extension_"+runtimeID+"_0.indexeddb.leveldb", "LOG"): "scriptcat-indexeddb",
-		filepath.Join(userDataDir, "Default", "Service Worker", "Database", "LOG"):                                     "scriptcat-service-worker",
+		filepath.Join(userDataDir, "Default", "Service Worker", "Database", "LOG"):                                      "scriptcat-service-worker",
 	}
 	for path, contents := range storageFiles {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -579,7 +583,7 @@ func TestBackupProfileExtensionStateIncludesIndexedDBAndServiceWorker(t *testing
 
 func TestRemoveExtensionFromStoppedProfilesRemovesPersistentCodeWithoutRuntimeState(t *testing.T) {
 	appRoot := t.TempDir()
-	userDataDir := filepath.Join(appRoot, "profile")
+	userDataDir := filepath.Join(appRoot, "data", "profile")
 	runtimeID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	codeDir := filepath.Join(userDataDir, "Default", "Extensions", runtimeID)
 	if err := os.MkdirAll(codeDir, 0o755); err != nil {
@@ -589,7 +593,7 @@ func TestRemoveExtensionFromStoppedProfilesRemovesPersistentCodeWithoutRuntimeSt
 	manager.Profiles["profile"] = &Profile{
 		ProfileId:   "profile",
 		ProfileName: "profile",
-		UserDataDir: userDataDir,
+		UserDataDir: "profile",
 		Running:     false,
 	}
 	manager.ExtensionDAO = newTestExtensionDAO(t, appRoot)
@@ -690,6 +694,42 @@ func TestLegacyDirectorySourceUsesPersistentInstallMode(t *testing.T) {
 	}
 }
 
+func TestPrepareProfileExtensionsContextHonorsCancelledContext(t *testing.T) {
+	appRoot := t.TempDir()
+	manager := NewManager(config.DefaultConfig(), appRoot)
+	manager.ExtensionDAO = newTestExtensionDAO(t, appRoot)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	dirs, warnings, err := manager.PrepareProfileExtensionsContext(ctx, &Profile{ProfileId: "profile"}, `C:\chrome.exe`, filepath.Join(appRoot, "profile"), nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("PrepareProfileExtensionsContext error = %v, want context.Canceled", err)
+	}
+	if len(dirs) != 0 || len(warnings) != 0 {
+		t.Fatalf("cancelled preparation returned dirs=%v warnings=%v", dirs, warnings)
+	}
+}
+
+func TestRunExtensionInstallerCommandHonorsContext(t *testing.T) {
+	if os.Getenv("ANT_EXTENSION_INSTALLER_HELPER") == "1" {
+		time.Sleep(5 * time.Second)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	command := exec.Command(os.Args[0], "-test.run=TestRunExtensionInstallerCommandHonorsContext")
+	command.Env = append(os.Environ(), "ANT_EXTENSION_INSTALLER_HELPER=1")
+	startedAt := time.Now()
+	err := runExtensionInstallerCommand(ctx, command)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("runExtensionInstallerCommand error = %v, want context.DeadlineExceeded", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed > 3*time.Second {
+		t.Fatalf("runExtensionInstallerCommand cancellation took %s", elapsed)
+	}
+}
+
 func newTestExtensionDAO(t *testing.T, appRoot string) *SQLiteExtensionDAO {
 	t.Helper()
 	db, err := database.NewDB(filepath.Join(appRoot, "extensions.db"))
@@ -702,4 +742,79 @@ func newTestExtensionDAO(t *testing.T, appRoot string) *SQLiteExtensionDAO {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	return NewSQLiteExtensionDAO(db.GetConn())
+}
+
+func TestRemoveExtensionFromStoppedProfilesRollsBackAcrossProfiles(t *testing.T) {
+	appRoot := t.TempDir()
+	cfg := config.DefaultConfig()
+	manager := NewManager(cfg, appRoot)
+	db, err := database.NewDB(filepath.Join(appRoot, "extensions-rollback.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	dao := NewSQLiteExtensionDAO(db.GetConn())
+	manager.ExtensionDAO = dao
+	manager.InitData()
+
+	extensionID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	runtimeID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if err := dao.Upsert(Extension{
+		ExtensionID: extensionID,
+		Name:        "Rollback Extension",
+		Version:     "1.0.0",
+		InstallMode: ExtensionInstallModePersistent,
+		Enabled:     true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	profileIDs := []string{"profile-a", "profile-b"}
+	for _, profileID := range profileIDs {
+		profile := &Profile{ProfileId: profileID, ProfileName: profileID, UserDataDir: profileID, RuntimeState: RuntimeStopped}
+		manager.Profiles[profileID] = profile
+		userDataDir := manager.ResolveUserDataDir(profile)
+		artifactDir := filepath.Join(userDataDir, "Default", "Extensions", runtimeID, "1.0.0")
+		if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(artifactDir, "manifest.json"), []byte(`{"name":"Rollback","version":"1.0.0"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := dao.UpsertProfileExtensionRuntime(ProfileExtensionRuntime{
+			ProfileID:          profileID,
+			ExtensionID:        extensionID,
+			RuntimeExtensionID: runtimeID,
+			InstallMode:        ExtensionInstallModePersistent,
+			InstalledVersion:   "1.0.0",
+			Status:             ExtensionRuntimeStatusInstalled,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := db.GetConn().Exec(`CREATE TRIGGER reject_profile_b_disable BEFORE UPDATE ON browser_profile_extension_runtime WHEN NEW.profile_id = 'profile-b' AND NEW.status = 'disabled' BEGIN SELECT RAISE(ABORT, 'reject profile-b disable'); END;`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.RemoveExtensionFromStoppedProfiles(extensionID); err == nil {
+		t.Fatal("RemoveExtensionFromStoppedProfiles should fail when the second runtime update is rejected")
+	}
+	for _, profileID := range profileIDs {
+		profile := manager.Profiles[profileID]
+		artifactPath := filepath.Join(manager.ResolveUserDataDir(profile), "Default", "Extensions", runtimeID, "1.0.0", "manifest.json")
+		if _, err := os.Stat(artifactPath); err != nil {
+			t.Fatalf("profile %s plugin artifact was not restored: %v", profileID, err)
+		}
+		runtimeState, err := dao.GetProfileExtensionRuntime(profileID, extensionID)
+		if err != nil {
+			t.Fatalf("profile %s runtime state missing after rollback: %v", profileID, err)
+		}
+		if runtimeState.Status != ExtensionRuntimeStatusInstalled {
+			t.Fatalf("profile %s runtime status = %q, want %q", profileID, runtimeState.Status, ExtensionRuntimeStatusInstalled)
+		}
+	}
 }

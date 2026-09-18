@@ -4,6 +4,7 @@ import { Search } from 'lucide-react'
 import { Button, Input, Modal, Select } from '../../../shared/components'
 import { fetchBrowserProfiles } from '../../browser/api/profiles'
 import type { BrowserProfile } from '../../browser/types'
+import { isBrowserRuntimeConfigLocked } from '../../browser/utils/runtimeState'
 
 interface BackupScopeModalProps {
   open: boolean
@@ -77,7 +78,7 @@ export function BackupScopeModal({
         const available = items.filter(profile => !profile.deletedAt)
         setProfiles(available)
         setSelectedIds(current => new Set(
-          Array.from(current).filter(id => available.some(profile => profile.profileId === id && !profile.running)),
+          Array.from(current).filter(id => available.some(profile => profile.profileId === id && !isBrowserRuntimeConfigLocked(profile))),
         ))
       })
       .catch(fetchError => {
@@ -96,7 +97,7 @@ export function BackupScopeModal({
   }, [initialProfileIds, open])
 
   const selectableProfiles = useMemo(
-    () => profiles.filter(profile => !profile.running),
+    () => profiles.filter(profile => !isBrowserRuntimeConfigLocked(profile)),
     [profiles],
   )
   const filteredProfiles = useMemo(() => {
@@ -240,7 +241,7 @@ export function BackupScopeModal({
                 sortedProfiles.length > 0 ? (
                   <div className="space-y-1">
                     {sortedProfiles.map(profile => {
-                      const disabled = profile.running
+                      const disabled = isBrowserRuntimeConfigLocked(profile)
                       return (
                         <label
                           key={profile.profileId}
@@ -254,7 +255,7 @@ export function BackupScopeModal({
                             className="h-4 w-4 accent-[var(--color-accent)]"
                           />
                           <span className="min-w-0 flex-1 truncate text-[var(--color-text-primary)]">{profile.profileName || profile.profileId}</span>
-                          {disabled && <span className="shrink-0 text-xs text-[var(--color-warning)]">运行中</span>}
+                          {disabled && <span className="shrink-0 text-xs text-[var(--color-warning)]">运行状态占用中</span>}
                         </label>
                       )
                     })}

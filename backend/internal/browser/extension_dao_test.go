@@ -151,6 +151,66 @@ func TestSQLiteExtensionDAOSeparatesDefaultInstallFromProfileSettings(t *testing
 	}
 }
 
+func TestSQLiteExtensionDAODeleteRollsBackWhenAssociationCleanupFails(t *testing.T) {
+	db, err := database.NewDB(filepath.Join(t.TempDir(), "extensions-delete.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	dao := NewSQLiteExtensionDAO(db.GetConn())
+	extensionID := "dddddddddddddddddddddddddddddddd"
+	if err := dao.Upsert(Extension{ExtensionID: extensionID, Name: "Delete Me", Version: "1.0.0", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.GetConn().Exec(`INSERT INTO browser_profile_extensions (profile_id, extension_id, enabled, created_at, updated_at) VALUES ('profile-a', ?, 1, '', '')`, extensionID); err != nil {
+		t.Fatal(err)
+	}
+	if err := dao.UpsertProfileExtensionRuntime(ProfileExtensionRuntime{ProfileID: "profile-a", ExtensionID: extensionID, RuntimeExtensionID: extensionID, Status: ExtensionRuntimeStatusInstalled}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.GetConn().Exec(`CREATE TRIGGER reject_extension_link_delete BEFORE DELETE ON browser_profile_extensions WHEN OLD.extension_id = '` + extensionID + `' BEGIN SELECT RAISE(ABORT, 'reject extension link delete'); END;`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := dao.Delete(extensionID); err == nil {
+		t.Fatal("Delete should fail when association cleanup is rejected")
+	}
+	if _, err := dao.Get(extensionID); err != nil {
+		t.Fatalf("extension row was deleted despite rollback: %v", err)
+	}
+	for table, want := range map[string]int{
+		"browser_profile_extensions":         1,
+		"browser_profile_extension_runtime": 1,
+	} {
+		var got int
+		if err := db.GetConn().QueryRow(`SELECT COUNT(*) FROM ` + table + ` WHERE extension_id = ?`, extensionID).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("%s count after rollback = %d, want %d", table, got, want)
+		}
+	}
+
+	if _, err := db.GetConn().Exec(`DROP TRIGGER reject_extension_link_delete`); err != nil {
+		t.Fatal(err)
+	}
+	if err := dao.Delete(extensionID); err != nil {
+		t.Fatalf("Delete after removing trigger returned error: %v", err)
+	}
+	for _, table := range []string{"browser_extensions", "browser_profile_extensions", "browser_profile_extension_runtime"} {
+		var got int
+		if err := db.GetConn().QueryRow(`SELECT COUNT(*) FROM ` + table + ` WHERE extension_id = ?`, extensionID).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != 0 {
+			t.Fatalf("%s count after successful delete = %d, want 0", table, got)
+		}
+	}
+}
+
 func TestExtensionDirectoryLoadingIsDisabled(t *testing.T) {
 	appRoot := t.TempDir()
 	manager := NewManager(config.DefaultConfig(), appRoot)

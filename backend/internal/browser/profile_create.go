@@ -17,9 +17,9 @@ func (m *Manager) Create(input ProfileInput) (*Profile, error) {
 
 	now := time.Now().Format(time.RFC3339)
 	profileId := uuid.NewString()
-	userDataDir := strings.TrimSpace(input.UserDataDir)
-	if userDataDir == "" {
-		userDataDir = profileId
+	userDataDir, err := m.normalizeManagedUserDataDir(input.UserDataDir, profileId)
+	if err != nil {
+		return nil, err
 	}
 	resolvedProxy, err := m.resolveProfileProxyInput(input.ProxyId, input.ProxyConfig)
 	if err != nil {
@@ -46,10 +46,11 @@ func (m *Manager) Create(input ProfileInput) (*Profile, error) {
 		ProxyId:            resolvedProxy.ProxyId,
 		ProxyConfig:        resolvedProxy.ProxyConfig,
 		MemoryLimitMB:      normalizeMemoryLimitMB(input.MemoryLimitMB),
-		LaunchArgs:         input.LaunchArgs,
-		Tags:               input.Tags,
+		LaunchArgs:         append([]string{}, input.LaunchArgs...),
+		Tags:               append([]string{}, input.Tags...),
 		Keywords:           append([]string{}, input.Keywords...),
 		GroupId:            strings.TrimSpace(input.GroupId),
+		RuntimeState:       RuntimeStopped,
 		Running:            false,
 		DebugPort:          0,
 		Pid:                0,
@@ -71,6 +72,7 @@ func (m *Manager) Create(input ProfileInput) (*Profile, error) {
 	m.Profiles[profileId] = profile
 	log.Info("浏览器配置创建", logger.F("profile_id", profileId), logger.F("profile_name", input.ProfileName))
 	if err := m.SaveProfiles(); err != nil {
+		delete(m.Profiles, profileId)
 		return nil, err
 	}
 	m.ensureProfileLaunchCode(profile)

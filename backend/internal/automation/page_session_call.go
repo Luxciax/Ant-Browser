@@ -155,3 +155,41 @@ func (s *pageSession) touchedAt() time.Time {
 	defer s.mu.Unlock()
 	return s.lastUsed
 }
+
+func normalizePageSessionIdleTimeout(idleTimeout time.Duration) time.Duration {
+	if idleTimeout <= 0 {
+		return defaultPageSessionIdle
+	}
+	return idleTimeout
+}
+
+func (s *pageSession) setIdleTimeout(idleTimeout time.Duration) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	s.idleTimeout = normalizePageSessionIdleTimeout(idleTimeout)
+	s.mu.Unlock()
+}
+
+func (s *pageSession) idleTimeoutValue() time.Duration {
+	if s == nil {
+		return defaultPageSessionIdle
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return normalizePageSessionIdleTimeout(s.idleTimeout)
+}
+
+func (s *pageSession) expiredAt(now time.Time) bool {
+	if s == nil {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return true
+	}
+	idleTimeout := normalizePageSessionIdleTimeout(s.idleTimeout)
+	return !s.lastUsed.IsZero() && now.Sub(s.lastUsed) > idleTimeout
+}

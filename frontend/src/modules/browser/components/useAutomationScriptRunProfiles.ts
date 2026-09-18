@@ -4,6 +4,7 @@ import { fetchBrowserProfiles, fetchGroups } from "../api";
 import type { AutomationScriptRecord } from "../automationScripts";
 import type { AutomationDemoSession } from "../demoSession";
 import type { BrowserGroupWithCount, BrowserProfile } from "../types";
+import { normalizeBrowserRuntimeState } from "../utils/runtimeState";
 import {
   buildGroupOptions,
   buildProfileSuggestions,
@@ -96,17 +97,18 @@ export function useAutomationScriptRunProfiles({
     profile: SelectableProfile,
     actionLabel: string,
   ) => {
+    const runtimeRunning = normalizeBrowserRuntimeState(profile) === "running";
     setDemoSession((current) => ({
       ...current,
       profileId: profile.profileId,
       profileName: profile.profileName,
       launchCode: profile.launchCode,
       cdpUrl:
-        profile.running && profile.debugReady && profile.debugPort > 0
+        runtimeRunning && profile.debugReady && profile.debugPort > 0
           ? `http://127.0.0.1:${profile.debugPort}`
           : "",
       debugPort:
-        profile.running && profile.debugReady && profile.debugPort > 0
+        runtimeRunning && profile.debugReady && profile.debugPort > 0
           ? profile.debugPort
           : 0,
       lastAction: actionLabel,

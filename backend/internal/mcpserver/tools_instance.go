@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -104,8 +105,8 @@ func registerInstanceWriteTools(srv *mcp.Server,p InstanceProvider){
 	mcp.AddTool(srv,&mcp.Tool{Name:"ant_instance_delete",Description:"删除实例；运行中的实例需先停止。",Annotations:destructive("删除实例")},func(_ context.Context,_ *mcp.CallToolRequest,in deleteInstanceInput)(*mcp.CallToolResult,deleteInstanceOutput,error){target,err:=p.FindProfile(in.Selector.toLaunchSelector()); if err!=nil{return toolError(err),deleteInstanceOutput{},nil}; if err:=p.DeleteProfile(target.ProfileId);err!=nil{return toolError(err),deleteInstanceOutput{},nil}; return nil,deleteInstanceOutput{Deleted:true,ProfileID:target.ProfileId,ProfileName:target.ProfileName},nil})
 }
 
-type startInstanceInput struct { Selector Selector `json:"selector"`; StartURLs []string `json:"startUrls,omitempty"`; SkipDefaultStartURLs bool `json:"skipDefaultStartUrls,omitempty"`; ProxyID string `json:"proxyId,omitempty"` }
-type startInstanceOutput struct { Runtime RuntimeState `json:"runtime"` }
+type startInstanceInput struct { Selector Selector `json:"selector"`; StartURLs []string `json:"startUrls,omitempty"`; SkipDefaultStartURLs bool `json:"skipDefaultStartUrls,omitempty"`; ProxyID string `json:"proxyId,omitempty"`; WaitReady *bool `json:"waitReady,omitempty"`; TimeoutMs int `json:"timeoutMs,omitempty"` }
+type startInstanceOutput struct { Ready bool `json:"ready"`; CDPURL string `json:"cdpUrl,omitempty"`; Runtime RuntimeState `json:"runtime"`; Hint string `json:"hint,omitempty"` }
 type runtimeSessionInput struct { Selector Selector `json:"selector"`; StartURLs []string `json:"startUrls,omitempty"`; SkipDefaultStartURLs bool `json:"skipDefaultStartUrls,omitempty"`; TimeoutMs int `json:"timeoutMs,omitempty"` }
 type runtimeSessionOutput struct { Ready bool `json:"ready"`; CDPURL string `json:"cdpUrl,omitempty"`; Runtime RuntimeState `json:"runtime"`; Hint string `json:"hint,omitempty"` }
 type stopInstanceInput struct { Selector Selector `json:"selector"` }
@@ -115,9 +116,55 @@ type runtimeStatusOutput struct { Runtime RuntimeState `json:"runtime"` }
 type activeSessionOutput struct { Active bool `json:"active"`; CDPURL string `json:"cdpUrl,omitempty"`; Runtime RuntimeState `json:"runtime,omitzero"` }
 
 func registerRuntimeTools(srv *mcp.Server,p InstanceProvider){
-	mcp.AddTool(srv,&mcp.Tool{Name:"ant_instance_start",Description:"启动实例但不等待调试端口就绪。",Annotations:mutating("启动实例")},func(_ context.Context,_ *mcp.CallToolRequest,in startInstanceInput)(*mcp.CallToolResult,startInstanceOutput,error){profile,code,err:=p.StartProfile(in.Selector.toLaunchSelector(),launchcode.LaunchRequestParams{StartURLs:in.StartURLs,SkipDefaultStartURLs:in.SkipDefaultStartURLs,ProxyId:strings.TrimSpace(in.ProxyID)}); if err!=nil{return toolError(err),startInstanceOutput{},nil}; s:=toRuntimeState(profile); if s.LaunchCode==""{s.LaunchCode=code}; return nil,startInstanceOutput{Runtime:s},nil})
+	mcp.AddTool(srv,&mcp.Tool{Name:"ant_instance_start",Description:"启动实例并默认等待最低 CDP runtime ready；设置 waitReady=false 可快速返回。",Annotations:mutating("启动实例")},func(_ context.Context,_ *mcp.CallToolRequest,in startInstanceInput)(*mcp.CallToolResult,startInstanceOutput,error){out,err:=startInstanceWithReadiness(p,in); if err!=nil{return toolError(err),startInstanceOutput{},nil}; return nil,out,nil})
 	mcp.AddTool(srv,&mcp.Tool{Name:"ant_runtime_session",Description:"启动实例并等待 CDP 可接管，返回统一 CDP 入口。",Annotations:mutating("接管实例会话")},func(_ context.Context,_ *mcp.CallToolRequest,in runtimeSessionInput)(*mcp.CallToolResult,runtimeSessionOutput,error){session,err:=p.OpenRuntimeSession(in.Selector.toLaunchSelector(),launchcode.LaunchRequestParams{StartURLs:in.StartURLs,SkipDefaultStartURLs:in.SkipDefaultStartURLs},time.Duration(in.TimeoutMs)*time.Millisecond); if err!=nil{return toolError(err),runtimeSessionOutput{},nil}; out:=runtimeSessionOutput{Ready:session.Ready,CDPURL:session.CDPURL,Runtime:toRuntimeState(session.Profile)}; if !session.Ready{out.Hint="浏览器已启动但调试端口尚未就绪，请稍后重试。"}; return nil,out,nil})
 	mcp.AddTool(srv,&mcp.Tool{Name:"ant_runtime_status",Description:"查询实例当前运行态，不触发启动。",Annotations:readOnly("查询运行态")},func(_ context.Context,_ *mcp.CallToolRequest,in runtimeStatusInput)(*mcp.CallToolResult,runtimeStatusOutput,error){target,err:=p.FindProfile(in.Selector.toLaunchSelector()); if err!=nil{return toolError(err),runtimeStatusOutput{},nil}; profile,err:=p.StatusProfile(target.ProfileId); if err!=nil{return toolError(err),runtimeStatusOutput{},nil}; return nil,runtimeStatusOutput{Runtime:toRuntimeState(profile)},nil})
 	mcp.AddTool(srv,&mcp.Tool{Name:"ant_runtime_active",Description:"查询当前挂在统一 CDP 入口上的实例。",Annotations:readOnly("查询活动会话")},func(_ context.Context,_ *mcp.CallToolRequest,_ struct{})(*mcp.CallToolResult,activeSessionOutput,error){session,err:=p.ActiveRuntimeSession(); if err!=nil{return toolError(err),activeSessionOutput{},nil}; if session==nil{return nil,activeSessionOutput{Active:false},nil}; return nil,activeSessionOutput{Active:true,CDPURL:session.CDPURL,Runtime:toRuntimeState(session.Profile)},nil})
 	mcp.AddTool(srv,&mcp.Tool{Name:"ant_instance_stop",Description:"停止运行中的真实浏览器实例。",Annotations:destructive("停止实例")},func(_ context.Context,_ *mcp.CallToolRequest,in stopInstanceInput)(*mcp.CallToolResult,stopInstanceOutput,error){target,err:=p.FindProfile(in.Selector.toLaunchSelector()); if err!=nil{return toolError(err),stopInstanceOutput{},nil}; profile,err:=p.StopProfile(target.ProfileId); if err!=nil{return toolError(err),stopInstanceOutput{},nil}; return nil,stopInstanceOutput{Stopped:true,Runtime:toRuntimeState(profile)},nil})
+}
+
+func startInstanceWithReadiness(p InstanceProvider, in startInstanceInput) (startInstanceOutput, error) {
+	if p == nil {
+		return startInstanceOutput{}, fmt.Errorf("instance provider is unavailable")
+	}
+	params := launchcode.LaunchRequestParams{
+		StartURLs:            in.StartURLs,
+		SkipDefaultStartURLs: in.SkipDefaultStartURLs,
+		ProxyId:              strings.TrimSpace(in.ProxyID),
+	}
+	waitReady := true
+	if in.WaitReady != nil {
+		waitReady = *in.WaitReady
+	}
+	if !waitReady {
+		profile, code, err := p.StartProfile(in.Selector.toLaunchSelector(), params)
+		if err != nil {
+			return startInstanceOutput{}, err
+		}
+		runtime := toRuntimeState(profile)
+		if runtime.LaunchCode == "" {
+			runtime.LaunchCode = code
+		}
+		return startInstanceOutput{Ready: runtime.DebugReady, Runtime: runtime}, nil
+	}
+
+	session, err := p.OpenRuntimeSession(in.Selector.toLaunchSelector(), params, time.Duration(in.TimeoutMs)*time.Millisecond)
+	if err != nil {
+		return startInstanceOutput{}, err
+	}
+	if session == nil || session.Profile == nil {
+		return startInstanceOutput{}, fmt.Errorf("runtime session is not available")
+	}
+	out := startInstanceOutput{
+		Ready:   session.Ready,
+		CDPURL:  session.CDPURL,
+		Runtime: toRuntimeState(session.Profile),
+	}
+	if out.Runtime.LaunchCode == "" {
+		out.Runtime.LaunchCode = session.LaunchCode
+	}
+	if !session.Ready {
+		out.Hint = "浏览器已启动但调试端口尚未就绪，请稍后重试。"
+	}
+	return out, nil
 }

@@ -125,6 +125,14 @@ export function sameStringSet(first: string[], second: string[]): boolean {
   return first.every((item) => secondSet.has(item))
 }
 
+export function isExtensionDefaultForUnconfiguredProfiles(item: BrowserExtension): boolean {
+  return item.enabled && item.defaultInstall
+}
+
+export function getDefaultExtensionIds(items: BrowserExtension[]): string[] {
+  return items.filter(isExtensionDefaultForUnconfiguredProfiles).map((item) => item.extensionId)
+}
+
 export function parseExtensionManifest(manifestJson: string): Record<string, any> {
   try {
     const parsed = JSON.parse(manifestJson || '{}')
@@ -149,13 +157,37 @@ export function getExtensionManifestMeta(item: BrowserExtension) {
 export function formatExtensionSource(value: string): string {
   const source = value.trim()
   if (!source) return '来源未知'
-  if (/^https?:\/\//i.test(source)) return 'Chrome Web Store'
+  if (/^https:\/\/chromewebstore\.google\.com\/detail\//i.test(source)) return 'Chrome Web Store'
+  if (/^https?:\/\//i.test(source)) return '远程来源'
   if (/\.(crx|zip)$/i.test(source)) return '本地插件包'
   return '本地目录'
 }
 
+export type ExtensionUpdateSource = 'webstore' | 'local-package' | 'local-directory' | 'remote' | 'unknown'
+
+export function getExtensionUpdateSource(item: BrowserExtension): ExtensionUpdateSource {
+  const source = item.sourceUrl.trim()
+  if (!source) return 'unknown'
+  if (/^https:\/\/chromewebstore\.google\.com\/detail\//i.test(source)) return 'webstore'
+  if (/^https?:\/\//i.test(source)) return 'remote'
+  if (/\.(crx|zip)$/i.test(source)) return 'local-package'
+  return 'local-directory'
+}
+
+export function extensionUpdateHint(item: BrowserExtension): string {
+  switch (getExtensionUpdateSource(item)) {
+    case 'local-package':
+      return '本地插件包请使用“导入插件包”重新选择新版'
+    case 'local-directory':
+      return '本地目录插件请使用“导入目录”重新同步新版'
+    case 'remote':
+      return '该插件不是 Chrome Web Store 来源，请从原来源重新导入新版'
+    default:
+      return '无法确认插件来源，请重新导入新版'
+  }
+}
+
 export function extensionStoreURL(item: BrowserExtension): string {
   if (/^https?:\/\//i.test(item.sourceUrl)) return item.sourceUrl
-  if (/^[a-p]{32}$/i.test(item.extensionId)) return `https://chromewebstore.google.com/detail/${item.extensionId}`
   return ''
 }

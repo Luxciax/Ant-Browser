@@ -79,19 +79,22 @@ func (a *App) waitBrowserProcess(profileId string, monitor *browserProcessMonito
 	wasRunning = exists && profile.Running
 	if exists {
 		profileName = profile.ProfileName
-		a.markProfileStoppedLocked(profileId, profile)
-	}
-	if wasRunning && err != nil && exists && profile != nil {
-		profile.LastError = fmt.Sprintf("实例运行异常退出：%s", err.Error())
+		if wasRunning && err != nil {
+			a.markProfileFailedLocked(profileId, profile, fmt.Errorf("实例运行异常退出：%w", err))
+		} else {
+			a.markProfileStoppedLocked(profileId, profile)
+		}
 	}
 	a.browserMgr.Mutex.Unlock()
+	a.closeProfilePageSession(profileId)
 
 	if wasRunning && err != nil {
 		log.Error("浏览器进程异常退出", logger.F("profile_id", profileId), logger.F("profile_name", profileName), logger.F("error", err))
 		a.emitRuntimeEvent("browser:instance:crashed", map[string]interface{}{
-			"profileId":   profileId,
-			"profileName": profileName,
-			"error":       err.Error(),
+			"profileId":    profileId,
+			"profileName":  profileName,
+			"runtimeState": "failed",
+			"error":        err.Error(),
 		})
 	} else {
 		a.emitRuntimeEvent("browser:instance:stopped", profileId)
@@ -136,6 +139,7 @@ func (a *App) waitDetachedBrowser(profileId string, debugPort int, monitor *brow
 		profileName = profile.ProfileName
 		a.markProfileStoppedLocked(profileId, profile)
 		a.browserMgr.Mutex.Unlock()
+		a.closeProfilePageSession(profileId)
 
 		log.Info("检测到浏览器调试端口关闭，实例已停止",
 			logger.F("profile_id", profileId),

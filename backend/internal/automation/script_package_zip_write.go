@@ -1,6 +1,7 @@
 package automation
 
 import (
+	"ant-chrome/backend/internal/fsutil"
 	"archive/zip"
 	"fmt"
 	"os"
@@ -35,10 +36,7 @@ func WriteScriptPackageZip(zipPath string, bundle ImportedBundle) error {
 		return fmt.Errorf("create script zip dir failed: %w", err)
 	}
 
-	tmpPath := normalizedPath + ".tmp"
-	_ = os.Remove(tmpPath)
-
-	file, err := os.Create(tmpPath)
+	file, tmpPath, err := createScriptPackageTempFile(normalizedPath)
 	if err != nil {
 		return fmt.Errorf("create script zip failed: %w", err)
 	}
@@ -64,6 +62,9 @@ func WriteScriptPackageZip(zipPath string, bundle ImportedBundle) error {
 	}
 	if err := writer.Close(); err != nil {
 		return fmt.Errorf("finalize script zip failed: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		return fmt.Errorf("flush script zip failed: %w", err)
 	}
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("close script zip failed: %w", err)
@@ -123,10 +124,7 @@ func WriteScriptPackagesZip(zipPath string, bundles []ImportedBundle) error {
 		return fmt.Errorf("create script zip dir failed: %w", err)
 	}
 
-	tmpPath := normalizedPath + ".tmp"
-	_ = os.Remove(tmpPath)
-
-	file, err := os.Create(tmpPath)
+	file, tmpPath, err := createScriptPackageTempFile(normalizedPath)
 	if err != nil {
 		return fmt.Errorf("create script zip failed: %w", err)
 	}
@@ -157,6 +155,9 @@ func WriteScriptPackagesZip(zipPath string, bundles []ImportedBundle) error {
 	if err := writer.Close(); err != nil {
 		return fmt.Errorf("finalize script zip failed: %w", err)
 	}
+	if err := file.Sync(); err != nil {
+		return fmt.Errorf("flush script zip failed: %w", err)
+	}
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("close script zip failed: %w", err)
 	}
@@ -166,6 +167,14 @@ func WriteScriptPackagesZip(zipPath string, bundles []ImportedBundle) error {
 
 	success = true
 	return nil
+}
+
+func createScriptPackageTempFile(targetPath string) (*os.File, string, error) {
+	temporary, err := os.CreateTemp(filepath.Dir(targetPath), "."+filepath.Base(targetPath)+".tmp-*")
+	if err != nil {
+		return nil, "", err
+	}
+	return temporary, temporary.Name(), nil
 }
 
 func collectScriptPackageExportFiles(bundle ImportedBundle) (ScriptRecord, []ImportedBundleFile, error) {
@@ -250,11 +259,5 @@ func buildScriptPackageZipRoot(record ScriptRecord) string {
 }
 
 func replaceFile(sourcePath string, targetPath string) error {
-	if err := os.Rename(sourcePath, targetPath); err == nil {
-		return nil
-	}
-	if removeErr := os.Remove(targetPath); removeErr != nil && !os.IsNotExist(removeErr) {
-		return removeErr
-	}
-	return os.Rename(sourcePath, targetPath)
+	return fsutil.ReplaceFile(sourcePath, targetPath)
 }

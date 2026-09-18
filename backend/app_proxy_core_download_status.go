@@ -163,12 +163,16 @@ func (a *App) saveProxyCoreBinaryPath(spec proxyCoreSpec, binaryPath string) err
 		return fmt.Errorf("config is nil")
 	}
 	clean := fsutil.NormalizePathInput(binaryPath)
+	previous := ""
 	switch spec.ConfigKey {
 	case "xray":
+		previous = a.config.Browser.XrayBinaryPath
 		a.config.Browser.XrayBinaryPath = clean
 	case "clash":
+		previous = a.config.Browser.ClashBinaryPath
 		a.config.Browser.ClashBinaryPath = clean
 	case "sing-box":
+		previous = a.config.Browser.SingBoxBinaryPath
 		a.config.Browser.SingBoxBinaryPath = clean
 	default:
 		return fmt.Errorf("未知配置键: %s", spec.ConfigKey)
@@ -182,5 +186,16 @@ func (a *App) saveProxyCoreBinaryPath(spec proxyCoreSpec, binaryPath string) err
 	if a.singboxMgr != nil {
 		a.singboxMgr.Config = a.config
 	}
-	return a.config.Save(a.resolveAppPath("config.yaml"))
+	if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {
+		switch spec.ConfigKey {
+		case "xray":
+			a.config.Browser.XrayBinaryPath = previous
+		case "clash":
+			a.config.Browser.ClashBinaryPath = previous
+		case "sing-box":
+			a.config.Browser.SingBoxBinaryPath = previous
+		}
+		return err
+	}
+	return nil
 }

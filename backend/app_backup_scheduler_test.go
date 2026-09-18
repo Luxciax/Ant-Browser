@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/config"
 	"os"
 	"path/filepath"
@@ -156,6 +157,31 @@ func TestBackupScheduledSettingsExposeRecentBackupTimes(t *testing.T) {
 	}
 }
 
+func TestBackupScheduledSuccessBecomesDegradedWhenStatePersistenceFails(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "config.yaml"), 0o755); err != nil {
+		t.Fatalf("create blocking config directory: %v", err)
+	}
+	app := NewApp(root)
+	app.config = config.DefaultConfig()
+	scheduler := newBackupScheduler(app)
+	scheduler.settings = app.config.Backup
+
+	scheduler.recordSuccessAt("2026-09-17T10:00:00Z", "backup.zip")
+
+	snapshot := scheduler.snapshot()
+	if snapshot["status"] != backupScheduleStatusDegraded {
+		t.Fatalf("status = %#v, want degraded", snapshot["status"])
+	}
+	lastError, _ := snapshot["lastError"].(string)
+	if !containsString(lastError, "备份已完成") || !containsString(lastError, "保存调度状态失败") {
+		t.Fatalf("lastError = %q, want degraded persistence message", lastError)
+	}
+	if snapshot["lastSuccessAt"] != "2026-09-17T10:00:00Z" {
+		t.Fatalf("lastSuccessAt = %#v, backup itself should remain successful", snapshot["lastSuccessAt"])
+	}
+}
+
 func TestBackupLocalDirectoryStaysInSyncWithSchedulerSettings(t *testing.T) {
 	appRoot := t.TempDir()
 	backupDirectory := filepath.Join(appRoot, "backups")
@@ -212,6 +238,52 @@ func TestOpenListRemotePathCanBeClearedToUseRoot(t *testing.T) {
 	}
 	if resolved.RemotePath != "" {
 		t.Fatalf("resolved remote path = %q, want empty root path", resolved.RemotePath)
+	}
+}
+
+func TestBackupSchedulerRechecksRunningProfilesAfterMaintenanceLock(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.DefaultConfig()
+	app := NewApp(root)
+	app.config = cfg
+	app.browserMgr = browser.NewManager(cfg, root)
+	profile := &browser.Profile{
+		ProfileId:    "profile-running-after-wait",
+		ProfileName:  "Running After Wait",
+		RuntimeState: browser.RuntimeStopped,
+	}
+	app.browserMgr.Profiles[profile.ProfileId] = profile
+	scheduler := newBackupScheduler(app)
+
+	app.maintenanceMu.Lock()
+	done := make(chan struct{})
+	go func() {
+		scheduler.execute(config.OpenListChannelConfig{
+			BaseURL: "http://127.0.0.1:1/dav",
+			Token:   "token",
+		})
+		close(done)
+	}()
+
+	time.Sleep(80 * time.Millisecond)
+	app.browserMgr.Mutex.Lock()
+	profile.RuntimeState = browser.RuntimeRunning
+	profile.Running = true
+	app.browserMgr.Mutex.Unlock()
+	app.maintenanceMu.Unlock()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("scheduled backup did not finish after maintenance lock release")
+	}
+	state := scheduler.snapshot()
+	if state["status"] != backupScheduleStatusSkipped {
+		t.Fatalf("scheduler status = %#v, want skipped", state["status"])
+	}
+	lastError, _ := state["lastError"].(string)
+	if !containsString(lastError, "Running After Wait") {
+		t.Fatalf("lastError = %q, want running profile name", lastError)
 	}
 }
 

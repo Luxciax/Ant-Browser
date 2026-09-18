@@ -15,9 +15,15 @@ type GroupDAO interface {
 	GetById(groupId string) (*Group, error)
 	Create(input GroupInput) (*Group, error)
 	Update(groupId string, input GroupInput) (*Group, error)
-	Delete(groupId string) error
+	Delete(groupId string) (*GroupDeleteResult, error)
 	GetChildren(parentId string) ([]*Group, error)
 	MoveChildren(fromGroupId, toGroupId string) error
+}
+
+type GroupDeleteResult struct {
+	GroupID           string
+	ParentID          string
+	ProfilesUpdatedAt string
 }
 
 // SQLiteGroupDAO 基于 SQLite 的 GroupDAO 实现
@@ -134,27 +140,47 @@ func (d *SQLiteGroupDAO) Update(groupId string, input GroupInput) (*Group, error
 	return existing, nil
 }
 
-// Delete 删除分组（级联处理：子分组和实例移动到父分组）
-func (d *SQLiteGroupDAO) Delete(groupId string) error {
-	group, err := d.GetById(groupId)
+// Delete 删除分组（级联处理：子分组和实例移动到父分组）。
+// 三个数据库变更必须在同一事务中提交，避免中途失败留下半删除状态。
+func (d *SQLiteGroupDAO) Delete(groupId string) (*GroupDeleteResult, error) {
+	tx, err := d.db.Begin()
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("开始删除分组事务失败: %w", err)
 	}
-	// 将子分组移动到父分组
-	if err := d.MoveChildren(groupId, group.ParentId); err != nil {
-		return err
+	defer func() { _ = tx.Rollback() }()
+
+	group, err := scanGroup(tx.QueryRow(`
+		SELECT group_id, group_name, parent_id, sort_order, created_at, updated_at
+		FROM browser_groups WHERE group_id = ?`, groupId))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("分组不存在: %s", groupId)
 	}
-	// 将该分组下的实例移动到父分组
-	_, err = d.db.Exec(`UPDATE browser_profiles SET group_id = ? WHERE group_id = ?`, group.ParentId, groupId)
 	if err != nil {
-		return fmt.Errorf("移动实例失败: %w", err)
+		return nil, fmt.Errorf("读取待删除分组失败: %w", err)
 	}
-	// 删除分组
-	_, err = d.db.Exec(`DELETE FROM browser_groups WHERE group_id = ?`, groupId)
+
+	now := time.Now().Format(time.RFC3339)
+	if _, err := tx.Exec(`UPDATE browser_groups SET parent_id = ?, updated_at = ? WHERE parent_id = ?`, group.ParentId, now, groupId); err != nil {
+		return nil, fmt.Errorf("移动子分组失败: %w", err)
+	}
+	if _, err := tx.Exec(`UPDATE browser_profiles SET group_id = ?, updated_at = ? WHERE group_id = ?`, group.ParentId, now, groupId); err != nil {
+		return nil, fmt.Errorf("移动实例失败: %w", err)
+	}
+	result, err := tx.Exec(`DELETE FROM browser_groups WHERE group_id = ?`, groupId)
 	if err != nil {
-		return fmt.Errorf("删除分组失败: %w", err)
+		return nil, fmt.Errorf("删除分组失败: %w", err)
 	}
-	return nil
+	if affected, affectedErr := result.RowsAffected(); affectedErr == nil && affected != 1 {
+		return nil, fmt.Errorf("删除分组失败: 受影响行数异常（%d）", affected)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("提交删除分组事务失败: %w", err)
+	}
+	return &GroupDeleteResult{
+		GroupID:           groupId,
+		ParentID:          group.ParentId,
+		ProfilesUpdatedAt: now,
+	}, nil
 }
 
 // GetChildren 获取子分组

@@ -1,4 +1,5 @@
 ﻿import type { BrowserProfile } from '../types'
+import { normalizeBrowserRuntimeState } from '../utils/runtimeState'
 
 export interface ProfileTagSection {
   tag: string
@@ -35,8 +36,10 @@ export function buildSearchText(profile: BrowserProfile): string {
 }
 
 export function sortProfiles(a: BrowserProfile, b: BrowserProfile): number {
-  if (a.running !== b.running) {
-    return a.running ? -1 : 1
+  const aRunning = normalizeBrowserRuntimeState(a) === 'running'
+  const bRunning = normalizeBrowserRuntimeState(b) === 'running'
+  if (aRunning !== bRunning) {
+    return aRunning ? -1 : 1
   }
   return a.profileName.localeCompare(b.profileName, 'zh-CN')
 }

@@ -39,12 +39,6 @@ func (m *Manager) SaveCore(input CoreInput) error {
 		if coreId == "" {
 			coreId = uuid.NewString()
 		}
-		if input.IsDefault {
-			if err := m.CoreDAO.SetDefault(""); err != nil {
-				// SetDefault 空串只清除，忽略错误
-				_ = err
-			}
-		}
 		core := Core{CoreId: coreId, CoreName: coreName, CorePath: corePath, IsDefault: input.IsDefault}
 		if err := m.CoreDAO.Upsert(core); err != nil {
 			return err
@@ -56,6 +50,7 @@ func (m *Manager) SaveCore(input CoreInput) error {
 	}
 
 	// 降级：写 config.yaml
+	previousCores := append([]Core(nil), m.Config.Browser.Cores...)
 	existingIndex := -1
 	for i, core := range m.Config.Browser.Cores {
 		if coreId != "" && strings.EqualFold(core.CoreId, coreId) {
@@ -85,8 +80,12 @@ func (m *Manager) SaveCore(input CoreInput) error {
 		}
 		m.Config.Browser.Cores = append(m.Config.Browser.Cores, newCore)
 	}
+	if err := m.Config.Save(m.ResolveRelativePath("config.yaml")); err != nil {
+		m.Config.Browser.Cores = previousCores
+		return err
+	}
 	log.Info("内核配置保存（文件）", logger.F("core_id", coreId))
-	return m.Config.Save(m.ResolveRelativePath("config.yaml"))
+	return nil
 }
 
 // DeleteCore 删除内核配置
@@ -107,6 +106,7 @@ func (m *Manager) DeleteCore(coreId string) error {
 	}
 
 	// 降级
+	previousCores := append([]Core(nil), m.Config.Browser.Cores...)
 	index := -1
 	for i, core := range m.Config.Browser.Cores {
 		if strings.EqualFold(core.CoreId, coreId) {
@@ -122,8 +122,12 @@ func (m *Manager) DeleteCore(coreId string) error {
 	if wasDefault && len(m.Config.Browser.Cores) > 0 {
 		m.Config.Browser.Cores[0].IsDefault = true
 	}
+	if err := m.Config.Save(m.ResolveRelativePath("config.yaml")); err != nil {
+		m.Config.Browser.Cores = previousCores
+		return err
+	}
 	log.Info("内核配置删除（文件）", logger.F("core_id", coreId))
-	return m.Config.Save(m.ResolveRelativePath("config.yaml"))
+	return nil
 }
 
 // SetDefaultCore 设置默认内核
@@ -144,6 +148,7 @@ func (m *Manager) SetDefaultCore(coreId string) error {
 	}
 
 	// 降级
+	previousCores := append([]Core(nil), m.Config.Browser.Cores...)
 	found := false
 	for i := range m.Config.Browser.Cores {
 		if strings.EqualFold(m.Config.Browser.Cores[i].CoreId, coreId) {
@@ -154,10 +159,15 @@ func (m *Manager) SetDefaultCore(coreId string) error {
 		}
 	}
 	if !found {
+		m.Config.Browser.Cores = previousCores
 		return fmt.Errorf("内核不存在: %s", coreId)
 	}
+	if err := m.Config.Save(m.ResolveRelativePath("config.yaml")); err != nil {
+		m.Config.Browser.Cores = previousCores
+		return err
+	}
 	log.Info("设置默认内核（文件）", logger.F("core_id", coreId))
-	return m.Config.Save(m.ResolveRelativePath("config.yaml"))
+	return nil
 }
 
 // syncCoresFromDAO 从 DAO 同步内核列表到内存 config

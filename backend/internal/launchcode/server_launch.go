@@ -21,6 +21,7 @@ func (s *LaunchServer) launchSuccessPayload(profile *browser.Profile, launchCode
 		"profileId":      profile.ProfileId,
 		"profileName":    profile.ProfileName,
 		"launchCode":     launchCode,
+		"runtimeState":   browser.NormalizeProfileRuntimeState(profile),
 		"pid":            profile.Pid,
 		"debugPort":      profile.DebugPort,
 		"debugReady":     profile.DebugReady,
@@ -52,15 +53,23 @@ func normalizeLaunchedProfileRuntime(profile *browser.Profile) *browser.Profile 
 		return nil
 	}
 
-	// Backward compatibility: older starter implementations only filled pid/debugPort.
-	if !profile.Running && (profile.Pid > 0 || profile.DebugPort > 0) {
-		profile.Running = true
-	}
-	if !profile.DebugReady &&
-		profile.DebugPort > 0 &&
-		strings.TrimSpace(profile.RuntimeWarning) == "" &&
-		(profile.Running || profile.Pid > 0) {
-		profile.DebugReady = true
+	// Backward compatibility: only infer runtime fields for legacy starter
+	// implementations that do not expose the explicit runtimeState field.
+	if strings.TrimSpace(string(profile.RuntimeState)) == "" {
+		if !profile.Running && (profile.Pid > 0 || profile.DebugPort > 0) {
+			profile.Running = true
+		}
+		if !profile.DebugReady &&
+			profile.DebugPort > 0 &&
+			strings.TrimSpace(profile.RuntimeWarning) == "" &&
+			(profile.Running || profile.Pid > 0) {
+			profile.DebugReady = true
+		}
+		if profile.Running {
+			profile.RuntimeState = browser.RuntimeRunning
+		} else {
+			profile.RuntimeState = browser.RuntimeStopped
+		}
 	}
 
 	return profile

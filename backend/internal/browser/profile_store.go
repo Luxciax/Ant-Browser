@@ -2,6 +2,7 @@ package browser
 
 import (
 	"ant-chrome/backend/internal/logger"
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -38,6 +39,11 @@ func (m *Manager) loadProfiles() {
 			for _, p := range profiles {
 				p.CoreId = normalizeProfileCoreID(p.CoreId)
 				p.FingerprintArgs = upgradeLegacyMinimalFingerprintArgs(p.FingerprintArgs)
+				p.RuntimeState = RuntimeStopped
+				p.Running = false
+				p.DebugReady = false
+				p.DebugPort = 0
+				p.Pid = 0
 				m.Profiles[p.ProfileId] = p
 			}
 			if len(profiles) > 0 {
@@ -84,6 +90,7 @@ func (m *Manager) loadProfiles() {
 			LaunchArgs:         append([]string{}, item.LaunchArgs...),
 			Tags:               append([]string{}, item.Tags...),
 			Keywords:           append([]string{}, item.Keywords...),
+			RuntimeState:       RuntimeStopped,
 			Running:            false,
 			DebugPort:          0,
 			Pid:                0,
@@ -95,15 +102,40 @@ func (m *Manager) loadProfiles() {
 	log.Debug("浏览器配置从文件加载完成", logger.F("count", len(m.Profiles)))
 }
 
-// SaveProfiles 保存所有实例配置（DAO 模式：逐条 upsert）
+// SaveProfiles 保存所有实例配置（SQLite DAO 模式优先使用单事务批量 upsert）
 func (m *Manager) SaveProfiles() error {
 	log := logger.New("Browser")
 	if m.ProfileDAO != nil {
+		profiles := make([]*Profile, 0, len(m.Profiles))
+		originals := make([]*Profile, 0, len(m.Profiles))
 		for _, profile := range m.Profiles {
-			profile.CoreId = normalizeProfileCoreID(profile.CoreId)
-			if err := m.ProfileDAO.Upsert(profile); err != nil {
-				log.Error("实例配置持久化失败", logger.F("profile_id", profile.ProfileId), logger.F("error", err))
+			if profile == nil {
+				return fmt.Errorf("实例配置为空")
+			}
+			persisted := *profile
+			persisted.CoreId = normalizeProfileCoreID(profile.CoreId)
+			profiles = append(profiles, &persisted)
+			originals = append(originals, profile)
+		}
+		if bulkDAO, ok := m.ProfileDAO.(interface{ UpsertAll([]*Profile) error }); ok {
+			if err := bulkDAO.UpsertAll(profiles); err != nil {
+				log.Error("实例配置批量持久化失败", logger.F("error", err))
 				return err
+			}
+			for i, persisted := range profiles {
+				originals[i].CoreId = persisted.CoreId
+				originals[i].CreatedAt = persisted.CreatedAt
+				originals[i].UpdatedAt = persisted.UpdatedAt
+			}
+		} else {
+			for i, persisted := range profiles {
+				if err := m.ProfileDAO.Upsert(persisted); err != nil {
+					log.Error("实例配置持久化失败", logger.F("profile_id", persisted.ProfileId), logger.F("error", err))
+					return err
+				}
+				originals[i].CoreId = persisted.CoreId
+				originals[i].CreatedAt = persisted.CreatedAt
+				originals[i].UpdatedAt = persisted.UpdatedAt
 			}
 		}
 		log.Info("实例配置持久化成功", logger.F("count", len(m.Profiles)))
@@ -133,8 +165,10 @@ func (m *Manager) SaveProfiles() error {
 			UpdatedAt:          profile.UpdatedAt,
 		})
 	}
+	previousProfiles := append([]ProfileConfig(nil), m.Config.Browser.Profiles...)
 	m.Config.Browser.Profiles = profiles
 	if err := m.Config.Save(m.ResolveRelativePath("config.yaml")); err != nil {
+		m.Config.Browser.Profiles = previousProfiles
 		log.Error("浏览器配置持久化失败", logger.F("error", err))
 		return err
 	}

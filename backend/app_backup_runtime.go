@@ -20,7 +20,7 @@ func (a *App) backupRunningProfileNames() []string {
 	profiles := a.browserMgr.List()
 	names := make([]string, 0)
 	for _, profile := range profiles {
-		if !profile.Running {
+		if !browser.ProfileRuntimeMutationBlocked(&profile) {
 			continue
 		}
 		name := strings.TrimSpace(profile.ProfileName)

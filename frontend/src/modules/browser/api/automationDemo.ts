@@ -2,6 +2,7 @@ import { createBrowserProfile, deleteBrowserProfile } from './profiles'
 import { fetchLaunchServerInfo } from './launch'
 import { getBindings, getGoApp, getMockProfiles, nowISOString } from './runtime'
 import { startBrowserInstance, stopBrowserInstance } from './instances'
+import { isBrowserRuntimeConfigLocked } from '../utils/runtimeState'
 
 export interface AutomationDemoResult {
   ok: boolean
@@ -290,7 +291,7 @@ export async function automationDemoDeleteProfile(profileId: string): Promise<Au
   }
 
   let stoppedBeforeDelete = false
-  if (profile.running) {
+  if (isBrowserRuntimeConfigLocked(profile)) {
     await stopBrowserInstance(normalizedProfileID)
     stoppedBeforeDelete = true
   }

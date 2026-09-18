@@ -230,6 +230,7 @@ export async function createBrowserProfile(input: BrowserProfileInput): Promise<
     profileId: `mock-${Date.now()}`,
     ...input,
     keywords: input.keywords || [],
+    runtimeState: 'stopped',
     running: false,
     debugPort: 0,
     debugReady: false,
@@ -270,7 +271,7 @@ export async function deleteBrowserProfile(profileId: string): Promise<boolean> 
 
   const deletedAt = nowISOString()
   setMockProfiles(getMockProfiles().map((item) => (
-    item.profileId === profileId ? { ...item, deletedAt, updatedAt: deletedAt, running: false } : item
+    item.profileId === profileId ? { ...item, deletedAt, updatedAt: deletedAt, runtimeState: 'stopped', running: false } : item
   )))
   return true
 }
@@ -285,7 +286,7 @@ export async function restoreBrowserProfile(profileId: string): Promise<BrowserP
   let restored: BrowserProfile | null = null
   const nextProfiles = getMockProfiles().map((item) => {
     if (item.profileId !== profileId) return item
-    restored = { ...item, deletedAt: '', updatedAt }
+    restored = { ...item, deletedAt: '', updatedAt, runtimeState: 'stopped', running: false, debugReady: false, debugPort: 0, pid: 0 }
     return restored
   })
   setMockProfiles(nextProfiles)
@@ -353,6 +354,7 @@ export async function copyBrowserProfile(
       options,
     ),
     launchCode,
+    runtimeState: 'stopped',
     running: false,
     debugReady: false,
     runtimeWarning: '',

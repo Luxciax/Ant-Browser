@@ -133,6 +133,7 @@ func (a *App) markProfileStoppedLocked(profileId string, profile *BrowserProfile
 	delete(a.browserProcessMonitors, profileId)
 	a.stopProfileWindowMarker(profileId)
 	profile.WindowMarkerCode = ""
+	profile.RuntimeState = browser.RuntimeStopped
 	profile.Running = false
 	profile.DebugReady = false
 	profile.Pid = 0
@@ -185,6 +186,9 @@ func (a *App) openBrowserWindowForRunningProfile(profile *BrowserProfile, extraL
 
 func (a *App) openBrowserTabForRunningProfile(profile *BrowserProfile, extraLaunchArgs []string, startURLs []string) error {
 	explicitTargets := normalizeNonEmptyStrings(startURLs)
+	if err := validateBrowserStartURLs(explicitTargets); err != nil {
+		return err
+	}
 	targets := explicitTargets
 	if len(targets) == 0 {
 		targets = []string{"about:blank"}

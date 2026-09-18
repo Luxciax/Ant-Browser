@@ -20,15 +20,29 @@ func backupSamePath(a, b string) bool {
 }
 
 func backupPathWithin(path, root string) bool {
-	p := backupNormalizePath(path)
-	r := backupNormalizePath(root)
-	if p == r {
+	path = strings.TrimSpace(path)
+	root = strings.TrimSpace(root)
+	if path == "" || root == "" {
+		return false
+	}
+	p, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	r, err := filepath.Abs(root)
+	if err != nil {
+		return false
+	}
+	p = filepath.Clean(p)
+	r = filepath.Clean(r)
+	rel, err := filepath.Rel(r, p)
+	if err != nil {
+		return false
+	}
+	if rel == "." {
 		return true
 	}
-	if !strings.HasSuffix(r, string(filepath.Separator)) {
-		r += string(filepath.Separator)
-	}
-	return strings.HasPrefix(p, r)
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
 func backupIsNoSuchTableError(err error) bool {

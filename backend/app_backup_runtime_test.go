@@ -134,6 +134,30 @@ func TestBackupStopRuntimeForMaintenanceKeepsStateWhenTerminationFails(t *testin
 	}
 }
 
+func TestBackupRunningProfileNamesIncludesFailedRuntimeWithLiveProcess(t *testing.T) {
+	root := t.TempDir()
+	manager := browser.NewManager(config.DefaultConfig(), root)
+	manager.Profiles["profile-failed-live"] = &browser.Profile{
+		ProfileId:    "profile-failed-live",
+		ProfileName:  "Failed But Live",
+		RuntimeState: browser.RuntimeFailed,
+		Pid:          4321,
+		DebugPort:    9333,
+	}
+	manager.Profiles["profile-failed-clean"] = &browser.Profile{
+		ProfileId:    "profile-failed-clean",
+		ProfileName:  "Failed Clean",
+		RuntimeState: browser.RuntimeFailed,
+	}
+	app := NewApp(root)
+	app.browserMgr = manager
+
+	names := app.backupRunningProfileNames()
+	if len(names) != 1 || names[0] != "Failed But Live" {
+		t.Fatalf("backupRunningProfileNames = %#v, want only failed runtime with live process", names)
+	}
+}
+
 func TestStaleBrowserMonitorCannotStopReusedProfileID(t *testing.T) {
 	root := t.TempDir()
 	manager := browser.NewManager(config.DefaultConfig(), root)

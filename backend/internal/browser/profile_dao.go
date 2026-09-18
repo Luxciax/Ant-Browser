@@ -25,6 +25,10 @@ type SQLiteProfileDAO struct {
 	db *sql.DB
 }
 
+type profileSQLExecer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
 // NewSQLiteProfileDAO 创建 SQLiteProfileDAO
 func NewSQLiteProfileDAO(db *sql.DB) *SQLiteProfileDAO {
 	return &SQLiteProfileDAO{db: db}
@@ -107,20 +111,62 @@ func (d *SQLiteProfileDAO) GetById(profileId string) (*Profile, error) {
 
 // Upsert 新增或更新实例配置
 func (d *SQLiteProfileDAO) Upsert(profile *Profile) error {
+	createdAt, updatedAt, err := upsertProfileWithExecer(d.db, profile)
+	if err != nil {
+		return err
+	}
+	profile.CreatedAt = createdAt
+	profile.UpdatedAt = updatedAt
+	return nil
+}
+
+// UpsertAll 在一个事务中保存全部实例，避免批量保存时出现部分成功。
+func (d *SQLiteProfileDAO) UpsertAll(profiles []*Profile) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开启实例批量保存事务失败: %w", err)
+	}
+	defer tx.Rollback()
+
+	type timestamps struct {
+		createdAt string
+		updatedAt string
+	}
+	committedTimestamps := make([]timestamps, len(profiles))
+	for i, profile := range profiles {
+		createdAt, updatedAt, err := upsertProfileWithExecer(tx, profile)
+		if err != nil {
+			return err
+		}
+		committedTimestamps[i] = timestamps{createdAt: createdAt, updatedAt: updatedAt}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("提交实例批量保存事务失败: %w", err)
+	}
+	for i, profile := range profiles {
+		profile.CreatedAt = committedTimestamps[i].createdAt
+		profile.UpdatedAt = committedTimestamps[i].updatedAt
+	}
+	return nil
+}
+
+func upsertProfileWithExecer(exec profileSQLExecer, profile *Profile) (string, string, error) {
 	fingerprintArgs, _ := json.Marshal(profile.FingerprintArgs)
 	launchArgs, _ := json.Marshal(profile.LaunchArgs)
 	tags, _ := json.Marshal(profile.Tags)
 	keywords, _ := json.Marshal(profile.Keywords)
 
 	now := time.Now().Format(time.RFC3339)
-	if profile.CreatedAt == "" {
-		profile.CreatedAt = now
+	createdAt := profile.CreatedAt
+	if createdAt == "" {
+		createdAt = now
 	}
-	if profile.UpdatedAt == "" {
-		profile.UpdatedAt = now
+	updatedAt := profile.UpdatedAt
+	if updatedAt == "" {
+		updatedAt = now
 	}
 
-	_, err := d.db.Exec(`
+	_, err := exec.Exec(`
 		INSERT INTO browser_profiles
 		  (profile_id, profile_name, user_data_dir, core_id, fingerprint_args,
 		   proxy_id, proxy_config, proxy_bind_source_id, proxy_bind_source_url, proxy_bind_name, proxy_bind_updated_at,
@@ -149,12 +195,12 @@ func (d *SQLiteProfileDAO) Upsert(profile *Profile) error {
 		string(fingerprintArgs), profile.ProxyId, profile.ProxyConfig,
 		profile.ProxyBindSourceID, profile.ProxyBindSourceURL, profile.ProxyBindName, profile.ProxyBindUpdatedAt,
 		normalizeMemoryLimitMB(profile.MemoryLimitMB), string(launchArgs), string(tags), string(keywords), profile.GroupId,
-		profile.CreatedAt, profile.UpdatedAt, NormalizeRestoreLastSessionMode(profile.RestoreLastSession), profile.DeletedAt,
+		createdAt, updatedAt, NormalizeRestoreLastSessionMode(profile.RestoreLastSession), profile.DeletedAt,
 	)
 	if err != nil {
-		return fmt.Errorf("保存实例配置失败: %w", err)
+		return "", "", fmt.Errorf("保存实例配置失败: %w", err)
 	}
-	return nil
+	return createdAt, updatedAt, nil
 }
 
 // SoftDelete 将实例移入回收站
@@ -283,26 +329,28 @@ func (d *SQLiteProfileDAO) ListByGroup(groupId string, includeChildren bool, chi
 	return list, rows.Err()
 }
 
-// MoveToGroup 批量移动实例到分组
-func (d *SQLiteProfileDAO) MoveToGroup(profileIds []string, groupId string) error {
+// MoveToGroup 批量移动实例到分组，返回与数据库一致的更新时间供内存态同步。
+func (d *SQLiteProfileDAO) MoveToGroup(profileIds []string, groupId string) (string, error) {
 	if len(profileIds) == 0 {
-		return nil
+		return "", nil
 	}
+	updatedAt := time.Now().Format(time.RFC3339)
 	inClause := ""
-	args := make([]interface{}, len(profileIds)+1)
+	args := make([]interface{}, len(profileIds)+2)
 	args[0] = groupId
+	args[1] = updatedAt
 	for i, id := range profileIds {
 		if i > 0 {
 			inClause += ","
 		}
 		inClause += "?"
-		args[i+1] = id
+		args[i+2] = id
 	}
-	_, err := d.db.Exec(fmt.Sprintf(`UPDATE browser_profiles SET group_id = ? WHERE profile_id IN (%s)`, inClause), args...)
+	_, err := d.db.Exec(fmt.Sprintf(`UPDATE browser_profiles SET group_id = ?, updated_at = ? WHERE profile_id IN (%s)`, inClause), args...)
 	if err != nil {
-		return fmt.Errorf("批量移动实例失败: %w", err)
+		return "", fmt.Errorf("批量移动实例失败: %w", err)
 	}
-	return nil
+	return updatedAt, nil
 }
 
 // scanner 统一扫描接口，兼容 *sql.Row 和 *sql.Rows

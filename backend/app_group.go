@@ -90,9 +90,23 @@ func (a *App) DeleteGroup(groupId string) error {
 		return fmt.Errorf("GroupDAO 未初始化")
 	}
 
-	if err := a.browserMgr.GroupDAO.Delete(groupId); err != nil {
+	a.browserMgr.InitData()
+	result, err := a.browserMgr.GroupDAO.Delete(groupId)
+	if err != nil {
 		log.Error("删除分组失败", logger.F("group_id", groupId), logger.F("error", err))
 		return err
+	}
+	if result != nil {
+		a.browserMgr.Mutex.Lock()
+		for _, profile := range a.browserMgr.Profiles {
+			if profile != nil && profile.GroupId == result.GroupID {
+				profile.GroupId = result.ParentID
+				if result.ProfilesUpdatedAt != "" {
+					profile.UpdatedAt = result.ProfilesUpdatedAt
+				}
+			}
+		}
+		a.browserMgr.Mutex.Unlock()
 	}
 	log.Info("分组已删除", logger.F("group_id", groupId))
 	return nil
@@ -105,11 +119,35 @@ func (a *App) MoveInstancesToGroup(profileIds []string, groupId string) error {
 	if !ok {
 		return fmt.Errorf("ProfileDAO 不支持批量移动")
 	}
+	if groupId != "" {
+		if a.browserMgr.GroupDAO == nil {
+			return fmt.Errorf("GroupDAO 未初始化")
+		}
+		if _, err := a.browserMgr.GroupDAO.GetById(groupId); err != nil {
+			return fmt.Errorf("目标分组不存在: %w", err)
+		}
+	}
 
-	if err := dao.MoveToGroup(profileIds, groupId); err != nil {
+	a.browserMgr.InitData()
+	updatedAt, err := dao.MoveToGroup(profileIds, groupId)
+	if err != nil {
 		log.Error("批量移动实例失败", logger.F("count", len(profileIds)), logger.F("error", err))
 		return err
 	}
+	profileSet := make(map[string]struct{}, len(profileIds))
+	for _, profileID := range profileIds {
+		profileSet[profileID] = struct{}{}
+	}
+	a.browserMgr.Mutex.Lock()
+	for profileID := range profileSet {
+		if profile := a.browserMgr.Profiles[profileID]; profile != nil {
+			profile.GroupId = groupId
+			if updatedAt != "" {
+				profile.UpdatedAt = updatedAt
+			}
+		}
+	}
+	a.browserMgr.Mutex.Unlock()
 	log.Info("实例已移动到分组", logger.F("count", len(profileIds)), logger.F("group_id", groupId))
 	return nil
 }

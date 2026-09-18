@@ -160,7 +160,7 @@ func (a *App) automationDemoRequestWithContext(ctx context.Context, method strin
 		req.Header.Set(authHeader, authValue)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := automationHTTPClient.Do(req)
 	if err != nil {
 		if ctxErr := reqCtx.Err(); ctxErr != nil {
 			return 0, nil, fmt.Errorf("call launch api failed: %w", ctxErr)

@@ -56,6 +56,8 @@ type App struct {
 	automationTargetCursor        map[string]string
 	profileWindowMarkersMu        sync.Mutex
 	profileWindowMarkers          map[string]*profileWindowMarker
+	profileRuntimeOpsMu           sync.Mutex
+	profileRuntimeOps             map[string]*sync.Mutex
 	browserProcessMonitors        map[string]*browserProcessMonitor
 	backupLocalConfigPathOverride string
 	stopServicesOnce              sync.Once
@@ -75,6 +77,7 @@ func NewApp(appRoot string, appVersion ...string) *App {
 		deferredStartTargets:   make(map[string]deferredStartTargetsPlan),
 		automationTargetCursor: make(map[string]string),
 		profileWindowMarkers:   make(map[string]*profileWindowMarker),
+		profileRuntimeOps:      make(map[string]*sync.Mutex),
 		browserProcessMonitors: make(map[string]*browserProcessMonitor),
 	}
 }

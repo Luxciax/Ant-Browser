@@ -11,6 +11,7 @@ import {
 import type { BrowserProfile } from '../../types'
 import { resolveActionErrorMessage, resolveActionFeedback } from '../../utils/actionErrors'
 import { warmupProfileProxyBeforeStart } from '../../utils/proxyWarmup'
+import { normalizeBrowserRuntimeState } from '../../utils/runtimeState'
 
 interface UseBrowserProfileActionsOptions {
   profiles: BrowserProfile[]
@@ -128,7 +129,7 @@ export function useBrowserProfileActions({
       const restartedProfile = await restartBrowserInstance(profileId)
       mergeProfileState(restartedProfile)
       updatePendingIds(setStoppingIds, profileId, false)
-      if (restartedProfile?.runtimeWarning || (restartedProfile?.running && !restartedProfile.debugReady)) {
+      if (restartedProfile?.runtimeWarning || (restartedProfile && normalizeBrowserRuntimeState(restartedProfile) === 'running' && !restartedProfile.debugReady)) {
         toast.warning(restartedProfile.runtimeWarning || '浏览器窗口已启动，调试接口仍在后台接管。')
       }
       refreshProfilesInBackground()

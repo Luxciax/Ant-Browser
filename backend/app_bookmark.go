@@ -4,6 +4,7 @@ import (
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/logger"
+	"fmt"
 	"strings"
 )
 
@@ -63,6 +64,11 @@ func (a *App) BookmarkSave(items []BrowserBookmark) error {
 		name := strings.TrimSpace(item.Name)
 		url := strings.TrimSpace(item.URL)
 		if name != "" && url != "" {
+			if item.OpenOnStart && !strings.EqualFold(url, fingerprintCheckBookmarkURL) {
+				if err := ValidateBrowserStartURL(url); err != nil {
+					return fmt.Errorf("书签「%s」不能设为启动时打开: %w", name, err)
+				}
+			}
 			valid = append(valid, BrowserBookmark{Name: name, URL: url, OpenOnStart: item.OpenOnStart})
 		}
 	}
@@ -78,8 +84,10 @@ func (a *App) BookmarkSave(items []BrowserBookmark) error {
 	}
 
 	// 降级：写入 config.yaml
+	previous := append([]BrowserBookmark(nil), a.config.Browser.DefaultBookmarks...)
 	a.config.Browser.DefaultBookmarks = valid
 	if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {
+		a.config.Browser.DefaultBookmarks = previous
 		log.Error("书签保存失败", logger.F("error", err.Error()))
 		return err
 	}

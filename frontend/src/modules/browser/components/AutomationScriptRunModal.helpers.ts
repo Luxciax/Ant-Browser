@@ -7,6 +7,7 @@ import {
 } from "../automationScripts";
 import type { AutomationDemoSession } from "../demoSession";
 import type { BrowserProfile } from "../types";
+import { normalizeBrowserRuntimeState } from "../utils/runtimeState";
 import type { ResultOutputEntry, RunVariableInputs, SelectableProfile } from "./AutomationScriptRunModal.types";
 
 export function validateJsonObjectText(
@@ -444,12 +445,15 @@ export function buildSelectableProfileOptions(profiles: SelectableProfile[]) {
 }
 
 function formatSelectableProfileStatus(profile: SelectableProfile): string {
-  if (profile.running && profile.debugReady && profile.debugPort > 0) {
+  const runtimeState = normalizeBrowserRuntimeState(profile);
+  if (runtimeState === "running" && profile.debugReady && profile.debugPort > 0) {
     return "可连接";
   }
-  if (profile.running) {
+  if (runtimeState === "starting") {
     return "启动中";
   }
+  if (runtimeState === "stopping") return "停止中";
+  if (runtimeState === "failed") return "异常，执行时重新启动";
   return "未启动，执行时自动启动";
 }
 

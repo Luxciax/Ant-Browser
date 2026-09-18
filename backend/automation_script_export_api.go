@@ -1,8 +1,8 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/fsutil"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -48,7 +48,7 @@ func (a *App) AutomationScriptExport(scriptID string) (map[string]any, error) {
 	}
 
 	savePath = ensureAutomationScriptTemplateJSONSuffix(savePath)
-	if err := os.WriteFile(savePath, payload, 0o644); err != nil {
+	if err := fsutil.AtomicWriteFile(savePath, payload, 0o644); err != nil {
 		return nil, fmt.Errorf("写入脚本模板失败: %w", err)
 	}
 

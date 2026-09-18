@@ -1682,6 +1682,7 @@ export namespace browser {
 	    groupId: string;
 	    launchCode: string;
 	    windowMarkerCode?: string;
+	    runtimeState: string;
 	    running: boolean;
 	    debugPort: number;
 	    debugReady: boolean;
@@ -1720,6 +1721,7 @@ export namespace browser {
 	        this.groupId = source["groupId"];
 	        this.launchCode = source["launchCode"];
 	        this.windowMarkerCode = source["windowMarkerCode"];
+	        this.runtimeState = source["runtimeState"];
 	        this.running = source["running"];
 	        this.debugPort = source["debugPort"];
 	        this.debugReady = source["debugReady"];

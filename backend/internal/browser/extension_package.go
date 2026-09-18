@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"ant-chrome/backend/internal/fsutil"
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
@@ -9,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 func isCRXExtensionPackage(data []byte) bool {
@@ -283,7 +283,7 @@ func readCRX3Varint(data []byte, offset int) (uint64, int, bool) {
 	return 0, 0, false
 }
 
-func (m *Manager) storeExtensionPackage(extensionID string, data []byte) (string, string, error) {
+func (m *Manager) storeExtensionPackage(extensionID string, version string, data []byte) (string, string, error) {
 	extensionID = strings.TrimSpace(extensionID)
 	if extensionID == "" {
 		return "", "", fmt.Errorf("插件 ID 不能为空")
@@ -294,11 +294,11 @@ func (m *Manager) storeExtensionPackage(extensionID string, data []byte) (string
 
 	hash := sha256.Sum256(data)
 	packageHash := hex.EncodeToString(hash[:])
-	packageRoot := m.ResolveRelativePath(filepath.Join("data", extensionsRootDir, "packages"))
+	packagePath := m.extensionPackagePath(extensionID, version)
+	packageRoot := filepath.Dir(packagePath)
 	if err := os.MkdirAll(packageRoot, 0o755); err != nil {
 		return "", "", fmt.Errorf("创建插件包目录失败: %w", err)
 	}
-	packagePath := filepath.Join(packageRoot, extensionID+".crx")
 	if existing, err := os.ReadFile(packagePath); err == nil {
 		existingHash := sha256.Sum256(existing)
 		if hex.EncodeToString(existingHash[:]) == packageHash {
@@ -306,15 +306,36 @@ func (m *Manager) storeExtensionPackage(extensionID string, data []byte) (string
 		}
 	}
 
-	tempPath := fmt.Sprintf("%s.tmp-%d", packagePath, time.Now().UnixNano())
-	if err := os.WriteFile(tempPath, data, 0o644); err != nil {
-		return "", "", fmt.Errorf("保存插件包失败: %w", err)
-	}
-	if err := os.Rename(tempPath, packagePath); err != nil {
-		_ = os.Remove(tempPath)
+	if err := fsutil.AtomicWriteFile(packagePath, data, 0o644); err != nil {
 		return "", "", fmt.Errorf("替换插件包失败: %w", err)
 	}
 	return packagePath, packageHash, nil
+}
+
+func (m *Manager) extensionPackagePath(extensionID string, version string) string {
+	extensionID = strings.TrimSpace(extensionID)
+	versionSegment := extensionPackageVersionSegment(version)
+	return m.ResolveRelativePath(filepath.Join("data", extensionsRootDir, "packages", extensionID, versionSegment, "extension.crx"))
+}
+
+func extensionPackageVersionSegment(version string) string {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return "unknown"
+	}
+	var builder strings.Builder
+	for _, char := range version {
+		if char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '.' || char == '-' || char == '_' {
+			builder.WriteRune(char)
+		} else {
+			builder.WriteByte('_')
+		}
+	}
+	segment := strings.Trim(builder.String(), ".")
+	if segment == "" || segment == "." || segment == ".." {
+		return "unknown"
+	}
+	return segment
 }
 
 func extensionPackageHash(data []byte) string {

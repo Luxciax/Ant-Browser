@@ -3,6 +3,7 @@ package backend
 import (
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/logger"
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -121,10 +122,16 @@ func (a *App) resolveBrowserStartProfile(input browserStartInput) (*BrowserProfi
 	return profile, true, nil
 }
 
-func (a *App) prepareBrowserStartPlan(input browserStartInput, profile *BrowserProfile) (*browserStartPlan, error) {
+func (a *App) prepareBrowserStartPlan(ctx context.Context, input browserStartInput, profile *BrowserProfile) (*browserStartPlan, error) {
+	if err := browserStartContextError(ctx, "准备启动计划"); err != nil {
+		return nil, err
+	}
 	bookmarks := a.BookmarkList()
-	sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs, fingerprintLaunchArgs, chromeBinaryPath, userDataDir, err := a.prepareBrowserLaunchContext(input, profile, bookmarks)
+	sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs, fingerprintLaunchArgs, chromeBinaryPath, userDataDir, err := a.prepareBrowserLaunchContext(ctx, input, profile, bookmarks)
 	if err != nil {
+		return nil, err
+	}
+	if err := browserStartContextError(ctx, "准备浏览器运行环境"); err != nil {
 		return nil, err
 	}
 
@@ -132,14 +139,34 @@ func (a *App) prepareBrowserStartPlan(input browserStartInput, profile *BrowserP
 	if err != nil {
 		return nil, err
 	}
+	if err := browserStartContextError(ctx, "准备代理桥接"); err != nil {
+		if releaseProxyBridge {
+			a.releaseProxyBridgeRef(acquiredProxyBridge)
+		}
+		return nil, err
+	}
 
 	startReadyTimeout, startStableWindow := a.browserStartTimingSettings()
 	maxStartAttempts := browserStartAttemptCount()
-	totalReadyTimeout := time.Duration(maxStartAttempts) * startReadyTimeout
+	totalReadyTimeout := time.Duration(maxStartAttempts) * (startReadyTimeout + startStableWindow)
 	restoreLastSession := profileRestoreLastSession(profile, a.config)
 	fingerprintExpectedArgs := combineFingerprintExpectedArgs(fingerprintLaunchArgs, sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs)
 	defaultStartURLs := a.resolveFingerprintCheckStartURLsForExpectedArgsAndProfile(profile.ProfileId, fingerprintExpectedArgs, profile, mergeStartURLs(browserDefaultStartURLs(a.config), bookmarkStartURLs(bookmarks)))
 	startURLs := a.resolveFingerprintCheckStartURLsForExpectedArgsAndProfile(profile.ProfileId, fingerprintExpectedArgs, profile, input.StartURLs)
+	if err := validateBrowserStartURLs(startURLs); err != nil {
+		if releaseProxyBridge {
+			a.releaseProxyBridgeRef(acquiredProxyBridge)
+		}
+		profile.LastError = err.Error()
+		return nil, err
+	}
+	if err := validateBrowserStartURLs(defaultStartURLs); err != nil {
+		if releaseProxyBridge {
+			a.releaseProxyBridgeRef(acquiredProxyBridge)
+		}
+		profile.LastError = err.Error()
+		return nil, err
+	}
 	launchTargets, deferredStartTargets, deferredStartNewTabs := buildBrowserLaunchTargets(
 		startURLs,
 		defaultStartURLs,
@@ -163,7 +190,19 @@ func (a *App) prepareBrowserStartPlan(input browserStartInput, profile *BrowserP
 		return nil, startErr
 	}
 
-	extensionDirs, extensionWarnings := a.browserMgr.PrepareProfileExtensions(profile, chromeBinaryPath, userDataDir, nil)
+	extensionDirs, extensionWarnings, extensionErr := a.browserMgr.PrepareProfileExtensionsContext(ctx, profile, chromeBinaryPath, userDataDir, nil)
+	if extensionErr != nil {
+		if releaseProxyBridge {
+			a.releaseProxyBridgeRef(acquiredProxyBridge)
+		}
+		return nil, fmt.Errorf("实例启动失败：插件准备被中断：%w", extensionErr)
+	}
+	if err := browserStartContextError(ctx, "准备实例插件"); err != nil {
+		if releaseProxyBridge {
+			a.releaseProxyBridgeRef(acquiredProxyBridge)
+		}
+		return nil, err
+	}
 	extensionWarning := joinBrowserStartExtensionWarnings(extensionWarnings)
 	instanceArgs := buildBrowserLaunchArgs(userDataDir, assignedDebugPort, effectiveProxy, extensionDirs, fingerprintLaunchArgs, sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs, launchTargets, restoreLastSession)
 
@@ -208,18 +247,30 @@ func (a *App) fingerprintCheckExpectedArgsForRunningProfile(profile *BrowserProf
 	return a.fingerprintCheckExpectedArgsFromLockedProfile(profile)
 }
 
-func (a *App) prepareBrowserLaunchContext(input browserStartInput, profile *BrowserProfile, bookmarks []BrowserBookmark) ([]string, []string, []string, string, string, error) {
+func (a *App) prepareBrowserLaunchContext(ctx context.Context, input browserStartInput, profile *BrowserProfile, bookmarks []BrowserBookmark) ([]string, []string, []string, string, string, error) {
 	log := logger.New("Browser")
+	if err := browserStartContextError(ctx, "准备启动参数"); err != nil {
+		return nil, nil, nil, "", "", err
+	}
 
 	sanitizedProfileLaunchArgs, managedProfileArgs := sanitizeManagedLaunchArgs(profile.LaunchArgs)
 	sanitizedExtraLaunchArgs, managedExtraArgs := sanitizeManagedLaunchArgs(input.ExtraLaunchArgs)
 	logManagedLaunchArgOverrides(log, input.ProfileID, "profile.launchArgs", managedProfileArgs)
 	logManagedLaunchArgOverrides(log, input.ProfileID, "start.extraLaunchArgs", managedExtraArgs)
 
-	proxyChanged := a.browserMgr.ApplyDefaults(profile)
-	if proxyChanged {
-		_ = a.browserMgr.SaveProfiles()
+	a.browserMgr.Mutex.Lock()
+	profileBeforeDefaults := *profile
+	defaultsChanged := a.browserMgr.ApplyDefaults(profile)
+	if defaultsChanged {
+		if err := a.browserMgr.SaveProfiles(); err != nil {
+			*profile = profileBeforeDefaults
+			a.browserMgr.Mutex.Unlock()
+			startErr := fmt.Errorf("实例启动失败：保存默认实例配置失败: %w", err)
+			profile.LastError = startErr.Error()
+			return nil, nil, nil, "", "", startErr
+		}
 	}
+	a.browserMgr.Mutex.Unlock()
 
 	chromeBinaryPath, err := a.browserMgr.ResolveChromeBinary(profile)
 	if err != nil {
@@ -264,10 +315,15 @@ func (a *App) prepareBrowserLaunchContext(input browserStartInput, profile *Brow
 	if err := writeBrowserLanguagePreferences(userDataDir, fingerprintLaunchArgs); err != nil {
 		log.Error("浏览器语言偏好写入失败", logger.F("profile_id", input.ProfileID), logger.F("error", err.Error()))
 	}
+	if err := browserStartContextError(ctx, "写入浏览器运行配置"); err != nil {
+		return nil, nil, nil, "", "", err
+	}
 
 	if detection, ok := detectBrowserRuntimeByActivePort(userDataDir); ok && detection.DebugReady {
+		a.browserMgr.Mutex.Lock()
 		a.markProfileLastLaunchArgsLocked(profile, nil)
 		a.markProfileRunningLocked(input.ProfileID, profile, nil, detection.PID, detection.DebugPort, true, "")
+		a.browserMgr.Mutex.Unlock()
 		log.Warn("检测到同一用户数据目录已有浏览器运行，已接管为当前实例状态",
 			logger.F("profile_id", input.ProfileID),
 			logger.F("user_data_dir", userDataDir),
@@ -286,11 +342,18 @@ func (a *App) prepareBrowserLaunchContext(input browserStartInput, profile *Brow
 		}
 		return nil, nil, nil, "", "", errBrowserStartHandledByRecoveredRuntime
 	}
+	if err := browserStartContextError(ctx, "检测已有浏览器进程"); err != nil {
+		return nil, nil, nil, "", "", err
+	}
 
 	// 同一用户数据目录存在无法通过调试端口接管的残留浏览器进程时
 	// （例如旧版本插件安装助手抢占成为实例进程，或状态丢失后的残留），
 	// 后续启动会被 Chrome 单实例机制交接而误报“就绪前退出”，启动前清理。
-	if terminated, terminateErr := terminateBrowserUserDataOrphans(userDataDir, 5*time.Second); terminateErr != nil {
+	cleanupTimeout, timeoutErr := browserStartRemainingTimeout(ctx, 5*time.Second)
+	if timeoutErr != nil {
+		return nil, nil, nil, "", "", timeoutErr
+	}
+	if terminated, terminateErr := terminateBrowserUserDataOrphans(userDataDir, cleanupTimeout); terminateErr != nil {
 		log.Warn("清理无调试端口的残留浏览器进程失败",
 			logger.F("profile_id", input.ProfileID),
 			logger.F("user_data_dir", userDataDir),
@@ -302,11 +365,42 @@ func (a *App) prepareBrowserLaunchContext(input browserStartInput, profile *Brow
 			logger.F("user_data_dir", userDataDir),
 		)
 	}
+	if err := browserStartContextError(ctx, "清理残留浏览器进程"); err != nil {
+		return nil, nil, nil, "", "", err
+	}
 
 	// restore_last_session 只控制本次启动是否请求 Chromium 恢复历史会话。
 	// 禁用恢复绝不能删除 Default/Sessions；否则用户重新开启恢复后也无法找回普通标签页。
 
 	return sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs, fingerprintLaunchArgs, chromeBinaryPath, userDataDir, nil
+}
+
+func browserStartContextError(ctx context.Context, stage string) error {
+	if ctx == nil || ctx.Err() == nil {
+		return nil
+	}
+	return fmt.Errorf("实例启动失败：%s超时或被取消：%w", stage, ctx.Err())
+}
+
+func browserStartRemainingTimeout(ctx context.Context, fallback time.Duration) (time.Duration, error) {
+	if err := browserStartContextError(ctx, "启动准备"); err != nil {
+		return 0, err
+	}
+	if ctx == nil {
+		return fallback, nil
+	}
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return fallback, nil
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return 0, fmt.Errorf("实例启动失败：启动准备超时或被取消：%w", context.DeadlineExceeded)
+	}
+	if fallback <= 0 || remaining < fallback {
+		return remaining, nil
+	}
+	return fallback, nil
 }
 
 func buildBrowserLaunchArgs(userDataDir string, debugPort int, effectiveProxy string, extensionDirs []string, fingerprintLaunchArgs []string, sanitizedProfileLaunchArgs []string, sanitizedExtraLaunchArgs []string, launchTargets []string, restoreLastSession bool) []string {
@@ -325,7 +419,6 @@ func buildBrowserLaunchArgs(userDataDir string, debugPort int, effectiveProxy st
 		args = append(args, fmt.Sprintf("--proxy-server=%s", effectiveProxy))
 	}
 	if extensionArg := strings.Join(normalizeNonEmptyStrings(extensionDirs), ","); extensionArg != "" {
-		args = append(args, fmt.Sprintf("--disable-extensions-except=%s", extensionArg))
 		args = append(args, fmt.Sprintf("--load-extension=%s", extensionArg))
 	}
 

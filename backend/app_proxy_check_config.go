@@ -21,8 +21,13 @@ func (a *App) SaveProxyCheckSettings(settings ProxyCheckSettings) error {
 	if a.config == nil {
 		return nil
 	}
+	previous := a.config.ProxyCheck
 	a.config.ProxyCheck = proxy.NormalizeCheckSettings(settings)
-	return a.config.Save(a.resolveAppPath("config.yaml"))
+	if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {
+		a.config.ProxyCheck = previous
+		return err
+	}
+	return nil
 }
 
 func (a *App) proxySpeedTestConfig() *proxy.SpeedTestConfig {

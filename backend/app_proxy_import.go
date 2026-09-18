@@ -50,9 +50,8 @@ func (a *App) browserProxyFetchClashByURL(rawURL string, proxyID string) (map[st
 	if err != nil || parsedURL.Host == "" {
 		return nil, fmt.Errorf("URL 格式无效")
 	}
-	scheme := strings.ToLower(strings.TrimSpace(parsedURL.Scheme))
-	if scheme != "http" && scheme != "https" {
-		return nil, fmt.Errorf("仅支持 http/https URL")
+	if err := validateRemoteHTTPURL(parsedURL); err != nil {
+		return nil, err
 	}
 
 	client := &http.Client{Timeout: clashSubscriptionTimeout}
@@ -62,6 +61,10 @@ func (a *App) browserProxyFetchClashByURL(rawURL string, proxyID string) (map[st
 			return nil, err
 		}
 		client = proxyClient
+	}
+	client, err = newSafeRemoteHTTPClient(client, clashSubscriptionTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("创建安全订阅请求客户端失败: %w", err)
 	}
 	content, payload, err := fetchClashSubscriptionWithFallback(client, parsedURL.String(), clashSubscriptionTimeout)
 	if err != nil {

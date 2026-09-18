@@ -1,9 +1,12 @@
 package browser
 
 import (
+	"ant-chrome/backend/internal/fsutil"
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -32,19 +35,30 @@ type extensionLegacyPreferences struct {
 }
 
 func (m *Manager) PrepareProfileExtensions(profile *Profile, chromeBinaryPath string, userDataDir string, installArgs []string) ([]string, []error) {
+	preparedDirs, warnings, _ := m.PrepareProfileExtensionsContext(context.Background(), profile, chromeBinaryPath, userDataDir, installArgs)
+	return preparedDirs, warnings
+}
+
+func (m *Manager) PrepareProfileExtensionsContext(ctx context.Context, profile *Profile, chromeBinaryPath string, userDataDir string, installArgs []string) ([]string, []error, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	warnings := make([]error, 0, 1)
 	preparedDirs := make([]string, 0)
 	_ = installArgs
 	if m == nil || m.ExtensionDAO == nil || profile == nil {
-		return nil, warnings
+		return nil, warnings, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, warnings, err
 	}
 	if strings.TrimSpace(chromeBinaryPath) == "" {
 		warnings = append(warnings, fmt.Errorf("插件持久安装失败：浏览器内核路径为空"))
-		return nil, warnings
+		return nil, warnings, nil
 	}
 	if strings.TrimSpace(userDataDir) == "" {
 		warnings = append(warnings, fmt.Errorf("插件持久安装失败：实例数据目录为空"))
-		return nil, warnings
+		return nil, warnings, nil
 	}
 	if err := m.cleanupManagedExternalExtensionRegistry(); err != nil {
 		warnings = append(warnings, fmt.Errorf("清理外部插件注册表失败：%w", err))
@@ -53,7 +67,7 @@ func (m *Manager) PrepareProfileExtensions(profile *Profile, chromeBinaryPath st
 	settings, err := m.ExtensionDAO.GetProfileSettings(profile.ProfileId)
 	if err != nil {
 		warnings = append(warnings, fmt.Errorf("读取实例插件配置失败：%w", err))
-		return nil, warnings
+		return nil, warnings, nil
 	}
 	var extensions []Extension
 	if settings.Configured {
@@ -63,14 +77,20 @@ func (m *Manager) PrepareProfileExtensions(profile *Profile, chromeBinaryPath st
 	}
 	if err != nil {
 		warnings = append(warnings, fmt.Errorf("读取实例插件列表失败：%w", err))
-		return nil, warnings
+		return nil, warnings, nil
 	}
 
 	desired := make(map[string]Extension, len(extensions))
 	for _, extension := range extensions {
+		if err := ctx.Err(); err != nil {
+			return preparedDirs, warnings, err
+		}
 		desired[extension.ExtensionID] = extension
-		artifactPath, installErr := m.ensurePersistentExtensionInstalled(profile, userDataDir, chromeBinaryPath, extension, nil)
+		artifactPath, installErr := m.ensurePersistentExtensionInstalledContext(ctx, profile, userDataDir, chromeBinaryPath, extension, nil)
 		if installErr != nil {
+			if ctx.Err() != nil {
+				return preparedDirs, warnings, ctx.Err()
+			}
 			warnings = append(warnings, installErr)
 			continue
 		}
@@ -82,9 +102,12 @@ func (m *Manager) PrepareProfileExtensions(profile *Profile, chromeBinaryPath st
 	runtimeStates, err := m.ExtensionDAO.ListProfileExtensionRuntime(profile.ProfileId)
 	if err != nil {
 		warnings = append(warnings, fmt.Errorf("读取实例插件运行态失败：%w", err))
-		return nil, warnings
+		return preparedDirs, warnings, nil
 	}
 	for _, runtimeState := range runtimeStates {
+		if err := ctx.Err(); err != nil {
+			return preparedDirs, warnings, err
+		}
 		if _, ok := desired[runtimeState.ExtensionID]; ok {
 			continue
 		}
@@ -103,9 +126,12 @@ func (m *Manager) PrepareProfileExtensions(profile *Profile, chromeBinaryPath st
 	allExtensions, err := m.ExtensionDAO.List()
 	if err != nil {
 		warnings = append(warnings, fmt.Errorf("读取插件列表失败：%w", err))
-		return nil, warnings
+		return preparedDirs, warnings, nil
 	}
 	for _, extension := range allExtensions {
+		if err := ctx.Err(); err != nil {
+			return preparedDirs, warnings, err
+		}
 		if _, ok := desired[extension.ExtensionID]; ok {
 			continue
 		}
@@ -121,7 +147,7 @@ func (m *Manager) PrepareProfileExtensions(profile *Profile, chromeBinaryPath st
 		}
 	}
 
-	return preparedDirs, warnings
+	return preparedDirs, warnings, nil
 }
 func (m *Manager) RemoveExtensionFromStoppedProfiles(extensionID string) error {
 	if m == nil || m.ExtensionDAO == nil {
@@ -155,15 +181,15 @@ func (m *Manager) RemoveExtensionFromStoppedProfiles(extensionID string) error {
 			}
 		}
 		runtimeIDs := uniqueExtensionIDs(append(legacyRuntimeIDs, runtimeState.RuntimeExtensionID))
-		if profile.Running && extensionErr == nil && normalizeExtensionInstallMode(extension.InstallMode) == ExtensionInstallModePersistent {
+		if ProfileRuntimeMutationBlocked(profile) && extensionErr == nil && normalizeExtensionInstallMode(extension.InstallMode) == ExtensionInstallModePersistent {
 			if persistentRuntimeID := persistentExtensionCodeID(m.ResolveUserDataDir(profile), extension.ExtensionID); persistentRuntimeID != "" {
 				return fmt.Errorf("插件仍在运行中的实例中：%s。请先停止实例后再禁用或删除", profile.ProfileName)
 			}
 		}
-		if profile.Running && extensionErr == nil && normalizeExtensionInstallMode(extension.InstallMode) == ExtensionInstallModeCommandline {
+		if ProfileRuntimeMutationBlocked(profile) && extensionErr == nil && normalizeExtensionInstallMode(extension.InstallMode) == ExtensionInstallModeCommandline {
 			return fmt.Errorf("插件仍在运行中的实例中：%s。请先停止实例后再禁用或删除", profile.ProfileName)
 		}
-		if profile.Running && extensionErr == nil && normalizeExtensionInstallMode(extension.InstallMode) == ExtensionInstallModePersistent && runtimeErr == sql.ErrNoRows && len(legacyRuntimeIDs) == 0 {
+		if ProfileRuntimeMutationBlocked(profile) && extensionErr == nil && normalizeExtensionInstallMode(extension.InstallMode) == ExtensionInstallModePersistent && runtimeErr == sql.ErrNoRows && len(legacyRuntimeIDs) == 0 {
 			installedRuntimeID, findErr := findInstalledRuntimeExtensionID(m.ResolveUserDataDir(profile), extension)
 			if findErr != nil {
 				return findErr
@@ -172,12 +198,23 @@ func (m *Manager) RemoveExtensionFromStoppedProfiles(extensionID string) error {
 				return fmt.Errorf("插件仍在运行中的实例中：%s。请先停止实例后再禁用或删除", profile.ProfileName)
 			}
 		}
-		if profile.Running && (len(legacyRuntimeIDs) > 0 || (runtimeErr == nil && runtimeState.Status != ExtensionRuntimeStatusDisabled && len(runtimeIDs) > 0)) {
+		if ProfileRuntimeMutationBlocked(profile) && (len(legacyRuntimeIDs) > 0 || (runtimeErr == nil && runtimeState.Status != ExtensionRuntimeStatusDisabled && len(runtimeIDs) > 0)) {
 			return fmt.Errorf("插件仍在运行中的实例中：%s。请先停止实例后再禁用或删除", profile.ProfileName)
 		}
 	}
+
+	type removalPlan struct {
+		profileID      string
+		userDataDir    string
+		runtimeIDs     []string
+		backupPath     string
+		hadRuntime     bool
+		previousRuntime ProfileExtensionRuntime
+		nextRuntime     ProfileExtensionRuntime
+	}
+	plans := make([]removalPlan, 0, len(m.Profiles))
 	for _, profile := range m.Profiles {
-		if profile == nil || profile.Running {
+		if profile == nil || ProfileRuntimeMutationBlocked(profile) {
 			continue
 		}
 		runtimeState, runtimeErr := m.ExtensionDAO.GetProfileExtensionRuntime(profile.ProfileId, extensionID)
@@ -198,14 +235,11 @@ func (m *Manager) RemoveExtensionFromStoppedProfiles(extensionID string) error {
 				runtimeIDs = []string{persistentRuntimeID}
 			}
 		}
-		for _, runtimeID := range runtimeIDs {
-			if err := cleanupProfileExtensionRuntime(m.ResolveUserDataDir(profile), runtimeID); err != nil {
-				return err
-			}
-		}
 		if runtimeErr == sql.ErrNoRows && len(runtimeIDs) == 0 {
 			continue
 		}
+		hadRuntime := runtimeErr == nil
+		previousRuntime := runtimeState
 		if runtimeErr == sql.ErrNoRows {
 			runtimeState = ProfileExtensionRuntime{
 				ProfileID:        profile.ProfileId,
@@ -221,11 +255,166 @@ func (m *Manager) RemoveExtensionFromStoppedProfiles(extensionID string) error {
 		if len(runtimeIDs) > 0 {
 			runtimeState.RuntimeExtensionID = runtimeIDs[0]
 		}
-		if err := m.ExtensionDAO.UpsertProfileExtensionRuntime(runtimeState); err != nil {
+		userDataDir := m.ResolveUserDataDir(profile)
+		backupPath, err := m.backupProfileExtensionState(profile.ProfileId, extensionID, userDataDir, runtimeIDs)
+		if err != nil {
+			for _, plan := range plans {
+				if strings.TrimSpace(plan.backupPath) != "" {
+					_ = os.RemoveAll(plan.backupPath)
+				}
+			}
 			return err
+		}
+		plans = append(plans, removalPlan{
+			profileID:       profile.ProfileId,
+			userDataDir:     userDataDir,
+			runtimeIDs:      append([]string{}, runtimeIDs...),
+			backupPath:      backupPath,
+			hadRuntime:      hadRuntime,
+			previousRuntime: previousRuntime,
+			nextRuntime:     runtimeState,
+		})
+	}
+
+	rollback := func(processed int, cause error) error {
+		rollbackErrors := []error{cause}
+		for i := processed - 1; i >= 0; i-- {
+			plan := plans[i]
+			if strings.TrimSpace(plan.backupPath) != "" {
+				if err := restoreProfileExtensionState(plan.userDataDir, plan.backupPath, plan.runtimeIDs, plan.nextRuntime.RuntimeExtensionID); err != nil {
+					rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复实例 %s 的插件文件失败: %w", plan.profileID, err))
+				}
+			}
+			if plan.hadRuntime {
+				if err := m.ExtensionDAO.UpsertProfileExtensionRuntime(plan.previousRuntime); err != nil {
+					rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复实例 %s 的插件运行态失败: %w", plan.profileID, err))
+				}
+			} else if err := m.ExtensionDAO.DeleteProfileExtensionRuntime(plan.profileID, extensionID); err != nil {
+				rollbackErrors = append(rollbackErrors, fmt.Errorf("清理实例 %s 的回滚运行态失败: %w", plan.profileID, err))
+			}
+		}
+		return errors.Join(rollbackErrors...)
+	}
+
+	for index, plan := range plans {
+		processed := index + 1
+		for _, runtimeID := range plan.runtimeIDs {
+			if err := cleanupProfileExtensionRuntime(plan.userDataDir, runtimeID); err != nil {
+				return rollback(processed, err)
+			}
+		}
+		if err := m.ExtensionDAO.UpsertProfileExtensionRuntime(plan.nextRuntime); err != nil {
+			return rollback(processed, err)
+		}
+	}
+	for _, plan := range plans {
+		if strings.TrimSpace(plan.backupPath) != "" {
+			_ = os.RemoveAll(plan.backupPath)
 		}
 	}
 	return nil
+}
+
+// PrepareExtensionRemovalRollback creates a rollback snapshot that can restore
+// profile-scoped extension files and runtime records if a later catalog/file
+// deletion step fails. The returned cleanup must be called after either a
+// successful delete or a completed rollback.
+func (m *Manager) PrepareExtensionRemovalRollback(extensionID string) (func() error, func(), error) {
+	if m == nil || m.ExtensionDAO == nil {
+		return func() error { return nil }, func() {}, nil
+	}
+	extensionID = strings.TrimSpace(extensionID)
+	if extensionID == "" {
+		return func() error { return nil }, func() {}, nil
+	}
+	m.InitData()
+	m.Mutex.Lock()
+	defer m.Mutex.Unlock()
+
+	extension, extensionErr := m.ExtensionDAO.Get(extensionID)
+	if extensionErr != nil && extensionErr != sql.ErrNoRows {
+		return nil, nil, extensionErr
+	}
+	type snapshot struct {
+		profileID       string
+		userDataDir     string
+		runtimeIDs      []string
+		backupPath      string
+		hadRuntime      bool
+		previousRuntime ProfileExtensionRuntime
+	}
+	snapshots := make([]snapshot, 0, len(m.Profiles))
+	cleanup := func() {
+		for _, item := range snapshots {
+			if strings.TrimSpace(item.backupPath) != "" {
+				_ = os.RemoveAll(item.backupPath)
+			}
+		}
+	}
+
+	for _, profile := range m.Profiles {
+		if profile == nil {
+			continue
+		}
+		runtimeState, runtimeErr := m.ExtensionDAO.GetProfileExtensionRuntime(profile.ProfileId, extensionID)
+		if runtimeErr != nil && runtimeErr != sql.ErrNoRows {
+			cleanup()
+			return nil, nil, runtimeErr
+		}
+		legacyRuntimeIDs := []string{}
+		if extensionErr == nil {
+			var legacyErr error
+			legacyRuntimeIDs, legacyErr = findLegacyRuntimeExtensionIDs(m.ResolveUserDataDir(profile), extension.InstallDir)
+			if legacyErr != nil {
+				cleanup()
+				return nil, nil, legacyErr
+			}
+		}
+		runtimeIDs := uniqueExtensionIDs(append(legacyRuntimeIDs, runtimeState.RuntimeExtensionID))
+		if extensionErr == nil && normalizeExtensionInstallMode(extension.InstallMode) == ExtensionInstallModePersistent && len(runtimeIDs) == 0 {
+			if persistentRuntimeID := persistentExtensionCodeID(m.ResolveUserDataDir(profile), extension.ExtensionID); persistentRuntimeID != "" {
+				runtimeIDs = []string{persistentRuntimeID}
+			}
+		}
+		if runtimeErr == sql.ErrNoRows && len(runtimeIDs) == 0 {
+			continue
+		}
+		userDataDir := m.ResolveUserDataDir(profile)
+		backupPath, err := m.backupProfileExtensionState(profile.ProfileId, extensionID, userDataDir, runtimeIDs)
+		if err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		snapshots = append(snapshots, snapshot{
+			profileID:       profile.ProfileId,
+			userDataDir:     userDataDir,
+			runtimeIDs:      append([]string{}, runtimeIDs...),
+			backupPath:      backupPath,
+			hadRuntime:      runtimeErr == nil,
+			previousRuntime: runtimeState,
+		})
+	}
+
+	rollback := func() error {
+		rollbackErrors := make([]error, 0)
+		for i := len(snapshots) - 1; i >= 0; i-- {
+			item := snapshots[i]
+			if strings.TrimSpace(item.backupPath) != "" {
+				if err := restoreProfileExtensionState(item.userDataDir, item.backupPath, item.runtimeIDs, item.previousRuntime.RuntimeExtensionID); err != nil {
+					rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复实例 %s 的插件文件失败: %w", item.profileID, err))
+				}
+			}
+			if item.hadRuntime {
+				if err := m.ExtensionDAO.UpsertProfileExtensionRuntime(item.previousRuntime); err != nil {
+					rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复实例 %s 的插件运行态失败: %w", item.profileID, err))
+				}
+			} else if err := m.ExtensionDAO.DeleteProfileExtensionRuntime(item.profileID, extensionID); err != nil {
+				rollbackErrors = append(rollbackErrors, fmt.Errorf("清理实例 %s 的插件运行态失败: %w", item.profileID, err))
+			}
+		}
+		return errors.Join(rollbackErrors...)
+	}
+	return rollback, cleanup, nil
 }
 
 func (m *Manager) RemoveExtensionPackageFiles(extension Extension) error {
@@ -284,8 +473,21 @@ func (m *Manager) ExtensionPackagePaths(extension Extension) ([]string, error) {
 }
 
 func (m *Manager) ensurePersistentExtensionInstalled(profile *Profile, userDataDir string, chromeBinaryPath string, extension Extension, installArgs []string) (string, error) {
-	packagePath, packageHash, err := m.resolveExtensionPackage(extension, chromeBinaryPath)
+	return m.ensurePersistentExtensionInstalledContext(context.Background(), profile, userDataDir, chromeBinaryPath, extension, installArgs)
+}
+
+func (m *Manager) ensurePersistentExtensionInstalledContext(ctx context.Context, profile *Profile, userDataDir string, chromeBinaryPath string, extension Extension, installArgs []string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	packagePath, packageHash, err := m.resolveExtensionPackageContext(ctx, extension, chromeBinaryPath)
 	if err != nil {
+		return "", err
+	}
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 
@@ -326,6 +528,9 @@ func (m *Manager) ensurePersistentExtensionInstalled(profile *Profile, userDataD
 
 	backupPath, err := m.backupProfileExtensionState(profile.ProfileId, extension.ExtensionID, userDataDir, legacyRuntimeIDs)
 	if err != nil {
+		return "", err
+	}
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 	runtimeExtensionID, err := installExtensionPackageIntoProfile(userDataDir, packagePath, extension)
@@ -458,6 +663,16 @@ func (m *Manager) recordProfileExtensionRuntimeError(profileID string, extension
 }
 
 func (m *Manager) resolveExtensionPackage(extension Extension, chromeBinaryPath string) (string, string, error) {
+	return m.resolveExtensionPackageContext(context.Background(), extension, chromeBinaryPath)
+}
+
+func (m *Manager) resolveExtensionPackageContext(ctx context.Context, extension Extension, chromeBinaryPath string) (string, string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return "", "", err
+	}
 	packagePath := strings.TrimSpace(extension.PackagePath)
 	if packagePath != "" && !filepath.IsAbs(packagePath) {
 		packagePath = m.ResolveRelativePath(packagePath)
@@ -476,7 +691,7 @@ func (m *Manager) resolveExtensionPackage(extension Extension, chromeBinaryPath 
 	if _, err := os.Stat(filepath.Join(installDir, "manifest.json")); err != nil {
 		return "", "", fmt.Errorf("插件持久安装失败：插件目录不存在（%s）：%w", installDir, err)
 	}
-	generatedPackagePath, generatedHash, err := m.packExtensionDirectory(extension, chromeBinaryPath)
+	generatedPackagePath, generatedHash, err := m.packExtensionDirectoryContext(ctx, extension, chromeBinaryPath)
 	if err != nil {
 		return "", "", err
 	}
@@ -484,11 +699,20 @@ func (m *Manager) resolveExtensionPackage(extension Extension, chromeBinaryPath 
 }
 
 func (m *Manager) packExtensionDirectory(extension Extension, chromeBinaryPath string) (string, string, error) {
-	packageRoot := m.ResolveRelativePath(filepath.Join("data", extensionsRootDir, "packages"))
-	if err := os.MkdirAll(packageRoot, 0o755); err != nil {
-		return "", "", fmt.Errorf("创建插件包目录失败: %w", err)
+	return m.packExtensionDirectoryContext(context.Background(), extension, chromeBinaryPath)
+}
+
+func (m *Manager) packExtensionDirectoryContext(ctx context.Context, extension Extension, chromeBinaryPath string) (string, string, error) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	keyPath := filepath.Join(packageRoot, extension.ExtensionID+".pem")
+	if err := ctx.Err(); err != nil {
+		return "", "", err
+	}
+	keyPath := m.localExtensionKeyPath(extension.ExtensionID)
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0o755); err != nil {
+		return "", "", fmt.Errorf("创建插件密钥目录失败: %w", err)
+	}
 	workParent := filepath.Join(m.ResolveRelativePath(filepath.Join("data", extensionsRootDir)), ".pack")
 	if err := os.MkdirAll(workParent, 0o755); err != nil {
 		return "", "", fmt.Errorf("创建插件打包目录失败: %w", err)
@@ -512,7 +736,7 @@ func (m *Manager) packExtensionDirectory(extension Extension, chromeBinaryPath s
 	packCommand.Stdout = io.Discard
 	packCommand.Stderr = io.Discard
 	hideExtensionInstallerWindow(packCommand)
-	if err := packCommand.Run(); err != nil {
+	if err := runExtensionInstallerCommand(ctx, packCommand); err != nil {
 		return "", "", fmt.Errorf("生成插件持久安装包失败: %w", err)
 	}
 
@@ -525,13 +749,13 @@ func (m *Manager) packExtensionDirectory(extension Extension, chromeBinaryPath s
 		}
 		return "", "", fmt.Errorf("读取生成的插件包失败: %w", err)
 	}
-	storedPath, packageHash, err := m.storeExtensionPackage(extension.ExtensionID, packageData)
+	storedPath, packageHash, err := m.storeExtensionPackage(extension.ExtensionID, extension.Version, packageData)
 	if err != nil {
 		return "", "", err
 	}
 	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
 		if keyData, readErr := os.ReadFile(generatedKeyPath); readErr == nil {
-			if writeErr := os.WriteFile(keyPath, keyData, 0o600); writeErr != nil {
+			if writeErr := fsutil.AtomicWriteFile(keyPath, keyData, 0o600); writeErr != nil {
 				return "", "", fmt.Errorf("保存插件签名密钥失败: %w", writeErr)
 			}
 		}
@@ -546,6 +770,39 @@ func (m *Manager) packExtensionDirectory(extension Extension, chromeBinaryPath s
 		}
 	}
 	return storedPath, packageHash, nil
+}
+
+func runExtensionInstallerCommand(ctx context.Context, command *exec.Cmd) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if command == nil {
+		return fmt.Errorf("extension installer command is nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := command.Start(); err != nil {
+		return err
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- command.Wait() }()
+	timer := time.NewTimer(extensionInstallerTimeout)
+	defer timer.Stop()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		terminateExtensionInstallerProcess(command)
+		<-done
+		return ctx.Err()
+	case <-timer.C:
+		terminateExtensionInstallerProcess(command)
+		<-done
+		return fmt.Errorf("插件安装器执行超时（%s）", extensionInstallerTimeout)
+	}
 }
 
 func terminateExtensionInstallerProcess(command *exec.Cmd) {
@@ -645,7 +902,7 @@ func writeProfileScopedExtensionManifest(manifestPath string, packageData []byte
 	if err != nil {
 		return fmt.Errorf("生成实例插件 manifest 失败: %w", err)
 	}
-	if err := os.WriteFile(manifestPath, updatedManifest, 0o644); err != nil {
+	if err := fsutil.AtomicWriteFile(manifestPath, updatedManifest, 0o644); err != nil {
 		return fmt.Errorf("保存实例插件 manifest 失败: %w", err)
 	}
 	return nil

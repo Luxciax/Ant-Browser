@@ -247,6 +247,29 @@ func TestBackupRepairExtensionPathsReportsCorruptCRX(t *testing.T) {
 	}
 }
 
+func TestBackupMapManagedExtensionPackagePathSupportsVersionedStore(t *testing.T) {
+	app := newBackupExtensionRepairTestApp(t)
+	oldRoot := filepath.Join(t.TempDir(), "old-machine")
+	oldPath := filepath.Join(oldRoot, "data", "extensions", "packages", backupTestExtensionID, "2.3.4", "extension.crx")
+
+	mapped, ok := backupMapManagedExtensionPackagePath(app, oldPath, backupTestExtensionID)
+	if !ok {
+		t.Fatalf("versioned package path %q was not recognized", oldPath)
+	}
+	want := filepath.Join(app.appRoot, "data", "extensions", "packages", backupTestExtensionID, "2.3.4", "extension.crx")
+	if !backupSamePath(mapped, want) {
+		t.Fatalf("mapped package path = %q, want %q", mapped, want)
+	}
+
+	wrongIDPath := filepath.Join(oldRoot, "data", "extensions", "packages", backupTestExtensionIDB, "2.3.4", "extension.crx")
+	if _, ok := backupMapManagedExtensionPackagePath(app, wrongIDPath, backupTestExtensionID); ok {
+		t.Fatalf("package path for another extension ID was accepted: %q", wrongIDPath)
+	}
+	if _, ok := backupMapManagedExtensionPackagePath(app, filepath.Join(oldRoot, "data", "extensions", "packages", "..", "escape.crx"), backupTestExtensionID); ok {
+		t.Fatal("package traversal path was accepted")
+	}
+}
+
 func newBackupExtensionRepairTestApp(t *testing.T) *App {
 	t.Helper()
 	appRoot := t.TempDir()

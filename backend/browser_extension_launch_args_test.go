@@ -20,7 +20,7 @@ func TestBuildBrowserLaunchArgsLoadsPreparedExtensions(t *testing.T) {
 	if !slices.Contains(args, "--load-extension="+want) {
 		t.Fatalf("args = %#v, missing prepared extension load flag", args)
 	}
-	if !slices.Contains(args, "--disable-extensions-except="+want) {
-		t.Fatalf("args = %#v, missing prepared extension allowlist flag", args)
+	if slices.Contains(args, "--disable-extensions-except="+want) {
+		t.Fatalf("args = %#v, prepared extensions must not disable profile-installed extensions", args)
 	}
 }

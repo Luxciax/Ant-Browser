@@ -16,6 +16,7 @@ import { useBrowserListSettings } from './browserList/useBrowserListSettings'
 import { useBrowserListData } from './browserList/useBrowserListData'
 import { useBrowserProfileActions } from './browserList/useBrowserProfileActions'
 import { warmupProfileProxyBeforeStart } from '../utils/proxyWarmup'
+import { isBrowserRuntimeConfigLocked, isBrowserRuntimeStoppable, isBrowserRuntimeStopped, normalizeBrowserRuntimeState } from '../utils/runtimeState'
 import {
   copyBrowserProfile,
   deleteBrowserProfile,
@@ -199,7 +200,7 @@ export function BrowserListPage() {
     const failureMessages: string[] = []
     for (const id of ids) {
       const profile = profiles.find(p => p.profileId === id)
-      if (!profile || profile.running) {
+      if (!profile || isBrowserRuntimeConfigLocked(profile)) {
         skipped++
         continue
       }
@@ -208,7 +209,7 @@ export function BrowserListPage() {
         await warmupProfileProxyBeforeStart(profile)
         const startedProfile = await startBrowserInstance(id)
         mergeProfileState(startedProfile)
-        if (!startedProfile?.running) {
+        if (!startedProfile || normalizeBrowserRuntimeState(startedProfile) !== 'running') {
           failed++
           failureMessages.push(`${profile.profileName}：实例未进入运行状态。`)
         } else if (!startedProfile.debugReady) {
@@ -267,7 +268,7 @@ export function BrowserListPage() {
     let success = 0, failed = 0, skipped = 0
     for (const id of ids) {
       const profile = profiles.find(p => p.profileId === id)
-      if (!profile || !profile.running) {
+      if (!profile || !isBrowserRuntimeStoppable(profile)) {
         skipped++
         continue
       }
@@ -275,7 +276,7 @@ export function BrowserListPage() {
       try {
         const stoppedProfile = await stopBrowserInstance(id)
         mergeProfileState(stoppedProfile)
-        if (stoppedProfile && !stoppedProfile.running) {
+        if (stoppedProfile && isBrowserRuntimeStopped(stoppedProfile)) {
           success++
         } else {
           failed++
@@ -306,7 +307,7 @@ export function BrowserListPage() {
     const ids = Array.from(selectedIds)
     if (ids.length === 0 || profilePackageBusy) return
     const runningNames = profiles
-      .filter(profile => ids.includes(profile.profileId) && profile.running)
+      .filter(profile => ids.includes(profile.profileId) && isBrowserRuntimeConfigLocked(profile))
       .map(profile => profile.profileName)
     if (runningNames.length > 0) {
       toast.error(`请先停止实例再导出：${runningNames.slice(0, 3).join('、')}${runningNames.length > 3 ? ' 等' : ''}`)
@@ -317,7 +318,7 @@ export function BrowserListPage() {
 
   const handleExportProfile = async (profile: BrowserProfile) => {
     if (profilePackageBusy) return
-    if (profile.running) {
+    if (isBrowserRuntimeConfigLocked(profile)) {
       toast.error(`请先停止实例再导出：${profile.profileName}`)
       return
     }

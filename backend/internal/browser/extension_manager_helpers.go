@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -487,9 +488,11 @@ func extensionIconDataURL(path string, data []byte) string {
 }
 
 func replaceExtensionDirFromZip(data []byte, installDir string) error {
-	tmpDir := installDir + ".tmp"
-	_ = os.RemoveAll(tmpDir)
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(installDir), 0o755); err != nil {
+		return fmt.Errorf("创建插件父目录失败: %w", err)
+	}
+	tmpDir, err := os.MkdirTemp(filepath.Dir(installDir), "."+filepath.Base(installDir)+".tmp-*")
+	if err != nil {
 		return fmt.Errorf("创建插件目录失败: %w", err)
 	}
 	success := false
@@ -526,20 +529,19 @@ func replaceExtensionDirFromZip(data []byte, installDir string) error {
 			return fmt.Errorf("写入插件文件失败: %w", err)
 		}
 	}
-	if err := os.RemoveAll(installDir); err != nil {
-		return fmt.Errorf("清理旧插件失败: %w", err)
-	}
-	if err := os.Rename(tmpDir, installDir); err != nil {
-		return fmt.Errorf("安装插件失败: %w", err)
+	if err := commitExtensionDirectory(tmpDir, installDir); err != nil {
+		return err
 	}
 	success = true
 	return nil
 }
 
 func copyExtensionDirectory(sourceDir string, installDir string) error {
-	tmpDir := installDir + ".tmp"
-	_ = os.RemoveAll(tmpDir)
-	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(installDir), 0o755); err != nil {
+		return fmt.Errorf("创建插件父目录失败: %w", err)
+	}
+	tmpDir, err := os.MkdirTemp(filepath.Dir(installDir), "."+filepath.Base(installDir)+".tmp-*")
+	if err != nil {
 		return fmt.Errorf("创建插件目录失败: %w", err)
 	}
 	success := false
@@ -590,13 +592,146 @@ func copyExtensionDirectory(sourceDir string, installDir string) error {
 	}); err != nil {
 		return fmt.Errorf("复制插件目录失败: %w", err)
 	}
-	if err := os.RemoveAll(installDir); err != nil {
-		return fmt.Errorf("清理旧插件失败: %w", err)
-	}
-	if err := os.Rename(tmpDir, installDir); err != nil {
-		return fmt.Errorf("安装插件失败: %w", err)
+	if err := commitExtensionDirectory(tmpDir, installDir); err != nil {
+		return err
 	}
 	success = true
+	return nil
+}
+
+type extensionInstallFileTransaction struct {
+	installDir       string
+	installBackupDir string
+	hadInstallDir    bool
+	packagePath      string
+	packageBackup    string
+	hadPackage       bool
+}
+
+func beginExtensionInstallFileTransaction(installDir string) (*extensionInstallFileTransaction, error) {
+	installDir = filepath.Clean(strings.TrimSpace(installDir))
+	if installDir == "" || installDir == "." {
+		return nil, fmt.Errorf("插件安装目录不能为空")
+	}
+	tx := &extensionInstallFileTransaction{installDir: installDir}
+	if _, err := os.Lstat(installDir); err == nil {
+		tx.installBackupDir = fmt.Sprintf("%s.rollback-%d", installDir, time.Now().UnixNano())
+		if err := os.Rename(installDir, tx.installBackupDir); err != nil {
+			return nil, fmt.Errorf("暂存旧插件目录失败: %w", err)
+		}
+		tx.hadInstallDir = true
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("检查旧插件目录失败: %w", err)
+	}
+	return tx, nil
+}
+
+func (tx *extensionInstallFileTransaction) stagePackage(packagePath string) error {
+	if tx == nil {
+		return fmt.Errorf("插件安装事务未初始化")
+	}
+	packagePath = filepath.Clean(strings.TrimSpace(packagePath))
+	if packagePath == "" || packagePath == "." {
+		return fmt.Errorf("插件包路径不能为空")
+	}
+	tx.packagePath = packagePath
+	if _, err := os.Lstat(packagePath); err == nil {
+		tx.packageBackup = fmt.Sprintf("%s.rollback-%d", packagePath, time.Now().UnixNano())
+		if err := os.Rename(packagePath, tx.packageBackup); err != nil {
+			return fmt.Errorf("暂存旧插件包失败: %w", err)
+		}
+		tx.hadPackage = true
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("检查旧插件包失败: %w", err)
+	}
+	return nil
+}
+
+func (tx *extensionInstallFileTransaction) rollback() error {
+	if tx == nil {
+		return nil
+	}
+	rollbackErrors := make([]error, 0, 4)
+	if strings.TrimSpace(tx.packagePath) != "" {
+		if err := os.Remove(tx.packagePath); err != nil && !os.IsNotExist(err) {
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("删除新插件包失败: %w", err))
+		}
+		if tx.hadPackage {
+			if err := os.Rename(tx.packageBackup, tx.packagePath); err != nil {
+				rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复旧插件包失败: %w", err))
+			}
+		}
+	}
+	if strings.TrimSpace(tx.installDir) != "" {
+		if err := os.RemoveAll(tx.installDir); err != nil {
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("删除新插件目录失败: %w", err))
+		}
+		if tx.hadInstallDir {
+			if err := os.Rename(tx.installBackupDir, tx.installDir); err != nil {
+				rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复旧插件目录失败: %w", err))
+			}
+		}
+	}
+	return errors.Join(rollbackErrors...)
+}
+
+func (tx *extensionInstallFileTransaction) commit() {
+	if tx == nil {
+		return
+	}
+	if tx.hadPackage && strings.TrimSpace(tx.packageBackup) != "" {
+		_ = os.Remove(tx.packageBackup)
+	}
+	if tx.hadInstallDir && strings.TrimSpace(tx.installBackupDir) != "" {
+		_ = os.RemoveAll(tx.installBackupDir)
+	}
+}
+
+func rollbackExtensionInstallFiles(tx *extensionInstallFileTransaction, cause error) error {
+	if tx == nil {
+		return cause
+	}
+	return errors.Join(cause, tx.rollback())
+}
+
+func commitExtensionDirectory(stagedDir string, installDir string) error {
+	stagedDir = filepath.Clean(stagedDir)
+	installDir = filepath.Clean(installDir)
+	if stagedDir == installDir {
+		return fmt.Errorf("插件暂存目录不能与安装目录相同")
+	}
+	if info, err := os.Stat(stagedDir); err != nil {
+		return fmt.Errorf("检查插件暂存目录失败: %w", err)
+	} else if !info.IsDir() {
+		return fmt.Errorf("插件暂存路径不是目录: %s", stagedDir)
+	}
+
+	backupDir := fmt.Sprintf("%s.rollback-%d", installDir, time.Now().UnixNano())
+	hadOriginal := false
+	if _, err := os.Stat(installDir); err == nil {
+		hadOriginal = true
+		if err := os.Rename(installDir, backupDir); err != nil {
+			return fmt.Errorf("暂存旧插件目录失败: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("检查旧插件目录失败: %w", err)
+	}
+
+	if err := os.Rename(stagedDir, installDir); err != nil {
+		commitErr := fmt.Errorf("安装插件失败: %w", err)
+		if hadOriginal {
+			if restoreErr := os.Rename(backupDir, installDir); restoreErr != nil {
+				return fmt.Errorf("%w；恢复旧插件目录失败: %v", commitErr, restoreErr)
+			}
+		}
+		return commitErr
+	}
+
+	if hadOriginal {
+		// The new directory is already committed. Cleanup failure must not turn
+		// a successful update into an application-level failure.
+		_ = os.RemoveAll(backupDir)
+	}
 	return nil
 }
 

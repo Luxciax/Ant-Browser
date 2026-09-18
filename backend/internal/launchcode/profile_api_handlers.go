@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/logger"
 )
 
@@ -182,7 +183,7 @@ func (s *LaunchServer) handleDeleteProfile(w http.ResponseWriter, _ *http.Reques
 		})
 		return
 	}
-	if profile.Running {
+	if browser.ProfileRuntimeMutationBlocked(profile) {
 		writeJSON(w, http.StatusConflict, map[string]interface{}{
 			"ok":    false,
 			"error": "running profile cannot be deleted",
@@ -190,15 +191,12 @@ func (s *LaunchServer) handleDeleteProfile(w http.ResponseWriter, _ *http.Reques
 		return
 	}
 
-	if err := s.deleteProfileInternal(profileID); err != nil {
+	if err := s.deleteProfileWithLaunchCode(profileID, profile); err != nil {
 		writeJSON(w, mapProfileWriteErrorStatus(err), map[string]interface{}{
 			"ok":    false,
 			"error": err.Error(),
 		})
 		return
-	}
-	if s.service != nil {
-		_ = s.service.Remove(profileID)
 	}
 	s.ClearActiveProfile(profileID)
 

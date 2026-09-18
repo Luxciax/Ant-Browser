@@ -233,15 +233,22 @@ func (a *App) downloadProxyCore(ctx context.Context, spec proxyCoreSpec, target 
 	}
 	platformDir := fmt.Sprintf("%s-%s", target.GOOS, target.GOARCH)
 	installDir := proxyCoreInstallDir(a, spec, target)
-	if err := os.MkdirAll(installDir, 0o755); err != nil {
-		send("error", 0, "创建安装目录失败: "+err.Error())
+	installParent := filepath.Dir(installDir)
+	if err := os.MkdirAll(installParent, 0o755); err != nil {
+		send("error", 0, "创建安装父目录失败: "+err.Error())
 		return
 	}
 	if err := ctx.Err(); err != nil {
 		return
 	}
+	workspace, err := os.MkdirTemp(installParent, "."+filepath.Base(installDir)+".install-*")
+	if err != nil {
+		send("error", 0, "创建安装临时目录失败: "+err.Error())
+		return
+	}
+	defer os.RemoveAll(workspace)
 
-	tmp, err := os.CreateTemp(installDir, "proxy-core-*"+archiveExt(asset.Name))
+	tmp, err := os.CreateTemp(workspace, "proxy-core-*"+archiveExt(asset.Name))
 	if err != nil {
 		send("error", 0, "创建临时文件失败: "+err.Error())
 		return
@@ -260,12 +267,11 @@ func (a *App) downloadProxyCore(ctx context.Context, spec proxyCoreSpec, target 
 		return
 	}
 
-	extractDir, err := os.MkdirTemp(installDir, "extract-*")
-	if err != nil {
+	extractDir := filepath.Join(workspace, "extract")
+	if err := os.MkdirAll(extractDir, 0o755); err != nil {
 		send("error", 0, "创建解压目录失败: "+err.Error())
 		return
 	}
-	defer os.RemoveAll(extractDir)
 
 	send("extracting", 80, "下载完成，正在解压")
 	if err := extractProxyCoreArchive(tmpPath, extractDir, spec.BinaryBase, target.GOOS); err != nil {
@@ -284,27 +290,37 @@ func (a *App) downloadProxyCore(ctx context.Context, spec proxyCoreSpec, target 
 	if err := ctx.Err(); err != nil {
 		return
 	}
-	if err := replaceDirContents(extractDir, installDir); err != nil {
-		send("error", 0, "安装失败: "+err.Error())
-		return
-	}
-	installedBinary := filepath.Join(installDir, mustRelPath(extractDir, binaryPath))
-	installedBinary, err = normalizeInstalledProxyCoreBinary(installedBinary, installDir, spec.BinaryBase, target.GOOS)
+	stagedBinary, err := normalizeInstalledProxyCoreBinary(binaryPath, extractDir, spec.BinaryBase, target.GOOS)
 	if err != nil {
 		send("error", 0, "规范内核文件名失败: "+err.Error())
 		return
 	}
 	if target.GOOS == goruntime.GOOS && target.GOARCH == goruntime.GOARCH {
-		if err := fsutil.EnsureExecutable(installedBinary); err != nil {
+		if err := fsutil.EnsureExecutable(stagedBinary); err != nil {
 			send("error", 0, "设置可执行权限失败: "+err.Error())
 			return
 		}
+	}
+
+	swap, err := stageProxyCoreDirectory(extractDir, installDir)
+	if err != nil {
+		send("error", 0, "安装失败: "+err.Error())
+		return
+	}
+	installedBinary := filepath.Join(installDir, filepath.Base(stagedBinary))
+	if target.GOOS == goruntime.GOOS && target.GOARCH == goruntime.GOARCH {
 		if err := a.saveProxyCoreBinaryPath(spec, installedBinary); err != nil {
-			send("error", 0, "保存配置失败: "+err.Error())
+			if rollbackErr := swap.rollback(); rollbackErr != nil {
+				send("error", 0, fmt.Sprintf("保存配置失败: %v；恢复旧代理内核失败: %v", err, rollbackErr))
+				return
+			}
+			send("error", 0, "保存配置失败，已恢复旧代理内核: "+err.Error())
 			return
 		}
+		swap.finish()
 		send("done", 100, fmt.Sprintf("%s 已安装并启用: %s", spec.DisplayName, installedBinary))
 	} else {
+		swap.finish()
 		send("done", 100, fmt.Sprintf("%s 已下载到 %s/%s: %s", spec.DisplayName, target.GOOS, target.GOARCH, installedBinary))
 	}
 

@@ -85,7 +85,7 @@ func (a *App) AutomationScriptInvokePublicAPI(input AutomationScriptPublicAPIInv
 		req.Header.Set(authHeader, apiKey)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := automationHTTPClient.Do(req)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, fmt.Errorf("invoke public api failed: %w", ctxErr)

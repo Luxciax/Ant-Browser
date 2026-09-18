@@ -19,6 +19,14 @@ func (m *Manager) Update(profileId string, input ProfileInput) (*Profile, error)
 		log.Error("浏览器配置不存在", logger.F("profile_id", profileId))
 		return nil, fmt.Errorf("profile not found")
 	}
+	if ProfileRuntimeMutationBlocked(profile) {
+		return nil, fmt.Errorf("profile runtime is %s; stop it before changing runtime-sensitive settings", NormalizeProfileRuntimeState(profile))
+	}
+	previous := cloneProfileValue(profile)
+	userDataDir, err := m.normalizeManagedUserDataDir(input.UserDataDir, profileId)
+	if err != nil {
+		return nil, err
+	}
 	resolvedProxy, err := m.resolveProfileProxyInput(input.ProxyId, input.ProxyConfig)
 	if err != nil {
 		log.Error("代理绑定失败", logger.F("profile_id", profileId), logger.F("proxy_id", strings.TrimSpace(input.ProxyId)), logger.F("error", err.Error()))
@@ -26,10 +34,10 @@ func (m *Manager) Update(profileId string, input ProfileInput) (*Profile, error)
 	}
 
 	profile.ProfileName = input.ProfileName
-	profile.UserDataDir = input.UserDataDir
+	profile.UserDataDir = userDataDir
 	profile.CoreId = normalizeProfileCoreID(input.CoreId)
 	profile.RestoreLastSession = NormalizeRestoreLastSessionMode(input.RestoreLastSession)
-	profile.FingerprintArgs = input.FingerprintArgs
+	profile.FingerprintArgs = append([]string{}, input.FingerprintArgs...)
 	if resolvedProxy.HasSelectedProxy {
 		_ = BindProfileToProxy(profile, resolvedProxy.SelectedProxy, true)
 	} else if resolvedProxy.FallbackToDirect {
@@ -46,14 +54,15 @@ func (m *Manager) Update(profileId string, input ProfileInput) (*Profile, error)
 			logger.F("proxy_id", strings.TrimSpace(input.ProxyId)),
 		)
 	}
-	profile.LaunchArgs = input.LaunchArgs
-	profile.Tags = input.Tags
+	profile.LaunchArgs = append([]string{}, input.LaunchArgs...)
+	profile.Tags = append([]string{}, input.Tags...)
 	profile.Keywords = append([]string{}, input.Keywords...)
 	profile.GroupId = buildProfileGroupID(input.GroupId)
 	profile.UpdatedAt = time.Now().Format(time.RFC3339)
 
 	log.Info("浏览器配置更新", logger.F("profile_id", profileId), logger.F("profile_name", input.ProfileName))
 	if err := m.SaveProfiles(); err != nil {
+		*profile = previous
 		return nil, err
 	}
 	return profile, nil
@@ -70,12 +79,29 @@ func (m *Manager) SetKeywords(profileId string, keywords []string) (*Profile, er
 	if !exists {
 		return nil, fmt.Errorf("profile not found")
 	}
+	previousKeywords := append([]string{}, profile.Keywords...)
+	previousUpdatedAt := profile.UpdatedAt
 	profile.Keywords = append([]string{}, keywords...)
 	profile.UpdatedAt = time.Now().Format(time.RFC3339)
 
 	log.Info("关键字更新", logger.F("profile_id", profileId))
 	if err := m.SaveProfiles(); err != nil {
+		profile.Keywords = previousKeywords
+		profile.UpdatedAt = previousUpdatedAt
 		return nil, err
 	}
 	return profile, nil
+}
+
+func cloneProfileValue(profile *Profile) Profile {
+	if profile == nil {
+		return Profile{}
+	}
+	copyProfile := *profile
+	copyProfile.FingerprintArgs = append([]string{}, profile.FingerprintArgs...)
+	copyProfile.LaunchArgs = append([]string{}, profile.LaunchArgs...)
+	copyProfile.LastLaunchArgs = append([]string{}, profile.LastLaunchArgs...)
+	copyProfile.Tags = append([]string{}, profile.Tags...)
+	copyProfile.Keywords = append([]string{}, profile.Keywords...)
+	return copyProfile
 }

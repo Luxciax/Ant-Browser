@@ -22,7 +22,7 @@ import { fetchBrowserProxies } from '../api/proxies'
 import { ProxyPickerModal } from '../components/ProxyPickerModal'
 import { ExtensionInstallCard, ExtensionManagementHeader, InstalledExtensionsList } from './ExtensionManagementCards'
 import { DownloadDirectoryInstallModal, ExtensionHistoryModal, ExtensionProfileLimitModal, ManualInstallModal } from './ExtensionManagementModals'
-import { EXTENSION_HISTORY_LIMIT, buildChromeWebStoreQueryURL, createExtensionHistoryRecord, extensionStoreURL, isBrowserExtensionLookupQuery, loadExtensionDownloadProxyPreference, loadExtensionHistory, saveExtensionDownloadProxyPreference, saveExtensionHistory, type ExtensionHistoryRecord } from './extensionManagementUtils'
+import { EXTENSION_HISTORY_LIMIT, buildChromeWebStoreQueryURL, createExtensionHistoryRecord, extensionStoreURL, extensionUpdateHint, getExtensionUpdateSource, isBrowserExtensionLookupQuery, loadExtensionDownloadProxyPreference, loadExtensionHistory, saveExtensionDownloadProxyPreference, saveExtensionHistory, type ExtensionHistoryRecord } from './extensionManagementUtils'
 
 export function ExtensionManagementPage() {
   const [items, setItems] = useState<BrowserExtension[]>([])
@@ -363,6 +363,10 @@ export function ExtensionManagementPage() {
   }
 
   const handleUpdateExtension = async (item: BrowserExtension) => {
+    if (getExtensionUpdateSource(item) !== 'webstore') {
+      toast.warning(extensionUpdateHint(item))
+      return
+    }
     if (useProxy && !downloadProxyConfig) {
       toast.warning('请先选择可用的下载代理')
       return

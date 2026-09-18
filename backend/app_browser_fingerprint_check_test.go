@@ -64,6 +64,62 @@ func TestFingerprintCheckRuntimeProfileSnapshotMarksDebugReadyWhenPortProbes(t *
 	}
 }
 
+func TestShouldDetectExternalBrowserRuntimeOnlyWhenStopped(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile *browser.Profile
+		want    bool
+	}{
+		{name: "nil", profile: nil, want: false},
+		{name: "legacy stopped", profile: &browser.Profile{}, want: true},
+		{name: "explicit stopped", profile: &browser.Profile{RuntimeState: browser.RuntimeStopped}, want: true},
+		{name: "starting", profile: &browser.Profile{RuntimeState: browser.RuntimeStarting}, want: false},
+		{name: "running", profile: &browser.Profile{RuntimeState: browser.RuntimeRunning, Running: true}, want: false},
+		{name: "stopping", profile: &browser.Profile{RuntimeState: browser.RuntimeStopping}, want: false},
+		{name: "failed", profile: &browser.Profile{RuntimeState: browser.RuntimeFailed}, want: false},
+		{name: "legacy active", profile: &browser.Profile{Pid: 4321}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldDetectExternalBrowserRuntime(tt.profile); got != tt.want {
+				t.Fatalf("shouldDetectExternalBrowserRuntime() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFingerprintCheckDoesNotRecoverTransitionalRuntime(t *testing.T) {
+	for _, state := range []browser.ProfileRuntimeState{
+		browser.RuntimeStarting,
+		browser.RuntimeStopping,
+		browser.RuntimeFailed,
+	} {
+		t.Run(string(state), func(t *testing.T) {
+			app := NewApp(t.TempDir())
+			app.config = &config.Config{}
+			app.browserMgr = browser.NewManager(app.config, app.appRoot)
+			app.browserMgr.Profiles["profile-transition"] = &browser.Profile{
+				ProfileId:    "profile-transition",
+				RuntimeState: state,
+			}
+			detectorCalled := false
+			snapshot, err := app.fingerprintCheckRuntimeProfileSnapshot("profile-transition", func(string) (browserRuntimeDetection, bool) {
+				detectorCalled = true
+				return browserRuntimeDetection{PID: 4321, DebugPort: 9333, DebugReady: true}, true
+			}, nil)
+			if err != nil {
+				t.Fatalf("fingerprintCheckRuntimeProfileSnapshot error = %v", err)
+			}
+			if detectorCalled {
+				t.Fatalf("detector was called for transitional state %s", state)
+			}
+			if snapshot == nil || browser.NormalizeProfileRuntimeState(snapshot) != state || snapshot.Running {
+				t.Fatalf("snapshot runtime changed unexpectedly: %+v", snapshot)
+			}
+		})
+	}
+}
+
 func TestBuildBrowserFingerprintExpected(t *testing.T) {
 	expected := buildBrowserFingerprintExpected([]string{
 		"--fingerprint=12345",

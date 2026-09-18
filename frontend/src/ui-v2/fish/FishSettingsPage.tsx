@@ -104,10 +104,21 @@ export function FishSettingsPage() {
 
   const resetGeneral = async () => {
     try {
-      const next = await resetSettings()
-      setSettings(next)
+      const nextSettings = await resetSettings()
+      const [nextAutomation, nextLaunch] = await Promise.all([
+        fetchAutomationState(),
+        fetchLaunchServerSettings(),
+      ])
+      setSettings(nextSettings)
+      setTheme(nextSettings.theme as ThemeType)
+      setAutomation(nextAutomation)
+      setLaunch(nextLaunch)
+      setNodePath(nextAutomation.settings.systemNodePath || nextAutomation.status.systemNodePath || '')
+      setNodeProbe(null)
+      setRuntimeCheck(null)
+      setAutomationProgress(null)
       setResetSettingsOpen(false)
-      toast.success('已恢复默认设置')
+      toast.success('已恢复默认设置并刷新运行时状态')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '恢复默认设置失败')
     }
@@ -134,12 +145,25 @@ export function FishSettingsPage() {
     if (!automation) return
     setSaving(true)
     try {
-      let next = await saveAutomationRuntimeSettings(source || automation.settings.nodeSource, nodePath)
-      next = await saveAutomationScriptPackageSettings(automation.settings.allowTypeScriptBuild)
+      const next = await saveAutomationRuntimeSettings(source || automation.settings.nodeSource, nodePath)
       setAutomation(next)
       toast.success('运行时设置已保存')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveTypeScriptBuild = async (allowTypeScriptBuild: boolean) => {
+    if (!automation) return
+    setSaving(true)
+    try {
+      const next = await saveAutomationScriptPackageSettings(allowTypeScriptBuild)
+      setAutomation(next)
+      toast.success(allowTypeScriptBuild ? 'TypeScript 导入构建已开启' : 'TypeScript 导入构建已关闭')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '脚本包设置保存失败')
     } finally {
       setSaving(false)
     }
@@ -243,7 +267,7 @@ export function FishSettingsPage() {
             <label className="fish-field"><span>Node 来源</span><select className="fish-select" value={automation.settings.nodeSource} onChange={(event) => setAutomation({ ...automation, settings: { ...automation.settings, nodeSource: event.target.value } })}><option value="auto">自动</option><option value="system">系统 Node</option><option value="bundled">内置 Node</option></select></label>
             <label className="fish-field"><span>系统 Node 路径</span><input className="fish-input" value={nodePath} onChange={(event) => setNodePath(event.target.value)} placeholder="node.exe 或目录" /></label>
           </div>
-          <div className="fish-setting-row"><div><strong>允许 TypeScript 构建</strong><span>导入脚本包时允许 TS 编译。</span></div><FishSwitch checked={automation.settings.allowTypeScriptBuild} onChange={(value) => setAutomation({ ...automation, settings: { ...automation.settings, allowTypeScriptBuild: value } })} /></div>
+          <div className="fish-setting-row"><div><strong>允许 TypeScript 构建</strong><span>导入脚本包时允许 TS 编译。</span></div><FishSwitch checked={automation.settings.allowTypeScriptBuild} onChange={(value) => void saveTypeScriptBuild(value)} /></div>
           <div className="fish-inline-actions">
             <button className="fish-btn primary" disabled={saving} onClick={() => void saveRuntime(automation.settings.nodeSource as AutomationNodeSource)}><Save size={16} strokeWidth={1.8} />保存运行时设置</button>
             <button className="fish-btn" onClick={() => void probe()}><RefreshCw size={16} strokeWidth={1.8} />检测系统 Node</button>
@@ -301,7 +325,7 @@ export function FishSettingsPage() {
       <FishConfirm
         open={resetSettingsOpen}
         title="恢复默认设置"
-        content="将清除本地 AppSettings 并恢复默认值。"
+        content="将恢复通用设置，并重置自动化、备份渠道/本地凭据和 Launch Server；不会删除浏览器实例、代理或内核数据。"
         confirmText="恢复默认"
         danger
         onClose={() => setResetSettingsOpen(false)}

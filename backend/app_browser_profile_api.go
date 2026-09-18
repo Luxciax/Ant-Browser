@@ -19,6 +19,18 @@ type BrowserCoreValidateResult = browser.CoreValidateResult
 type BrowserCoreExtendedInfo = browser.CoreExtendedInfo
 type BrowserProfileCopyOptions = browser.ProfileCopyOptions
 
+func (a *App) snapshotManagedBrowserProfile(profile *BrowserProfile) *BrowserProfile {
+	if profile == nil {
+		return nil
+	}
+	if a == nil || a.browserMgr == nil {
+		return copyBrowserProfileSnapshot(profile)
+	}
+	a.browserMgr.Mutex.Lock()
+	defer a.browserMgr.Mutex.Unlock()
+	return copyBrowserProfileSnapshot(profile)
+}
+
 // BrowserProfileList 获取所有实例列表
 func (a *App) BrowserProfileList() []BrowserProfile {
 	if a == nil || a.browserMgr == nil {
@@ -45,48 +57,108 @@ func (a *App) BrowserGetAllTags() []string {
 
 // BrowserProfileSetKeywords 设置实例关键字
 func (a *App) BrowserProfileSetKeywords(profileId string, keywords []string) (*BrowserProfile, error) {
-	return a.browserMgr.SetKeywords(profileId, keywords)
+	a.maintenanceMu.Lock()
+	defer a.maintenanceMu.Unlock()
+	profile, err := a.browserMgr.SetKeywords(profileId, keywords)
+	if err != nil {
+		return nil, err
+	}
+	return a.snapshotManagedBrowserProfile(profile), nil
 }
 
 func (a *App) BrowserProfileCreate(input BrowserProfileInput) (*BrowserProfile, error) {
-	return a.browserMgr.Create(input)
+	a.maintenanceMu.Lock()
+	defer a.maintenanceMu.Unlock()
+	profile, err := a.browserMgr.Create(input)
+	if err != nil {
+		return nil, err
+	}
+	return a.snapshotManagedBrowserProfile(profile), nil
 }
 
 func (a *App) BrowserProfileUpdate(profileId string, input BrowserProfileInput) (*BrowserProfile, error) {
-	return a.browserMgr.Update(profileId, input)
+	a.maintenanceMu.Lock()
+	defer a.maintenanceMu.Unlock()
+	unlockRuntimeOp := a.lockProfileRuntimeOperation(profileId)
+	defer unlockRuntimeOp()
+	profile, err := a.browserMgr.Update(profileId, input)
+	if err != nil {
+		return nil, err
+	}
+	return a.snapshotManagedBrowserProfile(profile), nil
 }
 
-func (a *App) BrowserProfileDelete(profileId string) error { return a.browserMgr.Delete(profileId) }
+func (a *App) BrowserProfileDelete(profileId string) error {
+	a.maintenanceMu.Lock()
+	defer a.maintenanceMu.Unlock()
+	unlockRuntimeOp := a.lockProfileRuntimeOperation(profileId)
+	defer unlockRuntimeOp()
+	return a.browserMgr.Delete(profileId)
+}
 
 // BrowserProfileTrashList 获取回收站实例列表
 func (a *App) BrowserProfileTrashList() []BrowserProfile { return a.browserMgr.ListDeleted() }
 
 // BrowserProfileRestore 从回收站恢复实例
 func (a *App) BrowserProfileRestore(profileId string) (*BrowserProfile, error) {
-	return a.browserMgr.Restore(profileId)
+	a.maintenanceMu.Lock()
+	defer a.maintenanceMu.Unlock()
+	unlockRuntimeOp := a.lockProfileRuntimeOperation(profileId)
+	defer unlockRuntimeOp()
+	profile, err := a.browserMgr.Restore(profileId)
+	if err != nil {
+		return nil, err
+	}
+	return a.snapshotManagedBrowserProfile(profile), nil
 }
 
 // BrowserProfilePermanentlyDelete 从回收站彻底删除实例
 func (a *App) BrowserProfilePermanentlyDelete(profileId string) error {
+	a.maintenanceMu.Lock()
+	defer a.maintenanceMu.Unlock()
+	unlockRuntimeOp := a.lockProfileRuntimeOperation(profileId)
+	defer unlockRuntimeOp()
 	return a.browserMgr.PermanentlyDelete(profileId)
 }
 
 // BrowserProfileTrashCleanup 清理超过保留期的回收站实例
-func (a *App) BrowserProfileTrashCleanup() error { return a.browserMgr.CleanupExpiredTrash() }
+func (a *App) BrowserProfileTrashCleanup() error {
+	a.maintenanceMu.Lock()
+	defer a.maintenanceMu.Unlock()
+	return a.browserMgr.CleanupExpiredTrash()
+}
 
 // BrowserProfileCopy 复制实例配置（除指纹参数外全部复制）
 func (a *App) BrowserProfileCopy(profileId string, newName string) (*BrowserProfile, error) {
-	return a.browserMgr.Copy(profileId, newName)
+	a.maintenanceMu.Lock()
+	defer a.maintenanceMu.Unlock()
+	profile, err := a.browserMgr.Copy(profileId, newName)
+	if err != nil {
+		return nil, err
+	}
+	return a.snapshotManagedBrowserProfile(profile), nil
 }
 
 // BrowserProfileCopyWithMode 按模式复制实例配置。
 func (a *App) BrowserProfileCopyWithMode(profileId string, newName string, mode string) (*BrowserProfile, error) {
-	return a.browserMgr.CopyWithMode(profileId, newName, mode)
+	a.maintenanceMu.Lock()
+	defer a.maintenanceMu.Unlock()
+	profile, err := a.browserMgr.CopyWithMode(profileId, newName, mode)
+	if err != nil {
+		return nil, err
+	}
+	return a.snapshotManagedBrowserProfile(profile), nil
 }
 
 // BrowserProfileCopyWithOptions 按结构化选项复制实例配置。
 func (a *App) BrowserProfileCopyWithOptions(profileId string, newName string, options BrowserProfileCopyOptions) (*BrowserProfile, error) {
-	return a.browserMgr.CopyWithOptions(profileId, newName, options)
+	a.maintenanceMu.Lock()
+	defer a.maintenanceMu.Unlock()
+	profile, err := a.browserMgr.CopyWithOptions(profileId, newName, options)
+	if err != nil {
+		return nil, err
+	}
+	return a.snapshotManagedBrowserProfile(profile), nil
 }
 
 // migrateToSQLite 一次性迁移：若 SQLite 表为空则从旧文件导入数据，或初始化默认数据
@@ -94,20 +166,27 @@ func (a *App) BrowserProfileCopyWithOptions(profileId string, newName string, op
 func (a *App) migrateToSQLite() {
 	log := logger.New("Migration")
 
-	if cores, err := a.browserMgr.CoreDAO.List(); err == nil && len(cores) == 0 {
+	if cores, err := a.browserMgr.CoreDAO.List(); err != nil {
+		log.Error("读取内核迁移目标失败", logger.F("error", err))
+	} else if len(cores) == 0 {
 		if len(a.config.Browser.Cores) > 0 {
-			for _, c := range a.config.Browser.Cores {
-				if err := a.browserMgr.CoreDAO.Upsert(c); err != nil {
-					log.Error("内核迁移失败", logger.F("core_id", c.CoreId), logger.F("error", err))
+			if bulk, ok := a.browserMgr.CoreDAO.(interface{ UpsertAll([]browser.Core) error }); ok {
+				if err := bulk.UpsertAll(a.config.Browser.Cores); err != nil {
+					log.Error("内核迁移失败", logger.F("error", err))
+				} else {
+					log.Info("内核数据已迁移", logger.F("count", len(a.config.Browser.Cores)))
 				}
+			} else {
+				log.Error("内核迁移失败", logger.F("error", "当前 CoreDAO 不支持原子批量迁移"))
 			}
-			log.Info("内核数据已迁移", logger.F("count", len(a.config.Browser.Cores)))
 		} else {
 			log.Info("内核表为空，将通过自动检测初始化")
 		}
 	}
 
-	if proxies, err := a.browserMgr.ProxyDAO.List(); err == nil && len(proxies) == 0 {
+	if proxies, err := a.browserMgr.ProxyDAO.List(); err != nil {
+		log.Error("读取代理迁移目标失败", logger.F("error", err))
+	} else if len(proxies) == 0 {
 		var srcProxies []browser.Proxy
 		if loaded, err := config.LoadProxies(a.resolveAppPath("proxies.yaml")); err == nil && len(loaded) > 0 {
 			srcProxies = loaded
@@ -119,18 +198,18 @@ func (a *App) migrateToSQLite() {
 			}
 			log.Info("代理表为空，初始化默认代理")
 		}
-		for _, p := range srcProxies {
-			if err := a.browserMgr.ProxyDAO.Upsert(p); err != nil {
-				log.Error("代理迁移失败", logger.F("proxy_id", p.ProxyId), logger.F("error", err))
-			}
-		}
-		if len(srcProxies) > 0 {
+		if err := a.browserMgr.ProxyDAO.ReplaceAll(srcProxies); err != nil {
+			log.Error("代理迁移失败", logger.F("error", err))
+		} else if len(srcProxies) > 0 {
 			log.Info("代理数据已初始化", logger.F("count", len(srcProxies)))
 		}
 	}
 
-	if profiles, err := a.browserMgr.ProfileDAO.List(); err == nil && len(profiles) == 0 {
+	if profiles, err := a.browserMgr.ProfileDAO.List(); err != nil {
+		log.Error("读取实例迁移目标失败", logger.F("error", err))
+	} else if len(profiles) == 0 {
 		if len(a.config.Browser.Profiles) > 0 {
+			migratedProfiles := make([]*browser.Profile, 0, len(a.config.Browser.Profiles))
 			for _, pc := range a.config.Browser.Profiles {
 				coreId := strings.TrimSpace(pc.CoreId)
 				if strings.EqualFold(coreId, "default") {
@@ -141,6 +220,7 @@ func (a *App) migrateToSQLite() {
 					ProfileName:        pc.ProfileName,
 					UserDataDir:        pc.UserDataDir,
 					CoreId:             coreId,
+					RestoreLastSession: pc.RestoreLastSession,
 					FingerprintArgs:    pc.FingerprintArgs,
 					ProxyId:            pc.ProxyId,
 					ProxyConfig:        pc.ProxyConfig,
@@ -148,17 +228,25 @@ func (a *App) migrateToSQLite() {
 					ProxyBindSourceURL: pc.ProxyBindSourceURL,
 					ProxyBindName:      pc.ProxyBindName,
 					ProxyBindUpdatedAt: pc.ProxyBindUpdatedAt,
+					MemoryLimitMB:      pc.MemoryLimitMB,
 					LaunchArgs:         pc.LaunchArgs,
 					Tags:               pc.Tags,
 					Keywords:           pc.Keywords,
+					RuntimeState:       browser.RuntimeStopped,
 					CreatedAt:          pc.CreatedAt,
 					UpdatedAt:          pc.UpdatedAt,
 				}
-				if err := a.browserMgr.ProfileDAO.Upsert(p); err != nil {
-					log.Error("实例迁移失败", logger.F("profile_id", pc.ProfileId), logger.F("error", err))
-				}
+				migratedProfiles = append(migratedProfiles, p)
 			}
-			log.Info("实例数据已迁移", logger.F("count", len(a.config.Browser.Profiles)))
+			if bulk, ok := a.browserMgr.ProfileDAO.(interface{ UpsertAll([]*browser.Profile) error }); ok {
+				if err := bulk.UpsertAll(migratedProfiles); err != nil {
+					log.Error("实例迁移失败", logger.F("error", err))
+				} else {
+					log.Info("实例数据已迁移", logger.F("count", len(migratedProfiles)))
+				}
+			} else {
+				log.Error("实例迁移失败", logger.F("error", "当前 ProfileDAO 不支持原子批量迁移"))
+			}
 		} else {
 			log.Info("实例表为空，自动创建默认实例")
 			defaultProfile := &browser.Profile{
@@ -171,6 +259,7 @@ func (a *App) migrateToSQLite() {
 				Tags:            []string{"默认"},
 				ProxyId:         "__direct__",
 				ProxyConfig:     "direct://",
+				RuntimeState:    browser.RuntimeStopped,
 				CreatedAt:       time.Now().Format(time.RFC3339),
 				UpdatedAt:       time.Now().Format(time.RFC3339),
 			}

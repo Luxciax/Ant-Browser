@@ -126,7 +126,6 @@ func (a *App) backupRepairExtensionPathRecord(tx *sql.Tx, record backupExtension
 
 	managedRoot := a.resolveAppPath(backupManagedExtensionsRoot)
 	installDir := filepath.Join(managedRoot, extensionID)
-	packagePath := filepath.Join(managedRoot, "packages", extensionID+".crx")
 
 	newInstallDir := strings.TrimSpace(record.installDir)
 	newPackagePath := strings.TrimSpace(record.packagePath)
@@ -149,7 +148,8 @@ func (a *App) backupRepairExtensionPathRecord(tx *sql.Tx, record backupExtension
 	}
 
 	if newPackagePath != "" {
-		if backupExtensionRegularFileExists(packagePath) {
+		packagePath, recognized := backupMapManagedExtensionPackagePath(a, newPackagePath, extensionID)
+		if recognized && backupExtensionRegularFileExists(packagePath) {
 			if !backupValidCRXFile(packagePath) {
 				if newPackagePath != "" || newPackageHash != "" {
 					newPackagePath = ""
@@ -168,7 +168,7 @@ func (a *App) backupRepairExtensionPathRecord(tx *sql.Tx, record backupExtension
 					changed = true
 				}
 			}
-		} else if backupPathHasSuffix(newPackagePath, filepath.ToSlash(filepath.Join(backupManagedExtensionsRoot, "packages", extensionID+".crx"))) {
+		} else if recognized {
 			newPackagePath = ""
 			newPackageHash = ""
 			changed = true
@@ -191,6 +191,37 @@ func (a *App) backupRepairExtensionPathRecord(tx *sql.Tx, record backupExtension
 		return fmt.Errorf("更新插件迁移路径失败(%s): %w", extensionID, err)
 	}
 	return nil
+}
+
+func backupMapManagedExtensionPackagePath(a *App, oldPath string, extensionID string) (string, bool) {
+	oldPath = strings.TrimSpace(oldPath)
+	extensionID = browser.NormalizeExtensionID(extensionID)
+	if a == nil || oldPath == "" || extensionID == "" {
+		return "", false
+	}
+
+	normalized := strings.TrimRight(strings.ReplaceAll(oldPath, "\\", "/"), "/")
+	lowerNormalized := strings.ToLower(normalized)
+	marker := strings.ToLower(filepath.ToSlash(filepath.Join(backupManagedExtensionsRoot, "packages"))) + "/"
+	markerIndex := backupFindPathMarker(lowerNormalized, marker)
+	if markerIndex < 0 {
+		return "", false
+	}
+	suffix := normalized[markerIndex+len(marker):]
+	if !backupSafeRelativePathSuffix(suffix) {
+		return "", false
+	}
+	cleanSuffix := filepath.Clean(filepath.FromSlash(suffix))
+	legacyName := extensionID + ".crx"
+	firstSegment := cleanSuffix
+	if separatorIndex := strings.IndexRune(cleanSuffix, filepath.Separator); separatorIndex >= 0 {
+		firstSegment = cleanSuffix[:separatorIndex]
+	}
+	if !strings.EqualFold(cleanSuffix, legacyName) && !strings.EqualFold(firstSegment, extensionID) {
+		return "", false
+	}
+	packageRoot := a.resolveAppPath(filepath.Join(backupManagedExtensionsRoot, "packages"))
+	return filepath.Join(packageRoot, cleanSuffix), true
 }
 
 func (a *App) backupRepairProfileExtensionRuntimePath(tx *sql.Tx, record backupProfileExtensionRuntimePathRecord) error {

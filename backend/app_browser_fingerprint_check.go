@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/logger"
 	"encoding/json"
 	"fmt"
@@ -78,7 +79,7 @@ func (a *App) BrowserProfileFingerprintCheck(profileId string) (*BrowserFingerpr
 	if err != nil {
 		return nil, err
 	}
-	if !profile.Running || !profile.DebugReady || profile.DebugPort <= 0 {
+	if browser.NormalizeProfileRuntimeState(profile) != browser.RuntimeRunning || !profile.DebugReady || profile.DebugPort <= 0 {
 		return nil, fmt.Errorf("实例未处于可自测状态，请先启动实例并等待调试端口就绪")
 	}
 	if err := probeBrowserDebugPort(profile.DebugPort, browserDebugProbeTimeout); err != nil {
@@ -119,7 +120,7 @@ func (a *App) fingerprintCheckRuntimeProfileSnapshot(profileId string, detector 
 		return nil, fmt.Errorf("实例不存在: %s", profileId)
 	}
 	a.ensureProfileLaunchCode(profile)
-	if !profile.Running {
+	if shouldDetectExternalBrowserRuntime(profile) {
 		userDataDir := a.browserMgr.ResolveUserDataDir(profile)
 		if detection, ok := detector(userDataDir); ok && detection.DebugReady {
 			a.markProfileRunningLocked(profileId, profile, nil, detection.PID, detection.DebugPort, true, "")
@@ -132,7 +133,7 @@ func (a *App) fingerprintCheckRuntimeProfileSnapshot(profileId string, detector 
 		}
 	}
 	probeDebugPort := 0
-	if profile.Running && !profile.DebugReady && profile.DebugPort > 0 {
+	if browser.NormalizeProfileRuntimeState(profile) == browser.RuntimeRunning && profile.Running && !profile.DebugReady && profile.DebugPort > 0 {
 		probeDebugPort = profile.DebugPort
 	}
 	snapshot := copyBrowserProfileSnapshot(profile)
@@ -146,7 +147,7 @@ func (a *App) fingerprintCheckRuntimeProfileSnapshot(profileId string, detector 
 			a.browserMgr.Mutex.Unlock()
 			return nil, fmt.Errorf("实例不存在: %s", profileId)
 		}
-		if profile != nil && profile.Running && profile.DebugPort == probeDebugPort && !profile.DebugReady {
+		if profile != nil && browser.NormalizeProfileRuntimeState(profile) == browser.RuntimeRunning && profile.Running && profile.DebugPort == probeDebugPort && !profile.DebugReady {
 			a.markProfileDebugReadyLocked(profile, probeDebugPort)
 			debugReadyChanged = true
 			logger.New("Browser").Warn("指纹自测前发现调试端口已就绪，已同步实例调试状态",

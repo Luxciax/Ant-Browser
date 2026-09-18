@@ -57,6 +57,7 @@ func nextAvailablePort() (int, error) {
 
 func (a *App) ensureDefaultCores() {
 	log := logger.New("Browser")
+	previousCores := append([]browser.Core(nil), a.config.Browser.Cores...)
 
 	// 扫描 chrome/ 目录，无论配置是否已有内核都执行一次，确保新增子目录被发现
 	detected := a.scanChromeDir(a.browserCoreRoot())
@@ -69,6 +70,7 @@ func (a *App) ensureDefaultCores() {
 			a.config.Browser.Cores = []browser.Core{}
 		}
 		if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {
+			a.config.Browser.Cores = previousCores
 			log.Error("内核配置初始化失败", logger.F("error", err))
 			return
 		}
@@ -94,6 +96,7 @@ func (a *App) ensureDefaultCores() {
 	}
 	if changed {
 		if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {
+			a.config.Browser.Cores = previousCores
 			log.Error("新内核注册保存失败", logger.F("error", err))
 		}
 	}

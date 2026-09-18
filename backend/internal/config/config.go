@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -32,6 +33,34 @@ type LaunchServerAuthConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	APIKey  string `yaml:"api_key"`
 	Header  string `yaml:"header"`
+}
+
+type ValidationError struct {
+	Field   string
+	Message string
+}
+
+func (e *ValidationError) Error() string {
+	if e == nil {
+		return "invalid config"
+	}
+	if strings.TrimSpace(e.Field) == "" {
+		return e.Message
+	}
+	return fmt.Sprintf("%s: %s", e.Field, e.Message)
+}
+
+func (c *Config) Validate() error {
+	if c == nil {
+		return &ValidationError{Message: "config is nil"}
+	}
+	if c.LaunchServer.Auth.Enabled && strings.TrimSpace(c.LaunchServer.Auth.APIKey) == "" {
+		return &ValidationError{
+			Field:   "launch_server.auth.api_key",
+			Message: "must not be empty when launch server auth is enabled",
+		}
+	}
+	return nil
 }
 
 type AutomationConfig struct {

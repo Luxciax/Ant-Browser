@@ -1,6 +1,8 @@
 package launchcode
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -102,6 +104,29 @@ func (s *LaunchServer) deleteCreatedProfile(profileID string) error {
 
 func (s *LaunchServer) deleteProfileInternal(profileID string) error {
 	return s.deleteCreatedProfile(profileID)
+}
+
+func (s *LaunchServer) deleteProfileWithLaunchCode(profileID string, snapshot *browser.Profile) error {
+	oldCode := ""
+	if snapshot != nil {
+		oldCode = strings.TrimSpace(snapshot.LaunchCode)
+	}
+	removedLaunchCode := false
+	if s.service != nil && oldCode != "" {
+		if err := s.service.Remove(profileID); err != nil {
+			return fmt.Errorf("删除 LaunchCode 失败: %w", err)
+		}
+		removedLaunchCode = true
+	}
+	if err := s.deleteProfileInternal(profileID); err != nil {
+		if removedLaunchCode {
+			if _, restoreErr := s.service.SetCode(profileID, oldCode); restoreErr != nil {
+				return errors.Join(err, fmt.Errorf("恢复 LaunchCode 失败: %w", restoreErr))
+			}
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *LaunchServer) rollbackProfileUpdate(profileID string, previous *browser.Profile) error {

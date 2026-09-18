@@ -119,10 +119,10 @@ func (s *LaunchServer) DeleteProfile(profileID string) error {
 	if err := serviceErrorFrom(status, errMsg); err != nil {
 		return err
 	}
-	if snapshot != nil && snapshot.Running {
+	if snapshot != nil && browser.ProfileRuntimeMutationBlocked(snapshot) {
 		return newServiceError(http.StatusConflict, "running profile cannot be deleted")
 	}
-	if err := s.deleteProfileInternal(profileID); err != nil {
+	if err := s.deleteProfileWithLaunchCode(profileID, snapshot); err != nil {
 		return newServiceError(mapProfileWriteErrorStatus(err), err.Error())
 	}
 	return nil

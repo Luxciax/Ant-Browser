@@ -303,7 +303,18 @@ function Build-WindowsBinary {
         Push-Location (Join-Path $repoRoot "frontend")
         try {
             Write-Host "[Windows] 预检前端依赖..."
-            Invoke-NativeCommand -FilePath "npm" -Arguments @("ci", "--prefer-offline", "--no-audit", "--no-fund")
+            # npm 12 rejects lockfile tarball URLs whose host differs from the
+            # configured registry. This repository still contains historical
+            # npmmirror resolved URLs, so rewrite lockfile registry hosts to the
+            # currently configured registry for this clean install instead of
+            # relaxing npm's remote-URL policy.
+            Invoke-NativeCommand -FilePath "npm" -Arguments @(
+                "ci",
+                "--prefer-offline",
+                "--no-audit",
+                "--no-fund",
+                "--replace-registry-host=always"
+            )
             Invoke-NativeCommand -FilePath "npm" -Arguments @("run", "ensure:native")
             Write-Host "✓ 前端依赖已就绪"
             Write-Host ""

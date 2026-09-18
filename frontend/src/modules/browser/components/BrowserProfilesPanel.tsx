@@ -8,6 +8,7 @@ import type { TableColumn } from '../../../shared/components/Table'
 
 import type { BrowserCore, BrowserProfile, BrowserProxy, ProxySpeedTestResult } from '../types'
 import { browserProxyTestSpeed, testProxyConnectivity } from '../api'
+import { isBrowserRuntimeStoppable, normalizeBrowserRuntimeState } from '../utils/runtimeState'
 import type { BrowserViewMode } from './BrowserListLayout'
 import { KeywordInlineRow, LaunchCodeCell } from './BrowserListWidgets'
 
@@ -359,7 +360,10 @@ function BrowserProfileCard({
   onOpenProxyPicker: (profile: BrowserProfile) => void
   onDelete: (profileId: string) => void
 }) {
-  const markerCode = profile.running ? (profile.windowMarkerCode || '').trim().toUpperCase() : ''
+  const runtimeState = normalizeBrowserRuntimeState(profile)
+  const runtimeRunning = runtimeState === 'running'
+  const runtimeStoppable = isBrowserRuntimeStoppable(profile)
+  const markerCode = runtimeRunning ? (profile.windowMarkerCode || '').trim().toUpperCase() : ''
 
   return (
     <div
@@ -394,7 +398,7 @@ function BrowserProfileCard({
         </div>
 
         <div className="flex items-center gap-1 flex-wrap">
-          {profile.running ? (
+          {runtimeStoppable ? (
             <Button size="sm" variant="secondary" onClick={() => onStop(profile.profileId)} title={isStopping ? '停止中' : '停止'} loading={isStopping}>
               {!isStopping && <Square className="w-4 h-4 mr-1.5" />}
               {isStopping ? '停止中' : '停止'}
@@ -537,7 +541,7 @@ export function BrowserProfilesPanel({
       width: 100,
       render: (_, record) => {
         const status = getProfileStatus(record)
-        const markerCode = record.running ? (record.windowMarkerCode || '').trim().toUpperCase() : ''
+        const markerCode = normalizeBrowserRuntimeState(record) === 'running' ? (record.windowMarkerCode || '').trim().toUpperCase() : ''
         return (
           <div className="flex items-center gap-1.5">
             <ProfileStatusIndicator status={status} />
@@ -586,10 +590,12 @@ export function BrowserProfilesPanel({
         const isStopping = isProfileStopping(record.profileId)
         const isBusy = isProfileBusy(record.profileId)
         const isMoreOpen = openMoreProfileId === record.profileId
+        const runtimeState = normalizeBrowserRuntimeState(record)
+        const canStop = runtimeState === 'running' || runtimeState === 'stopping'
 
         return (
           <div className="flex justify-end gap-1.5 whitespace-nowrap">
-            {record.running ? (
+            {canStop ? (
               <Button size="sm" variant="secondary" onClick={() => onStop(record.profileId)} title="停止" loading={isStopping}>
                 {!isStopping && <Square className="w-3.5 h-3.5" />}
               </Button>

@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/browser"
 	"fmt"
 	"os"
 	"os/exec"
@@ -55,14 +56,94 @@ func browserInstanceEventPayload(profile *BrowserProfile, reused bool) map[strin
 	return map[string]interface{}{
 		"profileId":        profile.ProfileId,
 		"profileName":      profile.ProfileName,
+		"runtimeState":     browser.NormalizeProfileRuntimeState(profile),
 		"debugPort":        profile.DebugPort,
 		"debugReady":       profile.DebugReady,
 		"pid":              profile.Pid,
 		"reused":           reused,
 		"running":          profile.Running,
 		"runtimeWarning":   profile.RuntimeWarning,
+		"lastError":        profile.LastError,
 		"windowMarkerCode": profile.WindowMarkerCode,
 	}
+}
+
+func (a *App) markProfileStartingLocked(profile *BrowserProfile) {
+	if profile == nil {
+		return
+	}
+	profile.RuntimeState = browser.RuntimeStarting
+	profile.Running = false
+	profile.DebugReady = false
+	profile.Pid = 0
+	profile.DebugPort = 0
+	profile.RuntimeWarning = ""
+	profile.LastError = ""
+}
+
+func (a *App) markProfileStoppingLocked(profile *BrowserProfile) {
+	if profile == nil {
+		return
+	}
+	profile.RuntimeState = browser.RuntimeStopping
+}
+
+func (a *App) markProfileFailedLocked(profileId string, profile *BrowserProfile, err error) {
+	if profile == nil {
+		return
+	}
+	delete(a.browserProcessMonitors, profileId)
+	a.stopProfileWindowMarker(profileId)
+	profile.WindowMarkerCode = ""
+	profile.RuntimeState = browser.RuntimeFailed
+	profile.Running = false
+	profile.DebugReady = false
+	profile.Pid = 0
+	profile.DebugPort = 0
+	profile.RuntimeWarning = ""
+	if err != nil {
+		profile.LastError = err.Error()
+	}
+	delete(a.browserMgr.BrowserProcesses, profileId)
+	a.clearDeferredStartTargets(profileId)
+	a.releaseProfileProxyBridge(profileId)
+	if a.launchServer != nil {
+		a.launchServer.ClearActiveProfile(profileId)
+	}
+}
+
+func (a *App) markProfileStartFailed(profileId string, profile *BrowserProfile, err error) *BrowserProfile {
+	if a == nil || a.browserMgr == nil || profile == nil {
+		return profile
+	}
+	a.browserMgr.Mutex.Lock()
+	a.markProfileFailedLocked(profileId, profile, err)
+	snapshot := copyBrowserProfileSnapshot(profile)
+	a.browserMgr.Mutex.Unlock()
+	if snapshot != nil {
+		a.emitRuntimeEvent("browser:instance:failed", browserInstanceEventPayload(snapshot, false))
+	}
+	return profile
+}
+
+func (a *App) markProfileStopFailed(profileId string, err error) *BrowserProfile {
+	if a == nil || a.browserMgr == nil {
+		return nil
+	}
+	a.browserMgr.Mutex.Lock()
+	profile := a.browserMgr.Profiles[profileId]
+	if profile != nil {
+		profile.RuntimeState = browser.RuntimeFailed
+		if err != nil {
+			profile.LastError = err.Error()
+		}
+	}
+	snapshot := copyBrowserProfileSnapshot(profile)
+	a.browserMgr.Mutex.Unlock()
+	if snapshot != nil {
+		a.emitRuntimeEvent("browser:instance:failed", browserInstanceEventPayload(snapshot, false))
+	}
+	return snapshot
 }
 
 func (a *App) emitBrowserInstanceStarted(profile *BrowserProfile, reused bool) {
@@ -87,6 +168,7 @@ func (a *App) markProfileRunningLocked(profileId string, profile *BrowserProfile
 		a.browserProcessMonitors = make(map[string]*browserProcessMonitor)
 	}
 	delete(a.browserProcessMonitors, profileId)
+	profile.RuntimeState = browser.RuntimeRunning
 	profile.Running = true
 	profile.DebugPort = debugPort
 	profile.DebugReady = debugReady

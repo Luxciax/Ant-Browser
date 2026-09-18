@@ -1,8 +1,9 @@
 import { browserProxyWarmupBridgeWithConfig } from '../api'
 import type { BrowserProfile } from '../types'
+import { isBrowserRuntimeConfigLocked } from './runtimeState'
 
 export async function warmupProfileProxyBeforeStart(profile: BrowserProfile | null | undefined): Promise<void> {
-  if (!profile || profile.running || (!profile.proxyId && !profile.proxyConfig)) {
+  if (!profile || isBrowserRuntimeConfigLocked(profile) || (!profile.proxyId && !profile.proxyConfig)) {
     return
   }
   try {

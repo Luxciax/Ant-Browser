@@ -11,6 +11,7 @@ export async function startBrowserInstance(profileId: string): Promise<BrowserPr
     item.profileId === profileId
       ? {
           ...item,
+          runtimeState: 'running',
           running: true,
           debugPort: 9222,
           debugReady: true,
@@ -62,7 +63,7 @@ export async function stopBrowserInstance(profileId: string): Promise<BrowserPro
 
   const nextProfiles = getMockProfiles().map((item) =>
     item.profileId === profileId
-      ? { ...item, running: false, debugReady: false, debugPort: 0, pid: 0, runtimeWarning: '', lastStopAt: nowISOString() }
+      ? { ...item, runtimeState: 'stopped', running: false, debugReady: false, debugPort: 0, pid: 0, runtimeWarning: '', lastStopAt: nowISOString() }
       : item,
   )
   setMockProfiles(nextProfiles)
@@ -91,10 +92,7 @@ export async function fetchBrowserTabs(profileId: string): Promise<BrowserTab[]>
   if (bindings?.BrowserInstanceGetTabs) {
     return (await bindings.BrowserInstanceGetTabs(profileId)) || []
   }
-  return [
-    { tabId: 'tab-1', title: '新标签页', url: 'about:blank', active: true },
-    { tabId: 'tab-2', title: '示例站点', url: 'https://example.com', active: false },
-  ]
+  return []
 }
 
 export async function openUserDataDir(userDataDir: string): Promise<boolean> {

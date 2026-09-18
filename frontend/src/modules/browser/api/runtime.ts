@@ -1,13 +1,21 @@
 ﻿import type { BrowserCore, BrowserProfile, BrowserProxy, BrowserSettings } from '../types'
 
 export async function getBindings() {
+  const devMode = Boolean((import.meta as any).env?.DEV)
   if (!(globalThis as any).go?.main?.App) {
-    return null
+    if (devMode) {
+      return null
+    }
+    throw new Error('Wails runtime binding unavailable')
   }
   try {
     return await import('../../../wailsjs/go/main/App')
-  } catch {
-    return null
+  } catch (error) {
+    if (devMode) {
+      return null
+    }
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(`Failed to load Wails bindings: ${reason}`)
   }
 }
 
@@ -46,6 +54,7 @@ let mockProfiles: BrowserProfile[] = [
     launchArgs: ['--disable-features=Translate'],
     tags: ['默认'],
     keywords: [],
+    runtimeState: 'stopped',
     running: false,
     debugPort: 0,
     debugReady: false,

@@ -10,26 +10,34 @@ const directProxyID = "__direct__"
 // ApplyDefaults 应用默认配置
 func (m *Manager) ApplyDefaults(profile *Profile) bool {
 	log := logger.New("Browser")
+	changed := false
 	if profile.FingerprintArgs == nil || len(profile.FingerprintArgs) == 0 {
 		profile.FingerprintArgs = append([]string{}, m.Config.Browser.DefaultFingerprintArgs...)
+		changed = true
 	}
 	if profile.LaunchArgs == nil || len(profile.LaunchArgs) == 0 {
 		profile.LaunchArgs = append([]string{}, m.Config.Browser.DefaultLaunchArgs...)
+		changed = true
 	}
 	if strings.TrimSpace(profile.UserDataDir) == "" {
 		profile.UserDataDir = profile.ProfileId
+		changed = true
 	}
-	profile.CoreId = normalizeProfileCoreID(profile.CoreId)
+	normalizedCoreID := normalizeProfileCoreID(profile.CoreId)
+	if profile.CoreId != normalizedCoreID {
+		profile.CoreId = normalizedCoreID
+		changed = true
+	}
 	if profile.CoreId == "" {
 		if defaultCore, ok := m.GetDefaultCore(); ok {
 			profile.CoreId = defaultCore.CoreId
+			changed = true
 		}
 	}
 
-	proxyChanged := false
 	bindChanged, boundInPool, bindMode := m.ResolveProfileProxyBinding(profile)
 	if bindChanged {
-		proxyChanged = true
+		changed = true
 	}
 	if bindMode != "" && bindMode != "proxy_id" {
 		log.Info("实例代理自动重关联",
@@ -42,11 +50,11 @@ func (m *Manager) ApplyDefaults(profile *Profile) bool {
 	if strings.TrimSpace(profile.ProxyId) == "" {
 		if proxy, ok := m.resolvePoolProxyByConfig(profile.ProxyConfig); ok {
 			if BindProfileToProxy(profile, proxy, true) {
-				proxyChanged = true
+				changed = true
 			}
 			boundInPool = true
 		} else if strings.TrimSpace(profile.ProxyConfig) == "" && m.bindProfileToDirectProxy(profile) {
-			proxyChanged = true
+			changed = true
 			boundInPool = true
 		}
 	}
@@ -55,16 +63,16 @@ func (m *Manager) ApplyDefaults(profile *Profile) bool {
 		missingProxyID := profile.ProxyId
 		if strings.TrimSpace(profile.ProxyConfig) != "" {
 			profile.ProxyId = ""
-			proxyChanged = true
+			changed = true
 			if ClearProfileProxyBinding(profile) {
-				proxyChanged = true
+				changed = true
 			}
 			log.Warn("实例代理ID未找到，已改为使用实例代理配置",
 				logger.F("profile_id", profile.ProfileId),
 				logger.F("missing_proxy_id", missingProxyID),
 			)
 		} else if m.bindProfileToDirectProxy(profile) {
-			proxyChanged = true
+			changed = true
 			log.Warn("实例代理未找到，已回退到直连",
 				logger.F("profile_id", profile.ProfileId),
 				logger.F("missing_proxy_id", missingProxyID),
@@ -72,7 +80,7 @@ func (m *Manager) ApplyDefaults(profile *Profile) bool {
 		}
 	}
 
-	return proxyChanged
+	return changed
 }
 
 func (m *Manager) bindProfileToDirectProxy(profile *Profile) bool {

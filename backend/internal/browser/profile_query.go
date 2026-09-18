@@ -15,6 +15,7 @@ func (m *Manager) List() []Profile {
 	list := make([]Profile, 0, len(m.Profiles))
 	for _, profile := range m.Profiles {
 		p := *profile
+		p.RuntimeState = NormalizeProfileRuntimeState(&p)
 		if m.CodeProvider != nil {
 			if code, err := m.CodeProvider.EnsureCode(p.ProfileId); err == nil {
 				p.LaunchCode = code

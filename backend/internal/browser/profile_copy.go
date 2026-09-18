@@ -100,8 +100,10 @@ func (m *Manager) copyProfile(profileId string, newName string, fingerprintResol
 		Tags:               append([]string{}, src.Tags...),
 		Keywords:           append([]string{}, src.Keywords...),
 		GroupId:            src.GroupId,
+		RuntimeState:       RuntimeStopped,
 		Running:            false,
 		DebugPort:          0,
+		DebugReady:         false,
 		Pid:                0,
 		LastError:          "",
 		CreatedAt:          nowText,
@@ -112,6 +114,7 @@ func (m *Manager) copyProfile(profileId string, newName string, fingerprintResol
 	log.Info("实例复制成功", logger.F("src_id", profileId), logger.F("new_id", newId), logger.F("new_name", profileName))
 
 	if err := m.SaveProfiles(); err != nil {
+		delete(m.Profiles, newId)
 		return nil, err
 	}
 

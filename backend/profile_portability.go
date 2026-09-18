@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/fsutil"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -220,12 +221,7 @@ func rewriteProfileLocalStateEncryptedKey(userDataDir string, encryptedKey strin
 	if err != nil {
 		return fmt.Errorf("stat browser Local State: %w", err)
 	}
-	tmp := path + ".portable-login.tmp"
-	if err := os.WriteFile(tmp, updated, info.Mode().Perm()); err != nil {
-		return fmt.Errorf("write browser Local State staging file: %w", err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
+	if err := fsutil.AtomicWriteFile(path, updated, info.Mode().Perm()); err != nil {
 		return fmt.Errorf("replace browser Local State: %w", err)
 	}
 	return nil

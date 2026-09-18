@@ -13,11 +13,13 @@ func (a *App) SaveAutomationSettings(enabled bool, headlessDefault bool) (map[st
 		return nil, fmt.Errorf("automation config is not initialized")
 	}
 
+	previous := a.config.Automation
 	a.config.Automation.Enabled = enabled
 	a.config.Automation.HeadlessDefault = headlessDefault
 	applyAutomationConfigDefaults(&a.config.Automation)
 
 	if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {
+		a.config.Automation = previous
 		logger.New("Automation").Error("自动化配置保存失败", logger.F("error", err.Error()))
 		return nil, err
 	}
@@ -38,11 +40,13 @@ func (a *App) SaveAutomationRuntimeSettings(nodeSource string, systemNodePath st
 		return nil, fmt.Errorf("automation config is not initialized")
 	}
 
+	previous := a.config.Automation
 	a.config.Automation.NodeSource = normalizeAutomationNodeSourceInput(nodeSource)
 	a.config.Automation.SystemNodePath = strings.TrimSpace(systemNodePath)
 	applyAutomationConfigDefaults(&a.config.Automation)
 
 	if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {
+		a.config.Automation = previous
 		logger.New("Automation").Error("自动化运行时策略保存失败", logger.F("error", err.Error()))
 		return nil, err
 	}
@@ -62,10 +66,12 @@ func (a *App) SaveAutomationScriptPackageSettings(allowTypeScriptBuild bool) (ma
 		return nil, fmt.Errorf("automation config is not initialized")
 	}
 
+	previous := a.config.Automation
 	a.config.Automation.AllowTypeScriptBuild = allowTypeScriptBuild
 	applyAutomationConfigDefaults(&a.config.Automation)
 
 	if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {
+		a.config.Automation = previous
 		logger.New("Automation").Error("自动化脚本包配置保存失败", logger.F("error", err.Error()))
 		return nil, err
 	}

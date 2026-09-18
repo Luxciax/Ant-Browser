@@ -1,9 +1,9 @@
 package config
 
 import (
+	"ant-chrome/backend/internal/fsutil"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -25,6 +25,9 @@ func Load(configPath string) (*Config, error) {
 	}
 
 	normalizeConfig(&config)
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
 
 	return &config, nil
 }
@@ -45,6 +48,9 @@ func MigrateLegacyConfig(config *Config) bool {
 
 // Save 保存配置到文件
 func (c *Config) Save(configPath string) error {
+	if err := c.Validate(); err != nil {
+		return err
+	}
 	safeConfig := *c
 	safeConfig.Backup = sanitizeBackupConfig(c.Backup)
 	data, err := yaml.Marshal(&safeConfig)
@@ -52,10 +58,7 @@ func (c *Config) Save(configPath string) error {
 		return fmt.Errorf("序列化配置失败: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		return fmt.Errorf("创建配置目录失败: %w", err)
-	}
-	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+	if err := fsutil.AtomicWriteFile(configPath, data, 0o644); err != nil {
 		return fmt.Errorf("写入配置文件失败: %w", err)
 	}
 
@@ -96,10 +99,7 @@ func SaveProxies(path string, proxies []BrowserProxy) error {
 	if err != nil {
 		return fmt.Errorf("序列化代理数据失败: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("创建代理目录失败: %w", err)
-	}
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := fsutil.AtomicWriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("写入代理文件失败: %w", err)
 	}
 	return nil

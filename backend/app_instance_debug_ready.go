@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -16,13 +17,26 @@ const browserStartStableWindow = 1200 * time.Millisecond
 var errBrowserDebugPortPending = errors.New("browser debug port pending")
 
 func waitBrowserDebugPortReady(initialDebugPort int, userDataDir string, timeout time.Duration, monitor *browserProcessMonitor) (int, error) {
+	return waitBrowserDebugPortReadyContext(context.Background(), initialDebugPort, userDataDir, timeout, monitor)
+}
+
+func waitBrowserDebugPortReadyContext(ctx context.Context, initialDebugPort int, userDataDir string, timeout time.Duration, monitor *browserProcessMonitor) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	deadline := time.Now().Add(timeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
 	allowDetachedGrace := initialDebugPort > 0
 	var lastErr error
 	var exitResult browserProcessExitResult
 	exitObserved := false
 
 	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
 		debugPort, resolveErr := resolveBrowserDebugPort(initialDebugPort, userDataDir, monitor)
 		if resolveErr == nil {
 			if err := probeBrowserDebugPort(debugPort, browserDebugProbeTimeout); err == nil {
@@ -41,12 +55,20 @@ func waitBrowserDebugPortReady(initialDebugPort int, userDataDir string, timeout
 					return 0, newBrowserStartupExitError(exitResult)
 				}
 				exitDeadline := time.Now().Add(browserLauncherDetachGraceWindow)
+				if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(exitDeadline) {
+					exitDeadline = ctxDeadline
+				}
 				if exitDeadline.After(deadline) {
 					deadline = exitDeadline
 				}
 			}
 		}
-		time.Sleep(150 * time.Millisecond)
+		if !sleepWithContext(ctx, 150*time.Millisecond) {
+			return 0, ctx.Err()
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
 	}
 	if !exitObserved && monitor != nil && monitor.HasExited() {
 		exitResult = monitor.Result()
@@ -55,13 +77,21 @@ func waitBrowserDebugPortReady(initialDebugPort int, userDataDir string, timeout
 			return 0, newBrowserStartupExitError(exitResult)
 		}
 		postExitDeadline := time.Now().Add(browserLauncherDetachGraceWindow)
+		if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(postExitDeadline) {
+			postExitDeadline = ctxDeadline
+		}
 		for time.Now().Before(postExitDeadline) {
+			if err := ctx.Err(); err != nil {
+				return 0, err
+			}
 			if debugPort, resolveErr := resolveBrowserDebugPort(initialDebugPort, userDataDir, monitor); resolveErr == nil {
 				if err := probeBrowserDebugPort(debugPort, browserDebugProbeTimeout); err == nil {
 					return debugPort, nil
 				}
 			}
-			time.Sleep(150 * time.Millisecond)
+			if !sleepWithContext(ctx, 150*time.Millisecond) {
+				return 0, ctx.Err()
+			}
 		}
 	}
 	if exitObserved {
@@ -87,7 +117,11 @@ func waitBrowserDebugPortReady(initialDebugPort int, userDataDir string, timeout
 }
 
 func waitBrowserDebugPortStable(initialDebugPort int, userDataDir string, timeout time.Duration, stableFor time.Duration, monitor *browserProcessMonitor) (int, error) {
-	debugPort, err := waitBrowserDebugPortReady(initialDebugPort, userDataDir, timeout, monitor)
+	return waitBrowserDebugPortStableContext(context.Background(), initialDebugPort, userDataDir, timeout, stableFor, monitor)
+}
+
+func waitBrowserDebugPortStableContext(ctx context.Context, initialDebugPort int, userDataDir string, timeout time.Duration, stableFor time.Duration, monitor *browserProcessMonitor) (int, error) {
+	debugPort, err := waitBrowserDebugPortReadyContext(ctx, initialDebugPort, userDataDir, timeout, monitor)
 	if err != nil {
 		return 0, err
 	}
@@ -95,14 +129,27 @@ func waitBrowserDebugPortStable(initialDebugPort int, userDataDir string, timeou
 		return debugPort, nil
 	}
 	allowDetachedGrace := initialDebugPort > 0
-	return stabilizeBrowserDebugPort(debugPort, stableFor, allowDetachedGrace, monitor, probeBrowserDebugPort)
+	return stabilizeBrowserDebugPortContext(ctx, debugPort, stableFor, allowDetachedGrace, monitor, probeBrowserDebugPort)
 }
 
 func stabilizeBrowserDebugPort(debugPort int, stableFor time.Duration, allowDetachedGrace bool, monitor *browserProcessMonitor, probe func(int, time.Duration) error) (int, error) {
+	return stabilizeBrowserDebugPortContext(context.Background(), debugPort, stableFor, allowDetachedGrace, monitor, probe)
+}
+
+func stabilizeBrowserDebugPortContext(ctx context.Context, debugPort int, stableFor time.Duration, allowDetachedGrace bool, monitor *browserProcessMonitor, probe func(int, time.Duration) error) (int, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	deadline := time.Now().Add(stableFor)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
 	consecutiveFailures := 0
 	const maxStableProbeFailures = 2
 	for {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
 			break
@@ -133,7 +180,12 @@ func stabilizeBrowserDebugPort(debugPort int, stableFor time.Duration, allowDeta
 		if remaining < sleepFor {
 			sleepFor = remaining
 		}
-		time.Sleep(sleepFor)
+		if !sleepWithContext(ctx, sleepFor) {
+			return 0, ctx.Err()
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
 	}
 
 	if monitor != nil && monitor.HasExited() && !allowDetachedGrace {
@@ -146,6 +198,20 @@ func stabilizeBrowserDebugPort(debugPort int, stableFor time.Duration, allowDeta
 		return 0, newBrowserStartupExitError(monitor.Result())
 	}
 	return debugPort, nil
+}
+
+func sleepWithContext(ctx context.Context, duration time.Duration) bool {
+	if duration <= 0 {
+		return true
+	}
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func resolveBrowserDebugPort(initialDebugPort int, userDataDir string, monitor *browserProcessMonitor) (int, error) {

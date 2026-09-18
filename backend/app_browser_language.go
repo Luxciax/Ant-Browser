@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/fsutil"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -87,7 +88,7 @@ func writeBrowserLanguagePreferences(userDataDir string, args []string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(prefsPath, append(data, '\n'), 0o644)
+	return fsutil.AtomicWriteFile(prefsPath, append(data, '\n'), 0o644)
 }
 
 func browserArgValue(args []string, key string) string {

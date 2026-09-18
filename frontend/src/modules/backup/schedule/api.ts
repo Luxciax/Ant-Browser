@@ -2,7 +2,7 @@ export interface ScheduledBackupSettings {
   enabled: boolean
   dailyTime: string
   tokenConfigured: boolean
-  status: 'never' | 'running' | 'success' | 'skipped' | 'failed'
+  status: 'never' | 'running' | 'success' | 'degraded' | 'skipped' | 'failed'
   lastRunAt: string
   lastSuccessAt: string
   lastError: string
@@ -42,7 +42,7 @@ function normalizeScheduledBackupSettings(raw: any): ScheduledBackupSettings {
     enabled: raw?.enabled === true,
     dailyTime: typeof raw?.dailyTime === 'string' && raw.dailyTime ? raw.dailyTime : defaultScheduledBackupSettings.dailyTime,
     tokenConfigured: raw?.tokenConfigured === true,
-    status: ['never', 'running', 'success', 'skipped', 'failed'].includes(status) ? status as ScheduledBackupSettings['status'] : 'never',
+    status: ['never', 'running', 'success', 'degraded', 'skipped', 'failed'].includes(status) ? status as ScheduledBackupSettings['status'] : 'never',
     lastRunAt: typeof raw?.lastRunAt === 'string' ? raw.lastRunAt : '',
     lastSuccessAt: typeof raw?.lastSuccessAt === 'string' ? raw.lastSuccessAt : '',
     lastError: typeof raw?.lastError === 'string' ? raw.lastError : '',

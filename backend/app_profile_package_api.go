@@ -3,16 +3,20 @@ package backend
 import (
 	"archive/zip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"ant-chrome/backend/internal/browser"
+	"ant-chrome/backend/internal/fsutil"
+	"ant-chrome/backend/internal/logger"
 
 	"github.com/google/uuid"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -29,6 +33,12 @@ type ProfilePackageManifest struct {
 	DatabaseVersion       int      `json:"databaseVersion,omitempty"`
 	PortableLogin         bool     `json:"portableLogin,omitempty"`
 	PortableLoginProfiles []string `json:"portableLoginProfiles,omitempty"`
+	Extensions            ProfilePackageExtensionManifest `json:"extensions"`
+}
+
+type ProfilePackageExtensionManifest struct {
+	Portable bool `json:"portable"`
+	Count    int  `json:"count"`
 }
 
 type ProfilePackageExportOptions struct {
@@ -123,6 +133,10 @@ const (
 	profilePackageImportModeRename    = "rename"
 	profilePackageImportMatchID       = "profileId"
 	profilePackageImportMatchName     = "profileName"
+	profilePackageMaxEntries          = 200000
+	profilePackageMaxCompressedBytes  = int64(64 * 1024 * 1024 * 1024)
+	profilePackageMaxExpandedBytes    = uint64(128 * 1024 * 1024 * 1024)
+	profilePackageMaxSingleFileBytes  = uint64(16 * 1024 * 1024 * 1024)
 )
 
 type preparedProfilePackageImport struct {
@@ -205,13 +219,13 @@ func (a *App) browserProfilePackageExportWithOptions(profileIds []string, option
 		return ProfilePackageExportResult{}, err
 	}
 	return ProfilePackageExportResult{
-		Cancelled:    false,
-		ZipPath:      savePath,
-		ProfileCount: len(profiles),
-		FileCount:    fileCount,
+		Cancelled:          false,
+		ZipPath:            savePath,
+		ProfileCount:       len(profiles),
+		FileCount:          fileCount,
 		PortableLoginCount: portableLoginCount,
-		Warnings: warnings,
-		Message:      "导出完成",
+		Warnings:           warnings,
+		Message:            "导出完成",
 	}, nil
 }
 
@@ -289,12 +303,17 @@ func (a *App) collectProfilesForPackage(profileIds []string) ([]browser.Profile,
 			missing = append(missing, id)
 			continue
 		}
-		if profile.Running {
-			running = append(running, profile.ProfileName)
+		if browser.ProfileRuntimeMutationBlocked(profile) {
+			name := strings.TrimSpace(profile.ProfileName)
+			if name == "" {
+				name = strings.TrimSpace(profile.ProfileId)
+			}
+			running = append(running, name)
 			continue
 		}
 		copyProfile := *profile
 		copyProfile.LaunchCode = ""
+		copyProfile.RuntimeState = browser.RuntimeStopped
 		copyProfile.Running = false
 		copyProfile.DebugPort = 0
 		copyProfile.DebugReady = false
@@ -317,15 +336,16 @@ func (a *App) writeProfilePackage(zipPath string, profiles []browser.Profile) (i
 	if err != nil {
 		return 0, err
 	}
+	extensionArtifacts, extensionWarnings := a.collectProfilePackageExtensionArtifacts(&databaseSnapshot)
+	databaseSnapshot.Warnings = append(databaseSnapshot.Warnings, extensionWarnings...)
 	if err := os.MkdirAll(filepath.Dir(zipPath), 0o755); err != nil {
 		return 0, fmt.Errorf("创建导出目录失败: %w", err)
 	}
-	tmpPath := zipPath + ".tmp"
-	_ = os.Remove(tmpPath)
-	out, err := os.Create(tmpPath)
+	out, tmpPath, err := createProfilePackageTempFile(zipPath)
 	if err != nil {
 		return 0, fmt.Errorf("创建导出文件失败: %w", err)
 	}
+	defer os.Remove(tmpPath)
 	zipWriter := zip.NewWriter(out)
 	fileCount := 0
 	var manifest ProfilePackageManifest
@@ -338,6 +358,10 @@ func (a *App) writeProfilePackage(zipPath string, profiles []browser.Profile) (i
 			ProfileCount:    len(profiles),
 			ProfileNames:    profilePackageProfileNames(profiles),
 			DatabaseVersion: databaseSnapshot.Version,
+			Extensions: ProfilePackageExtensionManifest{
+				Portable: len(extensionArtifacts) > 0,
+				Count:    len(extensionArtifacts),
+			},
 		}
 		if err := writeProfilePackageJSON(zipWriter, "manifest.json", manifest); err != nil {
 			return err
@@ -351,6 +375,11 @@ func (a *App) writeProfilePackage(zipPath string, profiles []browser.Profile) (i
 			return err
 		}
 		fileCount++
+		extensionFileCount, err := writeProfilePackageExtensionArtifacts(zipWriter, extensionArtifacts)
+		if err != nil {
+			return err
+		}
+		fileCount += extensionFileCount
 		for i := range profiles {
 			profile := &profiles[i]
 			userDataDir := a.browserMgr.ResolveUserDataDir(profile)
@@ -370,6 +399,7 @@ func (a *App) writeProfilePackage(zipPath string, profiles []browser.Profile) (i
 	}()
 
 	closeZipErr := zipWriter.Close()
+	syncFileErr := out.Sync()
 	closeFileErr := out.Close()
 	if writeErr != nil {
 		_ = os.Remove(tmpPath)
@@ -379,15 +409,21 @@ func (a *App) writeProfilePackage(zipPath string, profiles []browser.Profile) (i
 		_ = os.Remove(tmpPath)
 		return 0, closeZipErr
 	}
+	if syncFileErr != nil {
+		_ = os.Remove(tmpPath)
+		return 0, syncFileErr
+	}
 	if closeFileErr != nil {
 		_ = os.Remove(tmpPath)
 		return 0, closeFileErr
 	}
-	if err := os.Rename(tmpPath, zipPath); err != nil {
+	if err := fsutil.ReplaceFile(tmpPath, zipPath); err != nil {
 		_ = os.Remove(tmpPath)
 		return 0, fmt.Errorf("保存导出文件失败: %w", err)
 	}
-	_, _ = backupWriteProfileMetadata(zipPath, manifest, fileCount, a.appName(), a.appVersion())
+	if _, err := backupWriteProfileMetadata(zipPath, manifest, fileCount, a.appName(), a.appVersion()); err != nil {
+		logger.New("Backup").Warn("实例包已导出，但元数据写入失败", logger.F("path", zipPath), logger.F("error", err.Error()))
+	}
 	return fileCount, nil
 }
 
@@ -419,15 +455,17 @@ func (a *App) writeProfilePackageWithOptions(zipPath string, profiles []browser.
 	if err != nil {
 		return 0, 0, warnings, err
 	}
+	extensionArtifacts, extensionWarnings := a.collectProfilePackageExtensionArtifacts(&databaseSnapshot)
+	databaseSnapshot.Warnings = append(databaseSnapshot.Warnings, extensionWarnings...)
+	warnings = append(warnings, extensionWarnings...)
 	if err := os.MkdirAll(filepath.Dir(zipPath), 0o755); err != nil {
 		return 0, 0, warnings, fmt.Errorf("创建导出目录失败: %w", err)
 	}
-	tmpPath := zipPath + ".tmp"
-	_ = os.Remove(tmpPath)
-	out, err := os.Create(tmpPath)
+	out, tmpPath, err := createProfilePackageTempFile(zipPath)
 	if err != nil {
 		return 0, 0, warnings, fmt.Errorf("创建导出文件失败: %w", err)
 	}
+	defer os.Remove(tmpPath)
 	zipWriter := zip.NewWriter(out)
 	fileCount := 0
 	manifest := ProfilePackageManifest{
@@ -439,6 +477,10 @@ func (a *App) writeProfilePackageWithOptions(zipPath string, profiles []browser.
 		DatabaseVersion:       databaseSnapshot.Version,
 		PortableLogin:         len(portableProfiles) > 0,
 		PortableLoginProfiles: portableProfiles,
+		Extensions: ProfilePackageExtensionManifest{
+			Portable: len(extensionArtifacts) > 0,
+			Count:    len(extensionArtifacts),
+		},
 	}
 
 	writeErr := func() error {
@@ -454,6 +496,11 @@ func (a *App) writeProfilePackageWithOptions(zipPath string, profiles []browser.
 			return err
 		}
 		fileCount++
+		extensionFileCount, err := writeProfilePackageExtensionArtifacts(zipWriter, extensionArtifacts)
+		if err != nil {
+			return err
+		}
+		fileCount += extensionFileCount
 		for _, profileID := range portableProfiles {
 			envelope := portableEnvelopes[profileID]
 			if err := writeProfilePackageJSON(zipWriter, profilePortableLoginEntryName(profileID), envelope); err != nil {
@@ -480,6 +527,7 @@ func (a *App) writeProfilePackageWithOptions(zipPath string, profiles []browser.
 	}()
 
 	closeZipErr := zipWriter.Close()
+	syncFileErr := out.Sync()
 	closeFileErr := out.Close()
 	if writeErr != nil {
 		_ = os.Remove(tmpPath)
@@ -489,16 +537,34 @@ func (a *App) writeProfilePackageWithOptions(zipPath string, profiles []browser.
 		_ = os.Remove(tmpPath)
 		return 0, 0, warnings, closeZipErr
 	}
+	if syncFileErr != nil {
+		_ = os.Remove(tmpPath)
+		return 0, 0, warnings, syncFileErr
+	}
 	if closeFileErr != nil {
 		_ = os.Remove(tmpPath)
 		return 0, 0, warnings, closeFileErr
 	}
-	if err := os.Rename(tmpPath, zipPath); err != nil {
+	if err := fsutil.ReplaceFile(tmpPath, zipPath); err != nil {
 		_ = os.Remove(tmpPath)
 		return 0, 0, warnings, fmt.Errorf("保存导出文件失败: %w", err)
 	}
-	_, _ = backupWriteProfileMetadata(zipPath, manifest, fileCount, a.appName(), a.appVersion())
+	if _, err := backupWriteProfileMetadata(zipPath, manifest, fileCount, a.appName(), a.appVersion()); err != nil {
+		message := fmt.Sprintf("实例包已导出，但元数据写入失败: %v", err)
+		warnings = append(warnings, message)
+		logger.New("Backup").Warn("实例包已导出，但元数据写入失败", logger.F("path", zipPath), logger.F("error", err.Error()))
+	}
 	return fileCount, len(portableProfiles), warnings, nil
+}
+
+func createProfilePackageTempFile(zipPath string) (*os.File, string, error) {
+	targetDir := filepath.Dir(zipPath)
+	base := filepath.Base(zipPath)
+	temporary, err := os.CreateTemp(targetDir, "."+base+".tmp-*")
+	if err != nil {
+		return nil, "", err
+	}
+	return temporary, temporary.Name(), nil
 }
 
 func (a *App) importProfilePackageFromPath(zipPath string) (ProfilePackageImportResult, error) {
@@ -506,7 +572,8 @@ func (a *App) importProfilePackageFromPath(zipPath string) (ProfilePackageImport
 }
 
 func openProfilePackageContents(zipPath string) (*profilePackageContents, error) {
-	reader, err := zip.OpenReader(strings.TrimSpace(zipPath))
+	zipPath = strings.TrimSpace(zipPath)
+	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return nil, fmt.Errorf("打开实例包失败: %w", err)
 	}
@@ -517,6 +584,9 @@ func openProfilePackageContents(zipPath string) (*profilePackageContents, error)
 			_ = reader.Close()
 		}
 	}()
+	if err := validateProfilePackageArchive(zipPath, reader.File); err != nil {
+		return nil, err
+	}
 
 	var manifest ProfilePackageManifest
 	if err := readProfilePackageJSON(reader.File, "manifest.json", &manifest); err != nil {
@@ -546,6 +616,50 @@ func openProfilePackageContents(zipPath string) (*profilePackageContents, error)
 	contents.Profiles = profiles
 	completed = true
 	return contents, nil
+}
+
+func validateProfilePackageArchive(zipPath string, files []*zip.File) error {
+	info, err := os.Stat(zipPath)
+	if err != nil {
+		return fmt.Errorf("读取实例包失败: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("实例包不是普通文件")
+	}
+	if info.Size() > profilePackageMaxCompressedBytes {
+		return fmt.Errorf("实例包过大: %d > %d", info.Size(), profilePackageMaxCompressedBytes)
+	}
+	if len(files) > profilePackageMaxEntries {
+		return fmt.Errorf("实例包条目过多: %d > %d", len(files), profilePackageMaxEntries)
+	}
+
+	seen := make(map[string]struct{}, len(files))
+	var expandedBytes uint64
+	for _, file := range files {
+		name := strings.TrimSpace(strings.ReplaceAll(file.Name, "\\", "/"))
+		if name == "" || strings.IndexByte(name, 0) >= 0 {
+			return fmt.Errorf("实例包包含空路径或非法字符")
+		}
+		cleanName := path.Clean(name)
+		if cleanName == "." || cleanName == ".." || strings.HasPrefix(cleanName, "../") || strings.HasPrefix(name, "/") {
+			return fmt.Errorf("实例包包含非法路径: %s", file.Name)
+		}
+		if _, exists := seen[cleanName]; exists {
+			return fmt.Errorf("实例包包含重复路径: %s", cleanName)
+		}
+		seen[cleanName] = struct{}{}
+		if file.FileInfo().Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("实例包不允许包含符号链接: %s", cleanName)
+		}
+		if file.UncompressedSize64 > profilePackageMaxSingleFileBytes {
+			return fmt.Errorf("实例包文件过大(%s): %d > %d", cleanName, file.UncompressedSize64, profilePackageMaxSingleFileBytes)
+		}
+		if file.UncompressedSize64 > profilePackageMaxExpandedBytes-expandedBytes {
+			return fmt.Errorf("实例包解压后总大小超过限制")
+		}
+		expandedBytes += file.UncompressedSize64
+	}
+	return nil
 }
 
 func (a *App) prepareProfilePackageImportFromPath(zipPath string) (ProfilePackageImportPreview, error) {
@@ -710,7 +824,7 @@ func (a *App) importProfilePackageFromPathWithModeAndActions(zipPath string, mod
 	return a.importProfilePackageFromPathWithModeAndActionsAndPassword(zipPath, mode, confirmConflict, actions, "")
 }
 
-func (a *App) importProfilePackageFromPathWithModeAndActionsAndPassword(zipPath string, mode string, confirmConflict bool, actions []ProfilePackageImportAction, migrationPassword string) (ProfilePackageImportResult, error) {
+func (a *App) importProfilePackageFromPathWithModeAndActionsAndPassword(zipPath string, mode string, confirmConflict bool, actions []ProfilePackageImportAction, migrationPassword string) (result ProfilePackageImportResult, retErr error) {
 	mode = normalizeProfilePackageImportMode(mode)
 	if mode == "" {
 		return ProfilePackageImportResult{}, fmt.Errorf("不支持的实例导入冲突处理方式")
@@ -800,20 +914,20 @@ func (a *App) importProfilePackageFromPathWithModeAndActionsAndPassword(zipPath 
 		if committed {
 			return
 		}
-		rollbackProfilePackageDirectorySwaps(swaps)
-		if len(originalProfiles) == 0 {
-			return
-		}
-		a.browserMgr.Mutex.Lock()
-		for profileID, original := range originalProfiles {
-			if original == nil {
-				delete(a.browserMgr.Profiles, profileID)
-				continue
+		rollbackErr := rollbackProfilePackageDirectorySwaps(swaps)
+		if len(originalProfiles) > 0 {
+			a.browserMgr.Mutex.Lock()
+			for profileID, original := range originalProfiles {
+				if original == nil {
+					delete(a.browserMgr.Profiles, profileID)
+					continue
+				}
+				copyProfile := *original
+				a.browserMgr.Profiles[profileID] = &copyProfile
 			}
-			copyProfile := *original
-			a.browserMgr.Profiles[profileID] = &copyProfile
+			a.browserMgr.Mutex.Unlock()
 		}
-		a.browserMgr.Mutex.Unlock()
+		retErr = combineProfilePackageRollbackError(retErr, rollbackErr)
 	}()
 
 	seenSourceIDs := make(map[string]struct{}, len(contents.Profiles))
@@ -907,6 +1021,7 @@ func (a *App) importProfilePackageFromPathWithModeAndActionsAndPassword(zipPath 
 		}
 		finalNameKeys[finalNameKey] = struct{}{}
 		profile.ProfileId = newID
+		profile.RuntimeState = browser.RuntimeStopped
 		profile.Running = false
 		profile.DebugPort = 0
 		profile.DebugReady = false
@@ -984,6 +1099,18 @@ func (a *App) importProfilePackageFromPathWithModeAndActionsAndPassword(zipPath 
 		}
 		a.browserMgr.Mutex.Unlock()
 	}
+	preparedExtensionArtifacts := make([]preparedProfilePackageExtensionArtifact, 0)
+	if contents.DatabaseSnapshot != nil {
+		preparedExtensionArtifacts, err = a.prepareProfilePackageExtensionArtifacts(
+			contents.Reader.File,
+			contents.DatabaseSnapshot,
+			stagingRoot,
+			&warnings,
+		)
+		if err != nil {
+			return ProfilePackageImportResult{}, err
+		}
+	}
 	for _, item := range prepared {
 		if !item.HasUserData {
 			continue
@@ -993,6 +1120,9 @@ func (a *App) importProfilePackageFromPathWithModeAndActionsAndPassword(zipPath 
 			return ProfilePackageImportResult{}, err
 		}
 		swaps = append(swaps, swap)
+	}
+	if err := applyPreparedProfilePackageExtensionArtifacts(preparedExtensionArtifacts, &swaps); err != nil {
+		return ProfilePackageImportResult{}, err
 	}
 	legacyDatabaseRestore := contents.DatabaseSnapshot == nil && a.db != nil && a.db.GetConn() != nil
 	if contents.DatabaseSnapshot != nil {
@@ -1387,7 +1517,9 @@ func replaceProfileUserDataDirWithBackup(stagingDir string, finalDir string) (pr
 	}
 	if err := os.Rename(stagingDir, finalDir); err != nil {
 		if swap.HadOriginal {
-			_ = os.Rename(backupDir, finalDir)
+			if restoreErr := os.Rename(backupDir, finalDir); restoreErr != nil {
+				return profilePackageDirectorySwap{}, fmt.Errorf("提交用户数据目录失败: %w; IMPORT_ROLLBACK_FAILED: 恢复原目录失败: %v", err, restoreErr)
+			}
 		}
 		return profilePackageDirectorySwap{}, fmt.Errorf("提交用户数据目录失败: %w", err)
 	}
@@ -1403,17 +1535,38 @@ func finalizeProfilePackageDirectorySwaps(swaps []profilePackageDirectorySwap) {
 	}
 }
 
-func rollbackProfilePackageDirectorySwaps(swaps []profilePackageDirectorySwap) {
+func rollbackProfilePackageDirectorySwaps(swaps []profilePackageDirectorySwap) error {
+	rollbackErrors := make([]error, 0)
 	for index := len(swaps) - 1; index >= 0; index-- {
 		swap := swaps[index]
 		if strings.TrimSpace(swap.FinalDir) == "" {
 			continue
 		}
-		_ = os.RemoveAll(swap.FinalDir)
+		if err := os.RemoveAll(swap.FinalDir); err != nil {
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("清理失败导入目录 %s: %w", swap.FinalDir, err))
+		}
 		if swap.HadOriginal && strings.TrimSpace(swap.BackupDir) != "" {
-			_ = os.Rename(swap.BackupDir, swap.FinalDir)
+			if err := os.Rename(swap.BackupDir, swap.FinalDir); err != nil {
+				rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复原用户数据目录 %s: %w", swap.FinalDir, err))
+				continue
+			}
+			if _, err := os.Stat(swap.FinalDir); err != nil {
+				rollbackErrors = append(rollbackErrors, fmt.Errorf("验证恢复后的用户数据目录 %s: %w", swap.FinalDir, err))
+			}
 		}
 	}
+	return errors.Join(rollbackErrors...)
+}
+
+func combineProfilePackageRollbackError(importErr error, rollbackErr error) error {
+	if rollbackErr == nil {
+		return importErr
+	}
+	rollbackFailure := fmt.Errorf("IMPORT_ROLLBACK_FAILED: %w", rollbackErr)
+	if importErr == nil {
+		return rollbackFailure
+	}
+	return errors.Join(importErr, rollbackFailure)
 }
 
 func (a *App) profilePackageImportStagingRoot(batchID string) string {

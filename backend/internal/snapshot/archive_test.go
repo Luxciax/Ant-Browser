@@ -65,3 +65,22 @@ func TestUnzipToWithLimitsEnforcesExpandedSize(t *testing.T) {
 		t.Fatal("oversized archive was accepted")
 	}
 }
+
+func TestZipDirRejectsSymlink(t *testing.T) {
+	root := t.TempDir()
+	sourceDir := filepath.Join(root, "source")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "outside.txt")
+	if err := os.WriteFile(target, []byte("outside"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	linkPath := filepath.Join(sourceDir, "linked.txt")
+	if err := os.Symlink(target, linkPath); err != nil {
+		t.Skipf("symlink is not available in this environment: %v", err)
+	}
+	if err := ZipDir(sourceDir, filepath.Join(root, "snapshot.zip")); err == nil {
+		t.Fatal("snapshot archive accepted a symlink")
+	}
+}

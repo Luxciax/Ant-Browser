@@ -2,6 +2,7 @@ package backend
 
 import (
 	"ant-chrome/backend/internal/config"
+	"ant-chrome/backend/internal/fsutil"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -347,10 +348,7 @@ func saveBackupLocalConfig(path string, value config.BackupConfig) error {
 		return fmt.Errorf("序列化本地备份配置失败: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("创建本地备份配置目录失败: %w", err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := fsutil.AtomicWriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("写入本地备份配置失败: %w", err)
 	}
 	if err := os.Chmod(path, 0o600); err != nil {

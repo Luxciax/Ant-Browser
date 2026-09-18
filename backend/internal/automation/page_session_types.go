@@ -2,9 +2,12 @@ package automation
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
@@ -73,6 +76,8 @@ func (p *nodeSessionProcess) Kill() error {
 
 type pageSession struct {
 	profileID string
+	configKey string
+	idleTimeout time.Duration
 	proc      sessionProcess
 	reader    *bufio.Reader
 	session   map[string]any
@@ -102,6 +107,37 @@ type pageSessionPayload struct {
 	ArtifactDir      string         `json:"artifactDir,omitempty"`
 	DefaultTimeoutMs int64          `json:"defaultTimeoutMs,omitempty"`
 	ConnectTimeoutMs int64          `json:"connectTimeoutMs,omitempty"`
+}
+
+type pageSessionConfigFingerprint struct {
+	RuntimeDir       string         `json:"runtimeDir"`
+	NodePath         string         `json:"nodePath"`
+	Selector         map[string]any `json:"selector,omitempty"`
+	LaunchBaseURL    string         `json:"launchBaseUrl"`
+	LaunchAuthHeader string         `json:"launchAuthHeader,omitempty"`
+	LaunchAuthValue  string         `json:"launchAuthValue,omitempty"`
+	ArtifactDir      string         `json:"artifactDir,omitempty"`
+	DefaultTimeoutMs int64          `json:"defaultTimeoutMs,omitempty"`
+}
+
+func pageSessionConfigKey(state RuntimeState, req PageCommandRequest) (string, error) {
+	fingerprint := pageSessionConfigFingerprint{
+		RuntimeDir:       strings.TrimSpace(state.RuntimeDir),
+		NodePath:         strings.TrimSpace(state.NodePath),
+		Selector:         req.Selector,
+		LaunchBaseURL:    strings.TrimSpace(req.LaunchBaseURL),
+		LaunchAuthHeader: strings.TrimSpace(req.LaunchAuthHeader),
+		LaunchAuthValue:  strings.TrimSpace(req.LaunchAuthValue),
+		ArtifactDir:      strings.TrimSpace(req.ArtifactDir),
+	}
+	if req.Timeout > 0 {
+		fingerprint.DefaultTimeoutMs = req.Timeout.Milliseconds()
+	}
+	data, err := json.Marshal(fingerprint)
+	if err != nil {
+		return "", fmt.Errorf("encode page session configuration: %w", err)
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(data)), nil
 }
 
 func marshalPageCommand(id int64, command PageCommand) ([]byte, error) {

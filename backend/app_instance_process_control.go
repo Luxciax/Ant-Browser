@@ -85,6 +85,21 @@ func waitProcessExitWindows(pid int, timeout time.Duration) bool {
 	return !alive
 }
 
+func waitBrowserRuntimeStopped(pid int, debugPort int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		processStopped := pid <= 0 || !isProcessAlive(pid)
+		debugStopped := debugPort <= 0 || !canConnectDebugPort(debugPort, 250*time.Millisecond)
+		if processStopped && debugStopped {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+}
+
 func isProcessAliveWindows(pid int) (bool, error) {
 	cmd := exec.Command("tasklist", "/FI", fmt.Sprintf("PID eq %d", pid), "/FO", "CSV", "/NH")
 	hideWindow(cmd)

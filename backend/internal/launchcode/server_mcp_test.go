@@ -56,7 +56,8 @@ func TestMCPAuthPathMatching(t *testing.T) {
 		"/mcp": true,
 		"/mcp/messages": true,
 		"/mcpsomething": false,
-		"/json/version": false,
+		"/json/version": true,
+		"/devtools/browser/test": true,
 	}
 	for path, want := range tests {
 		if got := server.requiresAPIAuth(path); got != want {

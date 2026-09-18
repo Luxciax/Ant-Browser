@@ -585,3 +585,85 @@ func writeJSONToZip(t *testing.T, zipWriter *zip.Writer, name string, value any)
 		t.Fatalf("encode json failed: %v", err)
 	}
 }
+
+func TestValidateProfilePackageArchiveRejectsOversizedEntry(t *testing.T) {
+	zipPath := filepath.Join(t.TempDir(), "profile.zip")
+	if err := os.WriteFile(zipPath, []byte("zip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := []*zip.File{{FileHeader: zip.FileHeader{
+		Name:               "user-data/profile/huge.bin",
+		UncompressedSize64: profilePackageMaxSingleFileBytes + 1,
+	}}}
+	if err := validateProfilePackageArchive(zipPath, files); err == nil {
+		t.Fatal("oversized profile package entry was accepted")
+	}
+}
+
+func TestOpenProfilePackageContentsRejectsDuplicatePaths(t *testing.T) {
+	zipPath := filepath.Join(t.TempDir(), "duplicate.zip")
+	file, err := os.Create(zipPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer := zip.NewWriter(file)
+	for i := 0; i < 2; i++ {
+		entry, createErr := writer.Create("manifest.json")
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		if _, writeErr := entry.Write([]byte(`{"format":"ant-chrome-profile-package","version":3}`)); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openProfilePackageContents(zipPath); err == nil {
+		t.Fatal("profile package with duplicate paths was accepted")
+	}
+}
+
+func TestCollectProfilesForPackageRejectsFailedActiveProfile(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.DefaultConfig()
+	app := NewApp(root)
+	app.config = cfg
+	app.browserMgr = browser.NewManager(cfg, root)
+	app.browserMgr.Profiles["failed-active"] = &browser.Profile{
+		ProfileId:    "failed-active",
+		ProfileName:  "Failed Active",
+		RuntimeState: browser.RuntimeFailed,
+		Pid:          4321,
+		DebugPort:    9333,
+	}
+	if _, err := app.collectProfilesForPackage([]string{"failed-active"}); err == nil {
+		t.Fatal("failed-active profile was allowed into export package")
+	}
+}
+
+func TestCollectProfilesForPackageNormalizesRuntimeState(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.DefaultConfig()
+	app := NewApp(root)
+	app.config = cfg
+	app.browserMgr = browser.NewManager(cfg, root)
+	app.browserMgr.Profiles["stopped"] = &browser.Profile{
+		ProfileId:    "stopped",
+		ProfileName:  "Stopped",
+		RuntimeState: browser.RuntimeFailed,
+	}
+	profiles, err := app.collectProfilesForPackage([]string{"stopped"})
+	if err != nil {
+		t.Fatalf("collectProfilesForPackage returned error: %v", err)
+	}
+	if len(profiles) != 1 {
+		t.Fatalf("profile count = %d, want 1", len(profiles))
+	}
+	if profiles[0].RuntimeState != browser.RuntimeStopped {
+		t.Fatalf("runtime state = %q, want %q", profiles[0].RuntimeState, browser.RuntimeStopped)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 func extractProxyCoreArchive(archivePath string, targetDir string, binaryBase string, targetOS string) error {
@@ -177,53 +178,60 @@ func normalizeInstalledProxyCoreBinary(binaryPath string, installDir string, bin
 	return standardPath, nil
 }
 
-func replaceDirContents(srcDir string, dstDir string) error {
-	entries, err := os.ReadDir(dstDir)
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "proxy-core-") || strings.HasPrefix(entry.Name(), "extract-") {
-			continue
-		}
-		if err := os.RemoveAll(filepath.Join(dstDir, entry.Name())); err != nil {
-			return err
-		}
-	}
-	return filepath.WalkDir(srcDir, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(srcDir, path)
-		if err != nil || rel == "." {
-			return err
-		}
-		dest := filepath.Join(dstDir, rel)
-		if entry.IsDir() {
-			return os.MkdirAll(dest, 0o755)
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return err
-		}
-		return copyFile(path, dest, info.Mode())
-	})
+type proxyCoreDirectorySwap struct {
+	installDir  string
+	rollbackDir string
+	hadOriginal bool
 }
 
-func copyFile(src string, dst string, mode os.FileMode) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
+func stageProxyCoreDirectory(stagingDir string, installDir string) (proxyCoreDirectorySwap, error) {
+	swap := proxyCoreDirectorySwap{installDir: filepath.Clean(installDir)}
+	stagingDir = filepath.Clean(stagingDir)
+	if stagingDir == swap.installDir {
+		return proxyCoreDirectorySwap{}, fmt.Errorf("代理内核暂存目录不能与安装目录相同")
 	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode|0o644)
-	if err != nil {
-		return err
+	if info, err := os.Stat(stagingDir); err != nil {
+		return proxyCoreDirectorySwap{}, fmt.Errorf("检查代理内核暂存目录失败: %w", err)
+	} else if !info.IsDir() {
+		return proxyCoreDirectorySwap{}, fmt.Errorf("代理内核暂存路径不是目录: %s", stagingDir)
 	}
-	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
+
+	swap.rollbackDir = fmt.Sprintf("%s.rollback-%d", swap.installDir, time.Now().UnixNano())
+	if _, err := os.Stat(swap.installDir); err == nil {
+		swap.hadOriginal = true
+		if err := os.Rename(swap.installDir, swap.rollbackDir); err != nil {
+			return proxyCoreDirectorySwap{}, fmt.Errorf("暂存旧代理内核失败: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return proxyCoreDirectorySwap{}, fmt.Errorf("检查旧代理内核失败: %w", err)
+	}
+
+	if err := os.Rename(stagingDir, swap.installDir); err != nil {
+		if swap.hadOriginal {
+			if restoreErr := os.Rename(swap.rollbackDir, swap.installDir); restoreErr != nil {
+				return proxyCoreDirectorySwap{}, fmt.Errorf("提交新代理内核失败: %w；恢复旧代理内核失败: %v", err, restoreErr)
+			}
+		}
+		return proxyCoreDirectorySwap{}, fmt.Errorf("提交新代理内核失败: %w", err)
+	}
+	return swap, nil
+}
+
+func (s proxyCoreDirectorySwap) rollback() error {
+	if err := os.RemoveAll(s.installDir); err != nil {
+		return fmt.Errorf("清理新代理内核失败: %w", err)
+	}
+	if !s.hadOriginal {
+		return nil
+	}
+	if err := os.Rename(s.rollbackDir, s.installDir); err != nil {
+		return fmt.Errorf("恢复旧代理内核失败: %w", err)
+	}
+	return nil
+}
+
+func (s proxyCoreDirectorySwap) finish() {
+	if s.hadOriginal {
+		_ = os.RemoveAll(s.rollbackDir)
+	}
 }

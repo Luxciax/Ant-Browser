@@ -2,6 +2,7 @@ package browser
 
 import (
 	"ant-chrome/backend/internal/logger"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,24 @@ import (
 )
 
 const profileTrashRetention = 72 * time.Hour
+
+type profileDeletionStagedPath struct {
+	original string
+	staged   string
+}
+
+type profileDeletionTransaction struct {
+	manager                  *Manager
+	profile                  *Profile
+	launchCode               string
+	launchCodeRemoved        bool
+	extensionSettings        ProfileExtensionSettings
+	extensionSettingsExisted bool
+	extensionRuntimes        []ProfileExtensionRuntime
+	extensionSettingsRemoved bool
+	extensionRuntimesRemoved bool
+	stagedPaths              []profileDeletionStagedPath
+}
 
 // Delete 将配置移入回收站
 func (m *Manager) Delete(profileId string) error {
@@ -23,6 +42,10 @@ func (m *Manager) Delete(profileId string) error {
 		log.Error("浏览器配置不存在", logger.F("profile_id", profileId))
 		return fmt.Errorf("profile not found")
 	}
+	if ProfileRuntimeMutationBlocked(profile) || profile.Running || profile.DebugReady || profile.Pid > 0 {
+		log.Warn("拒绝删除运行中的浏览器配置", logger.F("profile_id", profileId), logger.F("pid", profile.Pid), logger.F("debug_port", profile.DebugPort))
+		return fmt.Errorf("profile runtime is %s; stop it before deletion", NormalizeProfileRuntimeState(profile))
+	}
 	deletedAt := time.Now().Format(time.RFC3339)
 	if m.ProfileDAO != nil {
 		if err := m.ProfileDAO.SoftDelete(profileId, deletedAt); err != nil {
@@ -30,10 +53,15 @@ func (m *Manager) Delete(profileId string) error {
 			return err
 		}
 	} else {
+		previousDeletedAt := profile.DeletedAt
+		previousUpdatedAt := profile.UpdatedAt
 		profile.DeletedAt = deletedAt
 		profile.UpdatedAt = deletedAt
 		delete(m.Profiles, profileId)
 		if err := m.SaveProfiles(); err != nil {
+			profile.DeletedAt = previousDeletedAt
+			profile.UpdatedAt = previousUpdatedAt
+			m.Profiles[profileId] = profile
 			return err
 		}
 	}
@@ -124,6 +152,11 @@ func (m *Manager) Restore(profileId string) (*Profile, error) {
 	profile.DeletedAt = ""
 	profile.UpdatedAt = time.Now().Format(time.RFC3339)
 	profile.CoreId = normalizeProfileCoreID(profile.CoreId)
+	profile.RuntimeState = RuntimeStopped
+	profile.Running = false
+	profile.DebugReady = false
+	profile.DebugPort = 0
+	profile.Pid = 0
 	m.Profiles[profile.ProfileId] = profile
 	log.Info("实例已从回收站恢复", logger.F("profile_id", profileId))
 	return profile, nil
@@ -147,7 +180,8 @@ func (m *Manager) PermanentlyDelete(profileId string) error {
 	}
 	resolvedDir := m.ResolveUserDataDir(profile)
 	dataDirExistedBefore := pathExists(resolvedDir)
-	if err := m.deleteProfileRelatedDataLocked(log, profile); err != nil {
+	deleteTx, err := m.prepareProfileDeletionTransactionLocked(log, profile)
+	if err != nil {
 		m.writeProfileDeleteAudit(log, profileDeleteAuditEntry{
 			Action:               "permanent_delete",
 			ProfileID:            profile.ProfileId,
@@ -163,6 +197,8 @@ func (m *Manager) PermanentlyDelete(profileId string) error {
 		return err
 	}
 	if err := m.ProfileDAO.Delete(profileId); err != nil {
+		rollbackErr := deleteTx.rollback()
+		combinedErr := errors.Join(err, rollbackErr)
 		m.writeProfileDeleteAudit(log, profileDeleteAuditEntry{
 			Action:               "permanent_delete",
 			ProfileID:            profile.ProfileId,
@@ -173,10 +209,11 @@ func (m *Manager) PermanentlyDelete(profileId string) error {
 			DataDirExistedBefore: dataDirExistedBefore,
 			DataDirExistsAfter:   pathExists(resolvedDir),
 			Success:              false,
-			Error:                err.Error(),
+			Error:                combinedErr.Error(),
 		})
-		return err
+		return combinedErr
 	}
+	deleteTx.commit(log)
 	m.writeProfileDeleteAudit(log, profileDeleteAuditEntry{
 		Action:               "permanent_delete",
 		ProfileID:            profile.ProfileId,
@@ -212,11 +249,14 @@ func (m *Manager) cleanupExpiredTrashLocked(log *logger.Logger) error {
 		return err
 	}
 	cleaned := 0
+	cleanupErrors := make([]error, 0)
 	for _, profile := range expired {
 		resolvedDir := m.ResolveUserDataDir(profile)
 		dataDirExistedBefore := pathExists(resolvedDir)
-		if err := m.deleteProfileRelatedDataLocked(log, profile); err != nil {
+		deleteTx, err := m.prepareProfileDeletionTransactionLocked(log, profile)
+		if err != nil {
 			log.Error("清理过期回收站实例关联数据失败", logger.F("profile_id", profile.ProfileId), logger.F("error", err))
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("清理过期实例 %s 关联数据失败: %w", profile.ProfileId, err))
 			m.writeProfileDeleteAudit(log, profileDeleteAuditEntry{
 				Action:               "expired_cleanup",
 				ProfileID:            profile.ProfileId,
@@ -232,7 +272,10 @@ func (m *Manager) cleanupExpiredTrashLocked(log *logger.Logger) error {
 			continue
 		}
 		if err := m.ProfileDAO.Delete(profile.ProfileId); err != nil {
-			log.Error("删除过期回收站实例记录失败", logger.F("profile_id", profile.ProfileId), logger.F("error", err))
+			rollbackErr := deleteTx.rollback()
+			combinedErr := errors.Join(err, rollbackErr)
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("删除过期实例 %s 失败: %w", profile.ProfileId, combinedErr))
+			log.Error("删除过期回收站实例记录失败", logger.F("profile_id", profile.ProfileId), logger.F("error", combinedErr))
 			m.writeProfileDeleteAudit(log, profileDeleteAuditEntry{
 				Action:               "expired_cleanup",
 				ProfileID:            profile.ProfileId,
@@ -243,10 +286,11 @@ func (m *Manager) cleanupExpiredTrashLocked(log *logger.Logger) error {
 				DataDirExistedBefore: dataDirExistedBefore,
 				DataDirExistsAfter:   pathExists(resolvedDir),
 				Success:              false,
-				Error:                err.Error(),
+				Error:                combinedErr.Error(),
 			})
 			continue
 		}
+		deleteTx.commit(log)
 		m.writeProfileDeleteAudit(log, profileDeleteAuditEntry{
 			Action:               "expired_cleanup",
 			ProfileID:            profile.ProfileId,
@@ -263,53 +307,198 @@ func (m *Manager) cleanupExpiredTrashLocked(log *logger.Logger) error {
 	if cleaned > 0 {
 		log.Info("过期回收站实例已清理", logger.F("count", cleaned))
 	}
-	return nil
+	return errors.Join(cleanupErrors...)
 }
 
-func (m *Manager) deleteProfileRelatedDataLocked(log *logger.Logger, profile *Profile) error {
+func (m *Manager) prepareProfileDeletionTransactionLocked(log *logger.Logger, profile *Profile) (*profileDeletionTransaction, error) {
 	if profile == nil {
-		return nil
+		return &profileDeletionTransaction{manager: m}, nil
 	}
-	var firstErr error
+	tx := &profileDeletionTransaction{manager: m, profile: profile}
+
 	if m.CodeProvider != nil {
-		if err := m.CodeProvider.Remove(profile.ProfileId); err != nil && firstErr == nil {
-			firstErr = err
+		if code, ok := m.CodeProvider.LookupCode(profile.ProfileId); ok {
+			tx.launchCode = code
 		}
 	}
 	if m.ExtensionDAO != nil {
+		settings, err := m.ExtensionDAO.GetProfileSettings(profile.ProfileId)
+		if err != nil {
+			return nil, fmt.Errorf("读取实例插件配置失败: %w", err)
+		}
+		tx.extensionSettings = settings
+		tx.extensionSettingsExisted = strings.TrimSpace(settings.UpdatedAt) != ""
+		runtimes, err := m.ExtensionDAO.ListProfileExtensionRuntime(profile.ProfileId)
+		if err != nil {
+			return nil, fmt.Errorf("读取实例插件运行态失败: %w", err)
+		}
+		tx.extensionRuntimes = append([]ProfileExtensionRuntime(nil), runtimes...)
+	}
+
+	staged, err := m.stageProfileDeletionPaths(profile)
+	if err != nil {
+		return nil, err
+	}
+	tx.stagedPaths = staged
+
+	rollbackOnError := func(cause error) (*profileDeletionTransaction, error) {
+		rollbackErr := tx.rollback()
+		return nil, errors.Join(cause, rollbackErr)
+	}
+	if m.CodeProvider != nil && strings.TrimSpace(tx.launchCode) != "" {
+		if err := m.CodeProvider.Remove(profile.ProfileId); err != nil {
+			return rollbackOnError(fmt.Errorf("删除实例 LaunchCode 失败: %w", err))
+		}
+		tx.launchCodeRemoved = true
+	}
+	if m.ExtensionDAO != nil {
 		if err := m.ExtensionDAO.DeleteProfileSettings(profile.ProfileId); err != nil {
-			log.Error("删除实例插件配置失败", logger.F("profile_id", profile.ProfileId), logger.F("error", err))
-			if firstErr == nil {
-				firstErr = err
-			}
+			return rollbackOnError(fmt.Errorf("删除实例插件配置失败: %w", err))
 		}
+		tx.extensionSettingsRemoved = true
 		if err := m.ExtensionDAO.DeleteProfileExtensionRuntimeForProfile(profile.ProfileId); err != nil {
-			log.Error("删除实例插件运行态失败", logger.F("profile_id", profile.ProfileId), logger.F("error", err))
-			if firstErr == nil {
-				firstErr = err
+			return rollbackOnError(fmt.Errorf("删除实例插件运行态失败: %w", err))
+		}
+		tx.extensionRuntimesRemoved = true
+	}
+	return tx, nil
+}
+
+func (m *Manager) stageProfileDeletionPaths(profile *Profile) ([]profileDeletionStagedPath, error) {
+	paths, err := m.profileDeletionManagedPaths(profile)
+	if err != nil {
+		return nil, err
+	}
+	staged := make([]profileDeletionStagedPath, 0, len(paths))
+	for index, target := range paths {
+		if _, err := os.Lstat(target); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		stagingPath := filepath.Join(filepath.Dir(target), fmt.Sprintf(".%s.delete-staging-%d-%d", filepath.Base(target), time.Now().UnixNano(), index))
+		if err := os.Rename(target, stagingPath); err != nil {
+			rollbackErrors := make([]error, 0)
+			for i := len(staged) - 1; i >= 0; i-- {
+				if restoreErr := os.Rename(staged[i].staged, staged[i].original); restoreErr != nil {
+					rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复已暂存实例目录失败 %s: %w", staged[i].original, restoreErr))
+				}
+			}
+			return nil, errors.Join(fmt.Errorf("暂存实例关联目录失败 %s: %w", target, err), errors.Join(rollbackErrors...))
+		}
+		staged = append(staged, profileDeletionStagedPath{original: target, staged: stagingPath})
+	}
+	return staged, nil
+}
+
+func (m *Manager) profileDeletionManagedPaths(profile *Profile) ([]string, error) {
+	if profile == nil {
+		return nil, nil
+	}
+	paths := make([]string, 0, 3)
+	userDataRoot := strings.TrimSpace(m.Config.Browser.UserDataRoot)
+	if userDataRoot == "" {
+		userDataRoot = "data"
+	}
+	rootAbs, err := filepath.Abs(m.ResolveRelativePath(userDataRoot))
+	if err != nil {
+		return nil, err
+	}
+	userDataDir, err := filepath.Abs(m.ResolveUserDataDir(profile))
+	if err != nil {
+		return nil, err
+	}
+	if !samePath(userDataDir, rootAbs) && isPathInside(userDataDir, rootAbs) {
+		paths = append(paths, filepath.Clean(userDataDir))
+	}
+
+	dataRoot, err := filepath.Abs(m.ResolveRelativePath("data"))
+	if err != nil {
+		return nil, err
+	}
+	snapshotRoot := filepath.Join(dataRoot, "snapshots")
+	snapshotPath, err := filepath.Abs(filepath.Join(snapshotRoot, safeProfilePathSegment(profile.ProfileId)))
+	if err != nil {
+		return nil, err
+	}
+	if !samePath(snapshotPath, snapshotRoot) && isPathInside(snapshotPath, snapshotRoot) {
+		paths = append(paths, filepath.Clean(snapshotPath))
+	}
+	fingerprintRoot := filepath.Join(dataRoot, "fingerprint-check")
+	fingerprintPath, err := filepath.Abs(filepath.Join(fingerprintRoot, safeProfilePathSegment(profile.ProfileId)))
+	if err != nil {
+		return nil, err
+	}
+	if !samePath(fingerprintPath, fingerprintRoot) && isPathInside(fingerprintPath, fingerprintRoot) {
+		paths = append(paths, filepath.Clean(fingerprintPath))
+	}
+	return paths, nil
+}
+
+func (tx *profileDeletionTransaction) rollback() error {
+	if tx == nil || tx.manager == nil || tx.profile == nil {
+		return nil
+	}
+	m := tx.manager
+	rollbackErrors := make([]error, 0)
+	if m.ExtensionDAO != nil {
+		if tx.extensionSettingsRemoved {
+			if tx.extensionSettingsExisted {
+				if _, err := m.ExtensionDAO.SetProfileSettings(tx.profile.ProfileId, tx.extensionSettings.ExtensionIDs, tx.extensionSettings.Configured); err != nil {
+					rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复实例插件配置失败: %w", err))
+				}
+			} else if err := m.ExtensionDAO.DeleteProfileSettings(tx.profile.ProfileId); err != nil {
+				rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复实例空插件配置失败: %w", err))
+			}
+		}
+		if tx.extensionRuntimesRemoved {
+			if err := m.ExtensionDAO.DeleteProfileExtensionRuntimeForProfile(tx.profile.ProfileId); err != nil {
+				rollbackErrors = append(rollbackErrors, fmt.Errorf("清理实例插件运行态回滚目标失败: %w", err))
+			}
+			for _, runtimeState := range tx.extensionRuntimes {
+				if err := m.ExtensionDAO.UpsertProfileExtensionRuntime(runtimeState); err != nil {
+					rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复实例插件运行态失败: %w", err))
+				}
 			}
 		}
 	}
-	userDataDir := m.ResolveUserDataDir(profile)
-	if err := m.deleteProfileUserDataDir(userDataDir); err != nil {
-		log.Error("删除实例数据目录失败", logger.F("profile_id", profile.ProfileId), logger.F("dir", userDataDir), logger.F("error", err))
-		if firstErr == nil {
-			firstErr = err
+	if tx.launchCodeRemoved && m.CodeProvider != nil && strings.TrimSpace(tx.launchCode) != "" {
+		if _, err := m.CodeProvider.SetCode(tx.profile.ProfileId, tx.launchCode); err != nil {
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复实例 LaunchCode 失败: %w", err))
 		}
 	}
-	if err := m.deleteProfileSnapshotDir(profile.ProfileId); err != nil {
-		log.Error("删除实例快照目录失败", logger.F("profile_id", profile.ProfileId), logger.F("error", err))
-		if firstErr == nil {
-			firstErr = err
+	for i := len(tx.stagedPaths) - 1; i >= 0; i-- {
+		entry := tx.stagedPaths[i]
+		if _, err := os.Lstat(entry.staged); err != nil {
+			if !os.IsNotExist(err) {
+				rollbackErrors = append(rollbackErrors, err)
+			}
+			continue
+		}
+		if _, err := os.Lstat(entry.original); err == nil {
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复实例目录目标已存在: %s", entry.original))
+			continue
+		} else if !os.IsNotExist(err) {
+			rollbackErrors = append(rollbackErrors, err)
+			continue
+		}
+		if err := os.Rename(entry.staged, entry.original); err != nil {
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复实例目录失败 %s: %w", entry.original, err))
 		}
 	}
-	if err := m.deleteProfileFingerprintCheckDir(profile.ProfileId); err != nil {
-		log.Error("删除实例指纹检测页缓存失败", logger.F("profile_id", profile.ProfileId), logger.F("error", err))
-		if firstErr == nil {
-			firstErr = err
+	return errors.Join(rollbackErrors...)
+}
+
+func (tx *profileDeletionTransaction) commit(log *logger.Logger) {
+	if tx == nil {
+		return
+	}
+	for _, entry := range tx.stagedPaths {
+		if err := os.RemoveAll(entry.staged); err != nil && log != nil {
+			log.Error("清理实例删除暂存目录失败", logger.F("dir", entry.staged), logger.F("error", err))
 		}
 	}
-	return firstErr
 }
 
 func (m *Manager) deleteProfileFingerprintCheckDir(profileId string) error {
@@ -334,60 +523,6 @@ func (m *Manager) deleteProfileFingerprintCheckDir(profileId string) error {
 	}
 	if err := os.RemoveAll(target); err != nil {
 		return fmt.Errorf("删除指纹检测页缓存目录失败: %w", err)
-	}
-	return nil
-}
-
-func (m *Manager) deleteProfileSnapshotDir(profileId string) error {
-	profileId = strings.TrimSpace(profileId)
-	if profileId == "" {
-		return nil
-	}
-	dataRoot, err := filepath.Abs(m.ResolveRelativePath("data"))
-	if err != nil {
-		return fmt.Errorf("解析数据根目录失败: %w", err)
-	}
-	snapshotRoot := filepath.Join(dataRoot, "snapshots")
-	target, err := filepath.Abs(filepath.Join(snapshotRoot, profileId))
-	if err != nil {
-		return fmt.Errorf("解析快照目录失败: %w", err)
-	}
-	dataRoot = filepath.Clean(dataRoot)
-	snapshotRoot = filepath.Clean(snapshotRoot)
-	target = filepath.Clean(target)
-	if samePath(target, snapshotRoot) || samePath(target, dataRoot) || !isPathInside(target, snapshotRoot) {
-		return nil
-	}
-	if err := os.RemoveAll(target); err != nil {
-		return fmt.Errorf("删除快照目录失败: %w", err)
-	}
-	return nil
-}
-
-func (m *Manager) deleteProfileUserDataDir(userDataDir string) error {
-	userDataDir = strings.TrimSpace(userDataDir)
-	if userDataDir == "" {
-		return nil
-	}
-	target, err := filepath.Abs(userDataDir)
-	if err != nil {
-		return fmt.Errorf("解析实例数据目录失败: %w", err)
-	}
-	root := strings.TrimSpace(m.Config.Browser.UserDataRoot)
-	if root == "" {
-		root = "data"
-	}
-	rootAbs, err := filepath.Abs(m.ResolveRelativePath(root))
-	if err != nil {
-		return fmt.Errorf("解析用户数据根目录失败: %w", err)
-	}
-	target = filepath.Clean(target)
-	rootAbs = filepath.Clean(rootAbs)
-	if samePath(target, rootAbs) || !isPathInside(target, rootAbs) {
-		return nil
-	}
-	if err := os.RemoveAll(target); err != nil {
-		return fmt.Errorf("删除实例数据目录失败: %w", err)
 	}
 	return nil
 }

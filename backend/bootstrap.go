@@ -3,6 +3,7 @@ package backend
 import (
 	appconfig "ant-chrome/backend/internal/config"
 	apptray "ant-chrome/backend/internal/tray"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,6 +23,10 @@ func LoadConfig(path string) (*Config, error) {
 			}
 		}
 		return cfg, nil
+	}
+	var validationErr *appconfig.ValidationError
+	if errors.As(err, &validationErr) {
+		return nil, fmt.Errorf("配置校验失败: %w", err)
 	}
 
 	// 配置文件存在但内容损坏时，自动备份并重建默认配置，避免启动阶段反复报错。

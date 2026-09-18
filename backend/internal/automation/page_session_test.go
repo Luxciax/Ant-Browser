@@ -86,6 +86,108 @@ func TestRunnerAssetsIncludePageSessionFiles(t *testing.T) {
 	}
 }
 
+func TestPageSessionConfigKeyIsStableForEquivalentSelectorMaps(t *testing.T) {
+	state := RuntimeState{RuntimeDir: `C:\runtime`, NodePath: `C:\node.exe`}
+	left := PageCommandRequest{
+		ProfileID:        "profile-a",
+		Selector:         map[string]any{"profileId": "profile-a", "launchCode": "ABC"},
+		LaunchBaseURL:    "http://127.0.0.1:19000",
+		LaunchAuthHeader: "Authorization",
+		LaunchAuthValue:  "Bearer test",
+		ArtifactDir:      `C:\artifacts`,
+		Timeout:          15 * time.Second,
+	}
+	right := left
+	right.Selector = map[string]any{"launchCode": "ABC", "profileId": "profile-a"}
+
+	leftKey, err := pageSessionConfigKey(state, left)
+	if err != nil {
+		t.Fatalf("left config key: %v", err)
+	}
+	rightKey, err := pageSessionConfigKey(state, right)
+	if err != nil {
+		t.Fatalf("right config key: %v", err)
+	}
+	if leftKey != rightKey {
+		t.Fatalf("equivalent selector maps produced different keys: %s != %s", leftKey, rightKey)
+	}
+}
+
+func TestPageSessionConfigKeyChangesWhenSessionConfigurationChanges(t *testing.T) {
+	baseState := RuntimeState{RuntimeDir: `C:\runtime`, NodePath: `C:\node.exe`}
+	baseReq := PageCommandRequest{
+		ProfileID:        "profile-a",
+		Selector:         map[string]any{"profileId": "profile-a"},
+		LaunchBaseURL:    "http://127.0.0.1:19000",
+		LaunchAuthHeader: "Authorization",
+		LaunchAuthValue:  "Bearer one",
+		ArtifactDir:      `C:\artifacts`,
+		Timeout:          15 * time.Second,
+	}
+	baseKey, err := pageSessionConfigKey(baseState, baseReq)
+	if err != nil {
+		t.Fatalf("base config key: %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		state RuntimeState
+		req   PageCommandRequest
+	}{
+		{name: "runtime dir", state: RuntimeState{RuntimeDir: `D:\runtime`, NodePath: baseState.NodePath}, req: baseReq},
+		{name: "node path", state: RuntimeState{RuntimeDir: baseState.RuntimeDir, NodePath: `D:\node.exe`}, req: baseReq},
+		{name: "selector", state: baseState, req: func() PageCommandRequest {
+			r := baseReq
+			r.Selector = map[string]any{"profileId": "profile-b"}
+			return r
+		}()},
+		{name: "launch base url", state: baseState, req: func() PageCommandRequest { r := baseReq; r.LaunchBaseURL = "http://127.0.0.1:19001"; return r }()},
+		{name: "auth header", state: baseState, req: func() PageCommandRequest { r := baseReq; r.LaunchAuthHeader = "X-API-Key"; return r }()},
+		{name: "auth value", state: baseState, req: func() PageCommandRequest { r := baseReq; r.LaunchAuthValue = "Bearer two"; return r }()},
+		{name: "artifact dir", state: baseState, req: func() PageCommandRequest { r := baseReq; r.ArtifactDir = `D:\artifacts`; return r }()},
+		{name: "default timeout", state: baseState, req: func() PageCommandRequest { r := baseReq; r.Timeout = 20 * time.Second; return r }()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, err := pageSessionConfigKey(tt.state, tt.req)
+			if err != nil {
+				t.Fatalf("config key: %v", err)
+			}
+			if key == baseKey {
+				t.Fatalf("configuration change did not change page session key")
+			}
+		})
+	}
+}
+
+func TestPageSessionExpirationUsesOwnIdleTimeout(t *testing.T) {
+	now := time.Now()
+	short := &pageSession{lastUsed: now.Add(-2 * time.Minute), idleTimeout: time.Minute}
+	long := &pageSession{lastUsed: now.Add(-2 * time.Minute), idleTimeout: 10 * time.Minute}
+	if !short.expiredAt(now) {
+		t.Fatal("short-idle page session should be expired")
+	}
+	if long.expiredAt(now) {
+		t.Fatal("long-idle page session should not be expired")
+	}
+
+	long.setIdleTimeout(30 * time.Second)
+	if !long.expiredAt(now) {
+		t.Fatal("updated idle timeout was not applied to reused page session")
+	}
+}
+
+func TestPageSessionReaperIntervalUsesShortestSessionTimeout(t *testing.T) {
+	manager := &Manager{pageSessions: map[string]*pageSession{
+		"slow": {idleTimeout: 10 * time.Minute, lastUsed: time.Now()},
+		"fast": {idleTimeout: 4 * time.Second, lastUsed: time.Now()},
+	}}
+	if got := manager.pageSessionReaperInterval(); got != time.Second {
+		t.Fatalf("pageSessionReaperInterval = %s, want 1s", got)
+	}
+}
+
 func newBufferedSessionReader(reader io.Reader) *bufio.Reader {
 	return bufio.NewReaderSize(reader, 64<<10)
 }

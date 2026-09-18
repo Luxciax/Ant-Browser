@@ -6,6 +6,7 @@ import (
 	"ant-chrome/backend/internal/logger"
 	"ant-chrome/backend/internal/proxy"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -299,12 +300,18 @@ func (a *App) BrowserExtensionSetEnabled(extensionID string, enabled bool) (Brow
 	if extensionID == "" {
 		return BrowserExtension{}, fmt.Errorf("插件 ID 不能为空")
 	}
+	previous, err := a.browserMgr.ExtensionDAO.Get(extensionID)
+	if err != nil {
+		return BrowserExtension{}, err
+	}
 	if err := a.browserMgr.ExtensionDAO.SetEnabled(extensionID, enabled); err != nil {
 		return BrowserExtension{}, err
 	}
 	if !enabled {
 		if err := a.browserMgr.RemoveExtensionFromStoppedProfiles(extensionID); err != nil {
-			_ = a.browserMgr.ExtensionDAO.SetEnabled(extensionID, true)
+			if restoreErr := a.browserMgr.ExtensionDAO.SetEnabled(extensionID, previous.Enabled); restoreErr != nil {
+				return BrowserExtension{}, errors.Join(err, fmt.Errorf("恢复插件启用状态失败: %w", restoreErr))
+			}
 			return BrowserExtension{}, err
 		}
 	}
@@ -345,23 +352,61 @@ func (a *App) BrowserExtensionDelete(extensionID string) error {
 	if _, err := a.resolveBrowserExtensionInstallDir(extension.InstallDir); err != nil {
 		return err
 	}
-	if err := a.browserMgr.RemoveExtensionFromStoppedProfiles(extensionID); err != nil {
-		return err
+	if extension.Enabled {
+		if err := a.browserMgr.ExtensionDAO.SetEnabled(extensionID, false); err != nil {
+			return err
+		}
 	}
-	deletionStage, err := a.stageBrowserExtensionDeletion(extension)
+	restoreEnabled := func() error {
+		if !extension.Enabled {
+			return nil
+		}
+		return a.browserMgr.ExtensionDAO.SetEnabled(extensionID, true)
+	}
+	rollbackProfiles, cleanupProfileSnapshot, err := a.browserMgr.PrepareExtensionRemovalRollback(extensionID)
 	if err != nil {
-		return err
-	}
-	if err := a.browserMgr.ExtensionDAO.Delete(extensionID); err != nil {
-		if restoreErr := deletionStage.restore(); restoreErr != nil {
-			return fmt.Errorf("删除插件记录失败：%w；物理文件恢复失败：%v", err, restoreErr)
+		if restoreErr := restoreEnabled(); restoreErr != nil {
+			return errors.Join(err, fmt.Errorf("恢复插件启用状态失败: %w", restoreErr))
 		}
 		return err
 	}
+	if err := a.browserMgr.RemoveExtensionFromStoppedProfiles(extensionID); err != nil {
+		rollbackErr := rollbackProfiles()
+		cleanupProfileSnapshot()
+		restoreErr := restoreEnabled()
+		return errors.Join(err, rollbackErr, wrapExtensionRollbackError("恢复插件启用状态失败", restoreErr))
+	}
+	deletionStage, err := a.stageBrowserExtensionDeletion(extension)
+	if err != nil {
+		rollbackErr := rollbackProfiles()
+		cleanupProfileSnapshot()
+		restoreErr := restoreEnabled()
+		return errors.Join(err, rollbackErr, wrapExtensionRollbackError("恢复插件启用状态失败", restoreErr))
+	}
+	if err := a.browserMgr.ExtensionDAO.Delete(extensionID); err != nil {
+		fileRestoreErr := deletionStage.restore()
+		profileRestoreErr := rollbackProfiles()
+		cleanupProfileSnapshot()
+		enabledRestoreErr := restoreEnabled()
+		return errors.Join(
+			err,
+			wrapExtensionRollbackError("物理文件恢复失败", fileRestoreErr),
+			wrapExtensionRollbackError("Profile 插件状态恢复失败", profileRestoreErr),
+			wrapExtensionRollbackError("恢复插件启用状态失败", enabledRestoreErr),
+		)
+	}
+	cleanupProfileSnapshot()
 	if err := deletionStage.cleanup(); err != nil {
 		return fmt.Errorf("插件记录已删除，但清理删除暂存失败：%w", err)
 	}
 	return nil
+}
+
+func wrapExtensionRollbackError(message string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", message, err)
 }
 
 type browserExtensionDeletionEntry struct {

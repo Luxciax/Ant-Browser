@@ -14,6 +14,7 @@ const (
 	backupScheduleStatusNever   = "never"
 	backupScheduleStatusRunning = "running"
 	backupScheduleStatusSuccess = "success"
+	backupScheduleStatusDegraded = "degraded"
 	backupScheduleStatusSkipped = "skipped"
 	backupScheduleStatusFailed  = "failed"
 	backupScheduleHistoryLimit  = 3
@@ -201,16 +202,15 @@ func (s *backupScheduler) execute(openList config.OpenListChannelConfig) {
 		return
 	}
 
-	if runningNames := s.app.backupRunningProfileNames(); len(runningNames) > 0 {
-		s.recordSkipped(fmt.Sprintf("实例正在运行：%s", strings.Join(runningNames, "、")))
-		return
-	}
-
 	if err := s.app.lockMaintenanceWithNotice(nil); err != nil {
 		s.recordSkipped(err.Error())
 		return
 	}
 	defer s.app.maintenanceMu.Unlock()
+	if runningNames := s.app.backupRunningProfileNames(); len(runningNames) > 0 {
+		s.recordSkipped(fmt.Sprintf("实例正在运行：%s", strings.Join(runningNames, "、")))
+		return
+	}
 	result, err := s.app.backupOpenListUploadLocked(map[string]string{
 		"baseURL":             openList.BaseURL,
 		"remotePath":          openList.RemotePath,
@@ -252,7 +252,10 @@ func (s *backupScheduler) recordSuccessAt(successAt, remoteName string) {
 	next := normalizeBackupSettings(s.app.config.Backup)
 	next.Schedule.RecentBackupTimes = append([]string(nil), recent...)
 	s.app.config.Backup = next
-	_ = s.app.config.Save(s.app.resolveAppPath("config.yaml"))
+	if err := s.app.config.Save(s.app.resolveAppPath("config.yaml")); err != nil {
+		s.state.Status = backupScheduleStatusDegraded
+		s.state.LastError = fmt.Sprintf("备份已完成，但保存调度状态失败: %v", err)
+	}
 }
 
 func (s *backupScheduler) recordSkipped(message string) {

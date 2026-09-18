@@ -4,6 +4,7 @@ import { Badge, Button, Modal, toast } from '../../../shared/components'
 import { startBrowserInstanceByCode } from '../api'
 import type { BrowserProfile } from '../types'
 import { resolveActionFeedback } from '../utils/actionErrors'
+import { browserRuntimeLabel, normalizeBrowserRuntimeState } from '../utils/runtimeState'
 
 interface QuickLaunchModalProps {
   open: boolean
@@ -430,8 +431,8 @@ export function QuickLaunchModal({ open, onClose }: QuickLaunchModalProps) {
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <span className="text-sm font-medium text-[var(--color-text-primary)] truncate max-w-[180px]">{profile.profileName}</span>
-                                    <Badge variant={profile.running ? 'success' : 'warning'} size="sm" dot>
-                                      {profile.running ? '运行中' : '已停止'}
+                                    <Badge variant={normalizeBrowserRuntimeState(profile) === 'running' ? 'success' : 'warning'} size="sm" dot>
+                                      {browserRuntimeLabel(profile)}
                                     </Badge>
                                   </div>
 

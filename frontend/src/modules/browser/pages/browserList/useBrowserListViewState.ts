@@ -2,24 +2,26 @@
 import type { BrowserCore, BrowserProfile } from '../../types'
 import { EMPTY_FILTERS, type InstanceFilters } from '../../components/InstanceFilterBar'
 import type { BrowserViewMode } from '../../components/BrowserListLayout'
+import { browserRuntimeLabel, normalizeBrowserRuntimeState } from '../../utils/runtimeState'
 
-export const resolveProfileStatus = (running: boolean, debugReady: boolean, starting: boolean, stopping: boolean, lastError = '') => {
-  if (starting) {
+export const resolveProfileStatus = (profile: BrowserProfile, starting: boolean, stopping: boolean) => {
+  const runtimeState = normalizeBrowserRuntimeState(profile)
+  if (starting || runtimeState === 'starting') {
     return { variant: 'default' as const, label: '启动中' }
   }
-  if (stopping) {
+  if (stopping || runtimeState === 'stopping') {
     return { variant: 'default' as const, label: '停止中' }
   }
-  if (!running && lastError.trim()) {
+  if (runtimeState === 'failed') {
     return { variant: 'error' as const, label: '异常' }
   }
-  if (running && !debugReady) {
+  if (runtimeState === 'running' && !profile.debugReady) {
     return { variant: 'info' as const, label: '运行中（待就绪）' }
   }
-  if (running) {
+  if (runtimeState === 'running') {
     return { variant: 'success' as const, label: '运行中' }
   }
-  return { variant: 'default' as const, label: '已停止' }
+  return { variant: 'default' as const, label: browserRuntimeLabel(profile) }
 }
 
 export function useBrowserListViewState() {
@@ -70,7 +72,7 @@ export function useBrowserListDerived(
   startingIds: Set<string>,
   stoppingIds: Set<string>
 ) {
-  const runningCount = useMemo(() => profiles.filter(profile => profile.running).length, [profiles])
+  const runningCount = useMemo(() => profiles.filter(profile => normalizeBrowserRuntimeState(profile) === 'running').length, [profiles])
   const allTags = useMemo(() => {
     const set = new Set<string>()
     profiles.forEach(profile => profile.tags?.forEach(tag => set.add(tag)))
@@ -102,12 +104,16 @@ export function useBrowserListDerived(
     return coreId
   }
 
-  const isProfileStarting = (profileId: string) => startingIds.has(profileId)
-  const isProfileStopping = (profileId: string) => stoppingIds.has(profileId)
+  const runtimeStateFor = (profileId: string) => {
+    const profile = profiles.find(item => item.profileId === profileId)
+    return profile ? normalizeBrowserRuntimeState(profile) : 'stopped'
+  }
+  const isProfileStarting = (profileId: string) => startingIds.has(profileId) || runtimeStateFor(profileId) === 'starting'
+  const isProfileStopping = (profileId: string) => stoppingIds.has(profileId) || runtimeStateFor(profileId) === 'stopping'
   const isProfileBusy = (profileId: string) => isProfileStarting(profileId) || isProfileStopping(profileId)
 
   const getProfileStatus = (profile: BrowserProfile) => (
-    resolveProfileStatus(profile.running, profile.debugReady, isProfileStarting(profile.profileId), isProfileStopping(profile.profileId), profile.lastError)
+    resolveProfileStatus(profile, isProfileStarting(profile.profileId), isProfileStopping(profile.profileId))
   )
 
   const filteredProfiles = useMemo(() => {
@@ -116,8 +122,9 @@ export function useBrowserListDerived(
       if (filters.groupId === '__ungrouped__' && profile.groupId) return false
       if (filters.groupId && filters.groupId !== '__ungrouped__' && profile.groupId !== filters.groupId) return false
       if (unifiedKeyword && !matchesProfileKeyword(profile, unifiedKeyword)) return false
-      if (filters.status === 'running' && !profile.running) return false
-      if (filters.status === 'stopped' && profile.running) return false
+      const runtimeState = normalizeBrowserRuntimeState(profile)
+      if (filters.status === 'running' && runtimeState !== 'running') return false
+      if (filters.status === 'stopped' && runtimeState !== 'stopped') return false
       if (filters.proxyId === '__none__' && (profile.proxyId || profile.proxyConfig)) return false
       if (filters.proxyId && filters.proxyId !== '__none__' && profile.proxyId !== filters.proxyId) return false
       if (filters.coreId) {

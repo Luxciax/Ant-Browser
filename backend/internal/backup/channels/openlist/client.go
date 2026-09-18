@@ -2,6 +2,7 @@ package openlist
 
 import (
 	"ant-chrome/backend/internal/backup/channels"
+	"ant-chrome/backend/internal/fsutil"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -332,16 +333,21 @@ func (c *Client) Download(ctx context.Context, fileName, localPath string) error
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return fmt.Errorf(`create local backup directory failed: %w`, err)
 	}
-	temporaryPath := localPath + `.tmp`
-	file, err := os.Create(temporaryPath)
+	file, err := os.CreateTemp(filepath.Dir(localPath), ".openlist-backup-*.tmp")
 	if err != nil {
 		return fmt.Errorf(`create downloaded backup failed: %w`, err)
 	}
+	temporaryPath := file.Name()
 	written, copyErr := io.Copy(file, response.Body)
+	syncErr := file.Sync()
 	closeErr := file.Close()
 	if copyErr != nil {
 		_ = os.Remove(temporaryPath)
 		return fmt.Errorf(`download backup failed: %w`, copyErr)
+	}
+	if syncErr != nil {
+		_ = os.Remove(temporaryPath)
+		return fmt.Errorf(`flush downloaded backup failed: %w`, syncErr)
 	}
 	if closeErr != nil {
 		_ = os.Remove(temporaryPath)
@@ -351,7 +357,7 @@ func (c *Client) Download(ctx context.Context, fileName, localPath string) error
 		_ = os.Remove(temporaryPath)
 		return fmt.Errorf(`downloaded backup size mismatch: expected=%d actual=%d`, response.ContentLength, written)
 	}
-	if err := os.Rename(temporaryPath, localPath); err != nil {
+	if err := fsutil.ReplaceFile(temporaryPath, localPath); err != nil {
 		_ = os.Remove(temporaryPath)
 		return fmt.Errorf(`replace downloaded backup failed: %w`, err)
 	}
@@ -374,16 +380,21 @@ func (c *Client) DownloadMetadata(ctx context.Context, fileName, localPath strin
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return fmt.Errorf(`create local backup metadata directory failed: %w`, err)
 	}
-	temporaryPath := localPath + `.tmp`
-	file, err := os.Create(temporaryPath)
+	file, err := os.CreateTemp(filepath.Dir(localPath), ".openlist-metadata-*.tmp")
 	if err != nil {
 		return fmt.Errorf(`create downloaded backup metadata failed: %w`, err)
 	}
+	temporaryPath := file.Name()
 	written, copyErr := io.Copy(file, io.LimitReader(response.Body, channels.MaxBackupMetadataBytes+1))
+	syncErr := file.Sync()
 	closeErr := file.Close()
 	if copyErr != nil {
 		_ = os.Remove(temporaryPath)
 		return fmt.Errorf(`download backup metadata failed: %w`, copyErr)
+	}
+	if syncErr != nil {
+		_ = os.Remove(temporaryPath)
+		return fmt.Errorf(`flush downloaded backup metadata failed: %w`, syncErr)
 	}
 	if closeErr != nil {
 		_ = os.Remove(temporaryPath)
@@ -397,7 +408,7 @@ func (c *Client) DownloadMetadata(ctx context.Context, fileName, localPath strin
 		_ = os.Remove(temporaryPath)
 		return fmt.Errorf(`downloaded backup metadata size mismatch: expected=%d actual=%d`, response.ContentLength, written)
 	}
-	if err := os.Rename(temporaryPath, localPath); err != nil {
+	if err := fsutil.ReplaceFile(temporaryPath, localPath); err != nil {
 		_ = os.Remove(temporaryPath)
 		return fmt.Errorf(`replace downloaded backup metadata failed: %w`, err)
 	}

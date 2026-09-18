@@ -21,7 +21,9 @@ func FindFiles(snapDir, snapshotID string) (metaPath, zipPath string, err error)
 		return "", "", err
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), snapshotID) && strings.HasSuffix(entry.Name(), ".meta.json") {
+		name := entry.Name()
+		matchesID := name == snapshotID+".meta.json" || strings.HasPrefix(name, snapshotID+"_")
+		if matchesID && strings.HasSuffix(name, ".meta.json") {
 			metaPath = filepath.Join(snapDir, entry.Name())
 			zipPath = strings.TrimSuffix(metaPath, ".meta.json") + ".zip"
 			if _, err := os.Stat(zipPath); err != nil {

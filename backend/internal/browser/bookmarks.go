@@ -2,6 +2,7 @@ package browser
 
 import (
 	"ant-chrome/backend/internal/config"
+	"ant-chrome/backend/internal/fsutil"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -90,7 +91,7 @@ func EnsureDefaultBookmarks(userDataDir string, bookmarks []config.BrowserBookma
 	if err != nil {
 		return fmt.Errorf("序列化书签失败: %w", err)
 	}
-	return os.WriteFile(bookmarksPath, out, 0644)
+	return fsutil.AtomicWriteFile(bookmarksPath, out, 0o644)
 }
 
 // ReplaceBookmarkURL 将已有书签中的 oldURL 更新为 newURL，用于修复运行时动态书签地址。
@@ -143,7 +144,7 @@ func replaceBookmarkURL(userDataDir string, newURL string, match func(map[string
 	if err != nil {
 		return false, fmt.Errorf("序列化书签失败: %w", err)
 	}
-	return true, os.WriteFile(bookmarksPath, out, 0644)
+	return true, fsutil.AtomicWriteFile(bookmarksPath, out, 0o644)
 }
 
 func replaceBookmarkURLInNodes(nodes []interface{}, newURL string, match func(map[string]interface{}) bool) bool {

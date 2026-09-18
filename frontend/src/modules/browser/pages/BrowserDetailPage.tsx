@@ -18,12 +18,15 @@ import { CookieManagerCard } from '../components/CookieManagerCard'
 import { SnapshotTab } from '../components/SnapshotTab'
 import { resolveActionErrorMessage, resolveActionFeedback } from '../utils/actionErrors'
 import { warmupProfileProxyBeforeStart } from '../utils/proxyWarmup'
+import { browserRuntimeLabel, isBrowserRuntimeStoppable, normalizeBrowserRuntimeState } from '../utils/runtimeState'
 
-const resolveRuntimeStatus = (running: boolean, debugReady: boolean, lastError = '') => {
-  if (!running && lastError.trim()) return { variant: 'error' as const, label: '异常' }
-  if (!running) return { variant: 'default' as const, label: '已停止' }
-  if (!debugReady) return { variant: 'info' as const, label: '运行中（待就绪）' }
-  return { variant: 'success' as const, label: '运行中' }
+const resolveRuntimeStatus = (profile: BrowserProfile) => {
+  const state = normalizeBrowserRuntimeState(profile)
+  if (state === 'failed') return { variant: 'error' as const, label: '异常' }
+  if (state === 'starting' || state === 'stopping') return { variant: 'default' as const, label: browserRuntimeLabel(profile) }
+  if (state === 'running' && !profile.debugReady) return { variant: 'info' as const, label: '运行中（待就绪）' }
+  if (state === 'running') return { variant: 'success' as const, label: '运行中' }
+  return { variant: 'default' as const, label: '已停止' }
 }
 
 const formatTime = (value?: string) => {
@@ -90,12 +93,14 @@ export function BrowserDetailPage() {
     const offUpdated = EventsOn('browser:instance:updated', handleRuntimeChange)
     const offStopped = EventsOn('browser:instance:stopped', handleRuntimeChange)
     const offCrashed = EventsOn('browser:instance:crashed', handleRuntimeChange)
+    const offFailed = EventsOn('browser:instance:failed', handleRuntimeChange)
 
     return () => {
       offStarted?.()
       offUpdated?.()
       offStopped?.()
       offCrashed?.()
+      offFailed?.()
     }
   }, [id])
 
@@ -206,11 +211,14 @@ export function BrowserDetailPage() {
     },
   ]
 
-  const isStarting = pendingAction === 'starting'
-  const isStopping = pendingAction === 'stopping'
+  const runtimeState = normalizeBrowserRuntimeState(profile)
+  const isStarting = pendingAction === 'starting' || runtimeState === 'starting'
+  const isStopping = pendingAction === 'stopping' || runtimeState === 'stopping'
   const isRestarting = pendingAction === 'restarting'
-  const isBusy = pendingAction !== null
-  const runtimeStatus = resolveRuntimeStatus(profile.running, profile.debugReady, profile.lastError)
+  const isBusy = pendingAction !== null || runtimeState === 'starting' || runtimeState === 'stopping'
+  const isRunning = runtimeState === 'running'
+  const isStoppable = isBrowserRuntimeStoppable(profile)
+  const runtimeStatus = resolveRuntimeStatus(profile)
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -270,7 +278,7 @@ export function BrowserDetailPage() {
                 </div>
                 <div className="flex justify-between">
                   <span>调试状态</span>
-                  <span>{profile.debugReady ? '已就绪' : (profile.running ? '等待就绪' : '-')}</span>
+                  <span>{profile.debugReady ? '已就绪' : (isRunning ? '等待就绪' : '-')}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>最近启动</span>
@@ -345,13 +353,13 @@ export function BrowserDetailPage() {
 
           <Card title="快捷操作">
             <div className="flex flex-wrap items-center gap-2">
-              {profile.running ? (
+              {isStoppable ? (
                 <Button size="sm" variant="secondary" onClick={handleStop} loading={isStopping} disabled={isBusy && !isStopping}>
                   {!isStopping && <Square className="w-4 h-4" />}
                   {isStopping ? '停止中' : '停止'}
                 </Button>
               ) : (
-                <Button size="sm" onClick={handleStart} loading={isStarting} disabled={isBusy && !isStarting}>
+                <Button size="sm" onClick={handleStart} loading={isStarting} disabled={isBusy}>
                   {!isStarting && <Play className="w-4 h-4" />}
                   {isStarting ? '启动中' : '启动'}
                 </Button>
@@ -382,7 +390,7 @@ export function BrowserDetailPage() {
           <Card title="打开地址">
             <div className="flex flex-col md:flex-row gap-3">
               <Input value={targetUrl} onChange={e => setTargetUrl(e.target.value)} placeholder="请输入目标地址" />
-              <Button onClick={handleOpenUrl}>
+              <Button onClick={handleOpenUrl} disabled={!isRunning}>
                 <Globe className="w-4 h-4" />
                 打开
               </Button>
@@ -396,15 +404,15 @@ export function BrowserDetailPage() {
           <CookieManagerCard
             profileId={profile.profileId}
             profileName={profile.profileName}
-            running={profile.running}
-            ready={profile.running && profile.debugReady}
+            running={isRunning}
+            ready={isRunning && profile.debugReady}
           />
         </div>
       )}
 
       {/* 快照管理 Tab */}
       {activeTab === 'snapshot' && (
-        <SnapshotTab profileId={profile.profileId} running={profile.running} />
+        <SnapshotTab profileId={profile.profileId} running={isRunning} />
       )}
     </div>
   )

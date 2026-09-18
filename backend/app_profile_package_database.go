@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -16,9 +17,9 @@ import (
 const (
 	profilePackageVersion                   = 3
 	profilePackageDatabaseVersionIntroduced = 2
-	profilePackageDatabasePath    = "database.json"
-	profilePackageDatabaseFormat  = "ant-chrome-profile-database"
-	profilePackageDatabaseVersion = 1
+	profilePackageDatabasePath              = "database.json"
+	profilePackageDatabaseFormat            = "ant-chrome-profile-database"
+	profilePackageDatabaseVersion           = 1
 )
 
 // ProfilePackageDatabase 保存实例及其数据库关联数据，不包含运行时 launch code。
@@ -967,6 +968,29 @@ func restoreProfilePackageExtensions(tx *sql.Tx, source []browser.Extension, war
 		}
 		if _, exists := targetIDs[key]; exists {
 			mappings[key] = extension.ExtensionID
+			installDir := strings.TrimSpace(extension.InstallDir)
+			if installDir != "" && profilePackageDirectoryExists(installDir) {
+				if _, err := tx.Exec(`
+					UPDATE browser_extensions
+					SET name = ?, version = ?, description = ?, icon_data_url = ?, manifest_json = ?, source_url = ?,
+						install_dir = ?, install_mode = ?, package_path = ?, package_hash = ?, updated_at = ?
+					WHERE lower(extension_id) = lower(?)`,
+					extension.Name,
+					extension.Version,
+					extension.Description,
+					extension.IconDataURL,
+					extension.ManifestJSON,
+					extension.SourceURL,
+					installDir,
+					strings.TrimSpace(extension.InstallMode),
+					strings.TrimSpace(extension.PackagePath),
+					strings.TrimSpace(extension.PackageHash),
+					time.Now().Format(time.RFC3339),
+					extension.ExtensionID,
+				); err != nil {
+					return nil, fmt.Errorf("更新现有插件迁移路径失败(%s): %w", extension.Name, err)
+				}
+			}
 			continue
 		}
 		installedAt := extension.InstalledAt
@@ -994,11 +1018,25 @@ func restoreProfilePackageExtensions(tx *sql.Tx, source []browser.Extension, war
 		}
 		targetIDs[key] = struct{}{}
 		mappings[key] = extension.ExtensionID
-		if filepath.IsAbs(strings.TrimSpace(extension.InstallDir)) || filepath.IsAbs(strings.TrimSpace(extension.PackagePath)) {
+		installDir := strings.TrimSpace(extension.InstallDir)
+		packagePath := strings.TrimSpace(extension.PackagePath)
+		installMissing := filepath.IsAbs(installDir) && !profilePackageDirectoryExists(installDir)
+		packageMissing := filepath.IsAbs(packagePath) && !profilePackageRegularFileExists(packagePath)
+		if installMissing || packageMissing {
 			appendProfilePackageWarning(warnings, fmt.Sprintf("插件「%s」的外部文件路径未随实例包复制", extension.Name))
 		}
 	}
 	return mappings, nil
+}
+
+func profilePackageDirectoryExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func profilePackageRegularFileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func insertProfilePackageProfile(tx *sql.Tx, profile browser.Profile) error {

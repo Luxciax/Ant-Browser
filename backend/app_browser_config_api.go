@@ -29,6 +29,7 @@ func (a *App) GetBrowserSettings() BrowserSettings {
 
 func (a *App) SaveBrowserSettings(settings BrowserSettings) error {
 	log := logger.New("Browser")
+	previous := a.config.Browser
 	a.config.Browser.UserDataRoot = strings.TrimSpace(settings.UserDataRoot)
 	a.config.Browser.DefaultFingerprintArgs = append([]string{}, settings.DefaultFingerprintArgs...)
 	a.config.Browser.DefaultLaunchArgs = append([]string{}, settings.DefaultLaunchArgs...)
@@ -52,6 +53,7 @@ func (a *App) SaveBrowserSettings(settings BrowserSettings) error {
 		a.config.Browser.StartStableWindowMs = browserStartStableWindowMillis(nil)
 	}
 	if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {
+		a.config.Browser = previous
 		log.Error("浏览器配置保存失败", logger.F("error", err))
 		return err
 	}
@@ -197,6 +199,9 @@ func (a *App) importLocalBrowserCoreArchive(archivePath string) (*BrowserCore, e
 	}
 	if err := a.browserMgr.SaveCore(input); err != nil {
 		a.emitBrowserCoreImportProgress("error", 0, "保存配置失败: "+err.Error())
+		if cleanupErr := os.RemoveAll(targetDir); cleanupErr != nil {
+			return nil, fmt.Errorf("保存内核配置失败: %w；清理已导入内核目录失败: %v", err, cleanupErr)
+		}
 		return nil, err
 	}
 	for _, saved := range a.browserMgr.ListCores() {

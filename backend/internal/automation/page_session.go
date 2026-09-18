@@ -121,26 +121,48 @@ func (m *Manager) PageSessionProfiles() []string {
 
 func (m *Manager) acquirePageSession(state RuntimeState, req PageCommandRequest) (*pageSession, bool, error) {
 	profileID := strings.TrimSpace(req.ProfileID)
-	m.pageMu.Lock()
-	if existing := m.pageSessions[profileID]; existing != nil && !existing.isClosed() {
-		m.pageMu.Unlock()
-		return existing, true, nil
-	}
-	m.pageMu.Unlock()
-
-	session, err := m.spawnPageSession(state, req)
+	configKey, err := pageSessionConfigKey(state, req)
 	if err != nil {
 		return nil, false, err
 	}
+	var stale *pageSession
 	m.pageMu.Lock()
 	if existing := m.pageSessions[profileID]; existing != nil && !existing.isClosed() {
-		m.pageMu.Unlock()
-		session.close()
-		return existing, true, nil
+		if existing.configKey == configKey {
+			existing.setIdleTimeout(req.IdleTimeout)
+			m.pageMu.Unlock()
+			return existing, true, nil
+		}
+		delete(m.pageSessions, profileID)
+		stale = existing
+	}
+	m.pageMu.Unlock()
+	if stale != nil {
+		stale.close()
+	}
+
+	session, err := m.spawnPageSession(state, req, configKey)
+	if err != nil {
+		return nil, false, err
+	}
+	var superseded *pageSession
+	m.pageMu.Lock()
+	if existing := m.pageSessions[profileID]; existing != nil && !existing.isClosed() {
+		if existing.configKey == configKey {
+			existing.setIdleTimeout(req.IdleTimeout)
+			m.pageMu.Unlock()
+			session.close()
+			return existing, true, nil
+		}
+		delete(m.pageSessions, profileID)
+		superseded = existing
 	}
 	m.pageSessions[profileID] = session
 	m.pageMu.Unlock()
-	m.ensurePageSessionReaper(req.IdleTimeout)
+	if superseded != nil {
+		superseded.close()
+	}
+	m.ensurePageSessionReaper()
 	return session, false, nil
 }
 
@@ -155,7 +177,7 @@ func (m *Manager) dropPageSession(profileID string, session *pageSession) {
 	}
 }
 
-func (m *Manager) spawnPageSession(state RuntimeState, req PageCommandRequest) (*pageSession, error) {
+func (m *Manager) spawnPageSession(state RuntimeState, req PageCommandRequest, configKey string) (*pageSession, error) {
 	payload := pageSessionPayload{
 		RuntimeDir:       state.RuntimeDir,
 		Selector:         req.Selector,
@@ -193,10 +215,12 @@ func (m *Manager) spawnPageSession(state RuntimeState, req PageCommandRequest) (
 		return nil, fmt.Errorf("start page session: %w", err)
 	}
 	session := &pageSession{
-		profileID: strings.TrimSpace(req.ProfileID),
-		proc:      &nodeSessionProcess{cmd: cmd, stdin: stdin, stdout: stdout},
-		lastUsed:  time.Now(),
-		reader:    bufio.NewReaderSize(stdout, 64<<10),
+		profileID:   strings.TrimSpace(req.ProfileID),
+		configKey:   configKey,
+		idleTimeout: normalizePageSessionIdleTimeout(req.IdleTimeout),
+		proc:        &nodeSessionProcess{cmd: cmd, stdin: stdin, stdout: stdout},
+		lastUsed:    time.Now(),
+		reader:      bufio.NewReaderSize(stdout, 64<<10),
 	}
 	go func() { _ = cmd.Wait() }()
 	if err := session.awaitReady(pageSessionReadyTimeout); err != nil {
@@ -222,10 +246,7 @@ func (m *Manager) writePageSessionPayload(payload pageSessionPayload) (string, e
 	return file.Name(), nil
 }
 
-func (m *Manager) ensurePageSessionReaper(idleTimeout time.Duration) {
-	if idleTimeout <= 0 {
-		idleTimeout = defaultPageSessionIdle
-	}
+func (m *Manager) ensurePageSessionReaper() {
 	m.pageMu.Lock()
 	if m.pageReaperOn {
 		m.pageMu.Unlock()
@@ -233,22 +254,19 @@ func (m *Manager) ensurePageSessionReaper(idleTimeout time.Duration) {
 	}
 	m.pageReaperOn = true
 	m.pageMu.Unlock()
-	go m.reapIdlePageSessions(idleTimeout)
+	go m.reapIdlePageSessions()
 }
 
-func (m *Manager) reapIdlePageSessions(idleTimeout time.Duration) {
-	interval := idleTimeout / 4
-	if interval < time.Second {
-		interval = time.Second
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for range ticker.C {
+func (m *Manager) reapIdlePageSessions() {
+	for {
+		interval := m.pageSessionReaperInterval()
+		timer := time.NewTimer(interval)
+		<-timer.C
 		now := time.Now()
 		m.pageMu.Lock()
 		expired := make([]*pageSession, 0)
 		for profileID, session := range m.pageSessions {
-			if session == nil || session.isClosed() || now.Sub(session.touchedAt()) > idleTimeout {
+			if session == nil || session.expiredAt(now) {
 				expired = append(expired, session)
 				delete(m.pageSessions, profileID)
 			}
@@ -267,4 +285,27 @@ func (m *Manager) reapIdlePageSessions(idleTimeout time.Duration) {
 			return
 		}
 	}
+}
+
+func (m *Manager) pageSessionReaperInterval() time.Duration {
+	m.pageMu.Lock()
+	defer m.pageMu.Unlock()
+	interval := 30 * time.Second
+	for _, session := range m.pageSessions {
+		idleTimeout := defaultPageSessionIdle
+		if session != nil {
+			idleTimeout = session.idleTimeoutValue()
+		}
+		candidate := idleTimeout / 4
+		if candidate < time.Second {
+			candidate = time.Second
+		}
+		if candidate > 30*time.Second {
+			candidate = 30 * time.Second
+		}
+		if candidate < interval {
+			interval = candidate
+		}
+	}
+	return interval
 }

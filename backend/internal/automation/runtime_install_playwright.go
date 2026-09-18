@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"ant-chrome/backend/internal/config"
 )
@@ -52,11 +53,47 @@ func (m *Manager) activateRuntimeInstall(stagingDir string, auto config.Automati
 	if err := os.MkdirAll(filepath.Dir(runtimeDir), 0o755); err != nil {
 		return fmt.Errorf("创建自动化运行时目录失败: %w", err)
 	}
-	if err := os.RemoveAll(runtimeDir); err != nil {
-		return fmt.Errorf("替换自动化运行时目录失败: %w", err)
-	}
-	if err := os.Rename(stagingDir, runtimeDir); err != nil {
+	if err := commitRuntimeDirectory(stagingDir, runtimeDir); err != nil {
 		return fmt.Errorf("启用自动化运行时失败: %w", err)
+	}
+	return nil
+}
+
+func commitRuntimeDirectory(stagingDir string, runtimeDir string) error {
+	stagingDir = filepath.Clean(stagingDir)
+	runtimeDir = filepath.Clean(runtimeDir)
+	if stagingDir == runtimeDir {
+		return fmt.Errorf("runtime staging directory equals target directory")
+	}
+	if info, err := os.Stat(stagingDir); err != nil {
+		return fmt.Errorf("check runtime staging directory: %w", err)
+	} else if !info.IsDir() {
+		return fmt.Errorf("runtime staging path is not a directory: %s", stagingDir)
+	}
+
+	rollbackDir := fmt.Sprintf("%s.rollback-%d", runtimeDir, time.Now().UnixNano())
+	hadRuntime := false
+	if _, err := os.Stat(runtimeDir); err == nil {
+		hadRuntime = true
+		if err := os.Rename(runtimeDir, rollbackDir); err != nil {
+			return fmt.Errorf("stage existing runtime: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("check existing runtime: %w", err)
+	}
+
+	if err := os.Rename(stagingDir, runtimeDir); err != nil {
+		commitErr := fmt.Errorf("commit new runtime: %w", err)
+		if hadRuntime {
+			if restoreErr := os.Rename(rollbackDir, runtimeDir); restoreErr != nil {
+				return fmt.Errorf("%w; restore previous runtime: %v", commitErr, restoreErr)
+			}
+		}
+		return commitErr
+	}
+
+	if hadRuntime {
+		_ = os.RemoveAll(rollbackDir)
 	}
 	return nil
 }

@@ -17,6 +17,7 @@
   tags: string[]
   keywords: string[]
   groupId?: string
+  runtimeState?: 'stopped' | 'starting' | 'running' | 'stopping' | 'failed' | string
   running: boolean
   debugPort: number
   debugReady: boolean

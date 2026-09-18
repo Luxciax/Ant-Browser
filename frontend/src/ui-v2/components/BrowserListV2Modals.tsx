@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { toast } from '../../shared/components'
 import type { BrowserExtension, BrowserProfile, BrowserProxy } from '../../modules/browser/types'
+import { isBrowserRuntimeConfigLocked } from '../../modules/browser/utils/runtimeState'
 import {
   browserProxyTestSpeed,
   exportBrowserProfilePackage,
@@ -312,7 +313,7 @@ export function BackupV2Modal({ selectedProfiles, runningCount, onClose }: Backu
 
   const exportSelected = async () => {
     if (selectedProfiles.length === 0) return
-    const running = selectedProfiles.filter((profile) => profile.running)
+    const running = selectedProfiles.filter((profile) => isBrowserRuntimeConfigLocked(profile))
     if (running.length > 0) {
       toast.error(`请先停止实例再导出：${running.slice(0, 3).map((profile) => profile.profileName).join('、')}${running.length > 3 ? ' 等' : ''}`)
       return

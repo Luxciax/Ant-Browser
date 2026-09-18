@@ -1,7 +1,9 @@
 package browser
 
 import (
+	"ant-chrome/backend/internal/fsutil"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -184,16 +186,24 @@ func (m *Manager) InstallExtensionPackageBytes(extensionID string, sourceURL str
 	}
 
 	installDir := filepath.Join(m.ResolveRelativePath(filepath.Join("data", extensionsRootDir)), resolvedID)
-	if err := replaceExtensionDirFromZip(zipData, installDir); err != nil {
+	fileTx, err := beginExtensionInstallFileTransaction(installDir)
+	if err != nil {
 		return Extension{}, err
+	}
+	if err := replaceExtensionDirFromZip(zipData, installDir); err != nil {
+		return Extension{}, rollbackExtensionInstallFiles(fileTx, err)
 	}
 	installMode := ExtensionInstallModePersistent
 	packagePath := ""
 	packageHash := ""
 	if isCRXExtensionPackage(data) {
-		packagePath, packageHash, err = m.storeExtensionPackage(resolvedID, data)
+		packageTarget := m.extensionPackagePath(resolvedID, strings.TrimSpace(manifest.Version))
+		if err := fileTx.stagePackage(packageTarget); err != nil {
+			return Extension{}, rollbackExtensionInstallFiles(fileTx, err)
+		}
+		packagePath, packageHash, err = m.storeExtensionPackage(resolvedID, strings.TrimSpace(manifest.Version), data)
 		if err != nil {
-			return Extension{}, err
+			return Extension{}, rollbackExtensionInstallFiles(fileTx, err)
 		}
 		installMode = ExtensionInstallModePersistent
 	}
@@ -201,29 +211,32 @@ func (m *Manager) InstallExtensionPackageBytes(extensionID string, sourceURL str
 	localeMessages := readExtensionLocaleMessagesFromZip(zipData, manifest)
 	manifestJSON := string(manifestData)
 	extension := Extension{
-		ExtensionID:  resolvedID,
-		Name:         resolveExtensionMessage(resolveExtensionName(manifest, resolvedID), localeMessages),
-		Version:      strings.TrimSpace(manifest.Version),
-		Description:  resolveExtensionDescription(manifest, localeMessages),
-		IconDataURL:  readExtensionIconDataURLFromZip(zipData, manifest),
-		ManifestJSON: manifestJSON,
-		SourceURL:    strings.TrimSpace(sourceURL),
-		InstallDir:   installDir,
-		InstallMode:  installMode,
-		PackagePath:  packagePath,
-		PackageHash:  packageHash,
-		Enabled:      true,
+		ExtensionID:    resolvedID,
+		Name:           resolveExtensionMessage(resolveExtensionName(manifest, resolvedID), localeMessages),
+		Version:        strings.TrimSpace(manifest.Version),
+		Description:    resolveExtensionDescription(manifest, localeMessages),
+		IconDataURL:    readExtensionIconDataURLFromZip(zipData, manifest),
+		ManifestJSON:   manifestJSON,
+		SourceURL:      strings.TrimSpace(sourceURL),
+		InstallDir:     installDir,
+		InstallMode:    installMode,
+		PackagePath:    packagePath,
+		PackageHash:    packageHash,
+		Enabled:        true,
 		DefaultInstall: true,
 	}
 	if m.ExtensionDAO != nil {
 		if err := m.ExtensionDAO.Upsert(extension); err != nil {
-			return Extension{}, err
+			return Extension{}, rollbackExtensionInstallFiles(fileTx, err)
 		}
+		fileTx.commit()
 		stored, err := m.ExtensionDAO.Get(resolvedID)
 		if err == nil {
 			return stored, nil
 		}
+		return extension, nil
 	}
+	fileTx.commit()
 	return extension, nil
 }
 
@@ -244,41 +257,84 @@ func (m *Manager) InstallExtensionDirectory(sourceDir string) (Extension, error)
 	if normalizedDir == "" {
 		return Extension{}, fmt.Errorf("插件目录不能为空")
 	}
-	manifestPath := filepath.Join(normalizedDir, "manifest.json")
+	identity, canonicalSource, err := m.resolveLocalExtensionIdentity(normalizedDir)
+	if err != nil {
+		return Extension{}, err
+	}
+	manifestPath := filepath.Join(canonicalSource, "manifest.json")
 	manifestData, err := os.ReadFile(manifestPath)
 	if err != nil {
+		if identity.CreatedKey {
+			_ = os.Remove(identity.KeyPath)
+		}
 		return Extension{}, fmt.Errorf("插件目录缺少 manifest.json: %w", err)
 	}
 	manifest, err := parseExtensionManifest(manifestData)
 	if err != nil {
+		if identity.CreatedKey {
+			_ = os.Remove(identity.KeyPath)
+		}
 		return Extension{}, err
 	}
-	extensionID := extensionIDFromManifest(manifestData)
+	managedManifestData, err := manifestWithLocalExtensionKey(manifestData, identity.PublicKey)
+	if err != nil {
+		if identity.CreatedKey {
+			_ = os.Remove(identity.KeyPath)
+		}
+		return Extension{}, err
+	}
+	extensionID := identity.ExtensionID
 	installDir := filepath.Join(m.ResolveRelativePath(filepath.Join("data", extensionsRootDir)), extensionID)
-	if err := copyExtensionDirectory(normalizedDir, installDir); err != nil {
+	fileTx, err := beginExtensionInstallFileTransaction(installDir)
+	if err != nil {
+		if identity.CreatedKey {
+			_ = os.Remove(identity.KeyPath)
+		}
 		return Extension{}, err
 	}
-	localeMessages := readExtensionLocaleMessagesFromDir(normalizedDir, manifest)
+	if err := copyExtensionDirectory(canonicalSource, installDir); err != nil {
+		rollbackErr := fileTx.rollback()
+		if identity.CreatedKey {
+			_ = os.Remove(identity.KeyPath)
+		}
+		return Extension{}, errors.Join(err, rollbackErr)
+	}
+	if err := fsutil.AtomicWriteFile(filepath.Join(installDir, "manifest.json"), managedManifestData, 0o644); err != nil {
+		rollbackErr := fileTx.rollback()
+		if identity.CreatedKey {
+			_ = os.Remove(identity.KeyPath)
+		}
+		return Extension{}, errors.Join(fmt.Errorf("写入本地插件稳定 manifest 失败: %w", err), rollbackErr)
+	}
+	localeMessages := readExtensionLocaleMessagesFromDir(canonicalSource, manifest)
 	extension := Extension{
-		ExtensionID:  extensionID,
-		Name:         resolveExtensionMessage(resolveExtensionName(manifest, extensionID), localeMessages),
-		Version:      strings.TrimSpace(manifest.Version),
-		Description:  resolveExtensionDescription(manifest, localeMessages),
-		IconDataURL:  readExtensionIconDataURLFromDir(normalizedDir, manifest),
-		ManifestJSON: string(manifestData),
-		SourceURL:    normalizedDir,
-		InstallDir:   installDir,
-		InstallMode:  ExtensionInstallModePersistent,
-		Enabled:      true,
+		ExtensionID:    extensionID,
+		Name:           resolveExtensionMessage(resolveExtensionName(manifest, extensionID), localeMessages),
+		Version:        strings.TrimSpace(manifest.Version),
+		Description:    resolveExtensionDescription(manifest, localeMessages),
+		IconDataURL:    readExtensionIconDataURLFromDir(canonicalSource, manifest),
+		ManifestJSON:   string(managedManifestData),
+		SourceURL:      canonicalSource,
+		InstallDir:     installDir,
+		InstallMode:    ExtensionInstallModePersistent,
+		Enabled:        true,
+		DefaultInstall: true,
 	}
 	if m.ExtensionDAO != nil {
 		if err := m.ExtensionDAO.Upsert(extension); err != nil {
-			return Extension{}, err
+			rollbackErr := fileTx.rollback()
+			if identity.CreatedKey {
+				_ = os.Remove(identity.KeyPath)
+			}
+			return Extension{}, errors.Join(err, rollbackErr)
 		}
+		fileTx.commit()
 		if stored, err := m.ExtensionDAO.Get(extensionID); err == nil {
 			return stored, nil
 		}
+		return extension, nil
 	}
+	fileTx.commit()
 	return extension, nil
 }
 

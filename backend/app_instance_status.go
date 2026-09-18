@@ -1,11 +1,20 @@
 package backend
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
+	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/logger"
 )
+
+func shouldDetectExternalBrowserRuntime(profile *BrowserProfile) bool {
+	return profile != nil &&
+		!profile.Running &&
+		browser.NormalizeProfileRuntimeState(profile) == browser.RuntimeStopped
+}
 
 func (a *App) BrowserInstanceStatus(profileId string) (*BrowserProfile, error) {
 	a.browserMgr.Mutex.Lock()
@@ -15,7 +24,7 @@ func (a *App) BrowserInstanceStatus(profileId string) (*BrowserProfile, error) {
 		return nil, fmt.Errorf("profile not found")
 	}
 	a.ensureProfileLaunchCode(profile)
-	if !profile.Running {
+	if shouldDetectExternalBrowserRuntime(profile) {
 		userDataDir := a.browserMgr.ResolveUserDataDir(profile)
 		if detection, ok := detectBrowserRuntimeByUserDataDir(userDataDir); ok && detection.DebugReady {
 			a.markProfileRunningLocked(profileId, profile, nil, detection.PID, detection.DebugPort, true, "")
@@ -27,7 +36,7 @@ func (a *App) BrowserInstanceStatus(profileId string) (*BrowserProfile, error) {
 			)
 		}
 	}
-	return profile, nil
+	return copyBrowserProfileSnapshot(profile), nil
 }
 
 func (a *App) BrowserInstanceOpenUrl(profileId string, targetUrl string) (bool, error) {
@@ -47,7 +56,7 @@ func (a *App) BrowserInstanceOpenUrl(profileId string, targetUrl string) (bool, 
 	}
 	a.ensureProfileLaunchCode(profile)
 	trackedCmd := a.browserMgr.BrowserProcesses[profileId]
-	if !profile.Running {
+	if shouldDetectExternalBrowserRuntime(profile) {
 		userDataDir := a.browserMgr.ResolveUserDataDir(profile)
 		if detection, ok := detectBrowserRuntimeByUserDataDir(userDataDir); ok && detection.DebugReady {
 			a.markProfileRunningLocked(profileId, profile, nil, detection.PID, detection.DebugPort, true, "")
@@ -57,10 +66,12 @@ func (a *App) BrowserInstanceOpenUrl(profileId string, targetUrl string) (bool, 
 				logger.F("pid", detection.PID),
 				logger.F("debug_port", detection.DebugPort),
 			)
-		} else {
-			a.browserMgr.Mutex.Unlock()
-			return false, fmt.Errorf("打开地址失败：实例当前未运行，请先启动实例后再试。")
 		}
+	}
+	if !profile.Running {
+		state := browser.NormalizeProfileRuntimeState(profile)
+		a.browserMgr.Mutex.Unlock()
+		return false, fmt.Errorf("打开地址失败：实例当前状态为 %s，请等待运行就绪或重新启动实例。", state)
 	}
 	if !isBrowserProfileLive(profile, trackedCmd) {
 		staleDebugPort := profile.DebugPort
@@ -82,6 +93,9 @@ func (a *App) BrowserInstanceOpenUrl(profileId string, targetUrl string) (bool, 
 	a.browserMgr.Mutex.Unlock()
 	fingerprintExpectedArgs := a.fingerprintCheckExpectedArgsFromProfile(snapshot)
 	normalizedTargetURL = a.resolveFingerprintCheckStartURLForExpectedArgsAndProfile(snapshot.ProfileId, fingerprintExpectedArgs, snapshot, normalizedTargetURL)
+	if err := ValidateBrowserStartURL(normalizedTargetURL); err != nil {
+		return false, fmt.Errorf("打开地址失败：%w", err)
+	}
 
 	if snapshot.DebugReady && snapshot.DebugPort > 0 {
 		if err := createBrowserStartTarget(snapshot.DebugPort, normalizedTargetURL); err == nil {
@@ -123,9 +137,66 @@ func (a *App) BrowserInstanceOpenUrl(profileId string, targetUrl string) (bool, 
 	return true, nil
 }
 
-func (a *App) BrowserInstanceGetTabs(profileId string) []BrowserTab {
-	return []BrowserTab{
-		{TabId: "tab-1", Title: "新标签页", Url: "about:blank", Active: true},
-		{TabId: "tab-2", Title: "示例站点", Url: "https://example.com", Active: false},
+func (a *App) BrowserInstanceGetTabs(profileId string) ([]BrowserTab, error) {
+	debugPort, err := a.getDebugPort(profileId)
+	if err != nil {
+		return nil, err
 	}
+	body, err := cdpGetEndpointBody(debugPort, "/json/list")
+	if err != nil {
+		return nil, fmt.Errorf("读取浏览器标签页失败: %w", err)
+	}
+	var targets []cdpTarget
+	if err := json.Unmarshal(body, &targets); err != nil {
+		return nil, fmt.Errorf("解析浏览器标签页失败: %w", err)
+	}
+	tabs := make([]BrowserTab, 0, len(targets))
+	activeFound := false
+	for _, target := range targets {
+		if strings.TrimSpace(target.Type) != "page" || strings.TrimSpace(target.ID) == "" {
+			continue
+		}
+		active := false
+		if !activeFound && strings.TrimSpace(target.WebSocketDebuggerUrl) != "" {
+			active = cdpTargetHasFocus(target.WebSocketDebuggerUrl)
+			activeFound = activeFound || active
+		}
+		tabs = append(tabs, BrowserTab{
+			TabId:  target.ID,
+			Title:  target.Title,
+			Url:    target.URL,
+			Active: active,
+		})
+	}
+	return tabs, nil
+}
+
+func cdpTargetHasFocus(wsURL string) bool {
+	conn, err := cdpDialWebSocket(strings.TrimSpace(wsURL))
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(750 * time.Millisecond))
+	msg := cdpMessage{
+		Id:     1,
+		Method: "Runtime.evaluate",
+		Params: map[string]any{
+			"expression":    "document.hasFocus()",
+			"returnByValue": true,
+		},
+	}
+	if err := conn.WriteJSON(msg); err != nil {
+		return false
+	}
+	response, err := readCDPResponseForID(conn, msg.Id)
+	if err != nil || response.Error != nil {
+		return false
+	}
+	remote, ok := response.Result["result"].(map[string]any)
+	if !ok {
+		return false
+	}
+	value, _ := remote["value"].(bool)
+	return value
 }

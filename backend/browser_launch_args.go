@@ -5,23 +5,49 @@ import (
 	"strings"
 )
 
-type managedLaunchArgSpec struct {
-	prefix     string
-	takesValue bool
+type LaunchArgPolicy struct {
+	DeniedExactPrefixes []string
+	DeniedExactNames    []string
+	AllowedInternal     []string
 }
 
-var managedLaunchArgSpecs = []managedLaunchArgSpec{
-	{prefix: "--user-data-dir", takesValue: true},
-	{prefix: "--remote-debugging-port", takesValue: true},
-	{prefix: "--remote-debugging-address", takesValue: true},
-	{prefix: "--remote-debugging-pipe", takesValue: false},
-	{prefix: "--proxy-server", takesValue: true},
-	{prefix: "--load-extension", takesValue: true},
-	{prefix: "--disable-extensions-except", takesValue: true},
-	{prefix: "--restore-last-session", takesValue: false},
+var browserLaunchArgPolicy = LaunchArgPolicy{
+	DeniedExactPrefixes: []string{
+		"--user-data-dir",
+		"--remote-debugging-port",
+		"--remote-debugging-address",
+		"--proxy-server",
+		"--proxy-pac-url",
+		"--load-extension",
+		"--disable-extensions-except",
+		"--renderer-cmd-prefix",
+		"--utility-cmd-prefix",
+		"--gpu-launcher",
+		"--browser-subprocess-path",
+		"--remote-allow-origins",
+	},
+	DeniedExactNames: []string{
+		"--remote-debugging-pipe",
+		"--no-sandbox",
+		"--disable-sandbox",
+		"--single-process",
+		"--restore-last-session",
+	},
+	AllowedInternal: []string{
+		"--user-data-dir",
+		"--remote-debugging-port",
+		"--proxy-server",
+		"--load-extension",
+		"--disable-extensions-except",
+		"--restore-last-session",
+	},
 }
 
 func sanitizeManagedLaunchArgs(args []string) ([]string, []string) {
+	return browserLaunchArgPolicy.Sanitize(args)
+}
+
+func (p LaunchArgPolicy) Sanitize(args []string) ([]string, []string) {
 	if len(args) == 0 {
 		return nil, nil
 	}
@@ -35,14 +61,14 @@ func sanitizeManagedLaunchArgs(args []string) ([]string, []string) {
 			continue
 		}
 
-		spec, matched := matchManagedLaunchArg(arg)
+		name, takesValue, matched := p.matchDenied(arg)
 		if !matched {
 			sanitized = append(sanitized, arg)
 			continue
 		}
 
-		removed = appendUniqueString(removed, spec.prefix)
-		if spec.takesValue && !strings.Contains(arg, "=") && i+1 < len(args) {
+		removed = appendUniqueString(removed, name)
+		if takesValue && !strings.Contains(arg, "=") && i+1 < len(args) {
 			next := strings.TrimSpace(args[i+1])
 			if next != "" && !strings.HasPrefix(next, "-") {
 				i++
@@ -53,13 +79,27 @@ func sanitizeManagedLaunchArgs(args []string) ([]string, []string) {
 	return sanitized, removed
 }
 
-func matchManagedLaunchArg(arg string) (managedLaunchArgSpec, bool) {
-	for _, spec := range managedLaunchArgSpecs {
-		if strings.EqualFold(arg, spec.prefix) || strings.HasPrefix(strings.ToLower(arg), strings.ToLower(spec.prefix)+"=") {
-			return spec, true
+func (p LaunchArgPolicy) matchDenied(arg string) (string, bool, bool) {
+	for _, prefix := range p.DeniedExactPrefixes {
+		if launchArgNameMatches(arg, prefix) {
+			return prefix, true, true
 		}
 	}
-	return managedLaunchArgSpec{}, false
+	for _, name := range p.DeniedExactNames {
+		if launchArgNameMatches(arg, name) {
+			return name, false, true
+		}
+	}
+	return "", false, false
+}
+
+func launchArgNameMatches(arg string, name string) bool {
+	arg = strings.TrimSpace(arg)
+	name = strings.TrimSpace(name)
+	if arg == "" || name == "" {
+		return false
+	}
+	return strings.EqualFold(arg, name) || strings.HasPrefix(strings.ToLower(arg), strings.ToLower(name)+"=")
 }
 
 func logManagedLaunchArgOverrides(log *logger.Logger, profileId string, source string, managedArgs []string) {

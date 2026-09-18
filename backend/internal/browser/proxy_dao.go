@@ -14,6 +14,7 @@ type ProxyDAO interface {
 	Upsert(proxy Proxy) error
 	Delete(proxyId string) error
 	DeleteAll() error
+	ReplaceAll(proxies []Proxy) error
 	UpdateSpeedResult(proxyId string, ok bool, latencyMs int64, testedAt string) error
 	UpdateIPHealthResult(proxyId string, healthJSON string) error
 }
@@ -84,14 +85,22 @@ func (d *SQLiteProxyDAO) ListGroups() ([]string, error) {
 	return groups, rows.Err()
 }
 
+type proxySQLExecutor interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
 // Upsert 新增或更新代理
 func (d *SQLiteProxyDAO) Upsert(proxy Proxy) error {
+	return upsertProxy(d.db, proxy)
+}
+
+func upsertProxy(executor proxySQLExecutor, proxy Proxy) error {
 	now := time.Now().Format(time.RFC3339)
 	autoRefreshInt := 0
 	if proxy.SourceAutoRefresh {
 		autoRefreshInt = 1
 	}
-	_, err := d.db.Exec(`
+	_, err := executor.Exec(`
 		INSERT INTO browser_proxies (
 		  proxy_id, proxy_name, proxy_config, preferred_kernel, dns_servers, group_name,
 		  source_id, source_url, source_name_prefix, source_auto_refresh, source_refresh_interval_m, source_last_refresh_at,
@@ -135,6 +144,28 @@ func (d *SQLiteProxyDAO) DeleteAll() error {
 	_, err := d.db.Exec(`DELETE FROM browser_proxies`)
 	if err != nil {
 		return fmt.Errorf("清空代理表失败: %w", err)
+	}
+	return nil
+}
+
+// ReplaceAll 原子替换全部代理，任意写入失败都会回滚到旧代理池。
+func (d *SQLiteProxyDAO) ReplaceAll(proxies []Proxy) error {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开启代理保存事务失败: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM browser_proxies`); err != nil {
+		return fmt.Errorf("清空代理表失败: %w", err)
+	}
+	for _, item := range proxies {
+		if err := upsertProxy(tx, item); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("提交代理保存事务失败: %w", err)
 	}
 	return nil
 }

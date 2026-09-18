@@ -2,6 +2,7 @@ package backend
 
 import (
 	"ant-chrome/backend/internal/backup"
+	"ant-chrome/backend/internal/fsutil"
 	"archive/zip"
 	"encoding/json"
 	"fmt"
@@ -133,35 +134,8 @@ func backupWriteProfileMetadata(zipPath string, manifest ProfilePackageManifest,
 }
 
 func writeBackupMetadataFile(metadataPath string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(metadataPath), 0755); err != nil {
-		return fmt.Errorf("创建备份元数据目录失败: %w", err)
-	}
-	tmpPath := metadataPath + ".tmp"
-	file, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		return fmt.Errorf("创建备份元数据临时文件失败: %w", err)
-	}
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		_ = os.Remove(tmpPath)
+	if err := fsutil.AtomicWriteFile(metadataPath, data, 0o644); err != nil {
 		return fmt.Errorf("写入备份元数据失败: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		_ = file.Close()
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("刷新备份元数据失败: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("关闭备份元数据失败: %w", err)
-	}
-	if err := os.Remove(metadataPath); err != nil && !os.IsNotExist(err) {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("替换备份元数据失败: %w", err)
-	}
-	if err := os.Rename(tmpPath, metadataPath); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("发布备份元数据失败: %w", err)
 	}
 	return nil
 }

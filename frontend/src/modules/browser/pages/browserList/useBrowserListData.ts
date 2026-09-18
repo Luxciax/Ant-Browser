@@ -171,6 +171,10 @@ export function useBrowserListData({ loadCores }: UseBrowserListDataOptions) {
           clearPending(payload)
           void loadProfiles({ silent: true, syncRuntimeState: true })
         })
+        subscribe('browser:instance:failed', (payload: any) => {
+          clearPending(payload)
+          void loadProfiles({ silent: true, syncRuntimeState: true })
+        })
         subscribe(APP_READY_EVENT, () => {
           loadInitialData()
         })

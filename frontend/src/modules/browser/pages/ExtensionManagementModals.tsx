@@ -5,7 +5,8 @@ import type { BrowserExtension, BrowserGroupWithCount, BrowserProfile, BrowserPr
 import { fetchBrowserProfileExtensionSettings, saveBrowserProfileExtensionSettings, type BrowserExtensionManualDownloadFile, type BrowserExtensionManualInstallGuide } from '../api/extensions'
 import { fetchGroups } from '../api/groups'
 import { fetchBrowserProfiles } from '../api/profiles'
-import { extensionHistoryActionLabel, formatExtensionTime, sameStringSet, type ExtensionHistoryRecord } from './extensionManagementUtils'
+import { extensionHistoryActionLabel, formatExtensionTime, getDefaultExtensionIds, isExtensionDefaultForUnconfiguredProfiles, sameStringSet, type ExtensionHistoryRecord } from './extensionManagementUtils'
+import { browserRuntimeLabel, normalizeBrowserRuntimeState } from '../utils/runtimeState'
 
 const UNGROUPED_PROFILE_GROUP_ID = '__ungrouped__'
 
@@ -26,7 +27,7 @@ export function ExtensionProfileLimitModal({ open, extension, allExtensions, onC
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
   const defaultExtensionIds = useMemo(
-    () => allExtensions.filter((item) => item.enabled && item.defaultInstall).map((item) => item.extensionId),
+    () => getDefaultExtensionIds(allExtensions),
     [allExtensions],
   )
   const groupNameMap = useMemo(() => {
@@ -92,7 +93,7 @@ export function ExtensionProfileLimitModal({ open, extension, allExtensions, onC
       setSelectedIds(profileItems
         .filter((profile) => {
           const settings = settingsMap[profile.profileId]
-          return settings?.configured ? settings.extensionIds.includes(extension.extensionId) : extension.defaultInstall
+          return settings?.configured ? settings.extensionIds.includes(extension.extensionId) : isExtensionDefaultForUnconfiguredProfiles(extension)
         })
         .map((profile) => profile.profileId))
     }).catch((error: any) => {
@@ -194,7 +195,7 @@ export function ExtensionProfileLimitModal({ open, extension, allExtensions, onC
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
                             <span>{profile.profileName || profile.profileId}</span>
-                            {profile.running ? <span className="rounded bg-green-50 px-1.5 py-0.5 text-xs text-green-700">运行中</span> : null}
+                            {normalizeBrowserRuntimeState(profile) !== 'stopped' ? <span className="rounded bg-green-50 px-1.5 py-0.5 text-xs text-green-700">{browserRuntimeLabel(profile)}</span> : null}
                             {settingsByProfile[profile.profileId]?.configured ? <span className="rounded bg-[var(--color-bg-muted)] px-1.5 py-0.5 text-xs font-normal text-[var(--color-text-muted)]">手动设置</span> : null}
                           </div>
                           <div className="mt-1 break-all font-mono text-xs text-[var(--color-text-muted)]">{profile.profileId}</div>

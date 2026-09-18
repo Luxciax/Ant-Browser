@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.8.1-fork.5 - 2026-09-18
+
+- 生命周期一致性：统一 `stopped / starting / running / stopping / failed` 状态判定，修复状态查询、打开 URL、指纹自测和 LaunchCode 在过渡态误把实例提前标记为运行中的问题。
+- 实例与配置事务：补齐 Profile Create/Update/Copy/Delete/Restore、Core、Proxy Core、Automation、Browser Settings、Bookmarks 等保存失败回滚，降低“内存已更新、磁盘/SQLite 未提交”的漂移风险。
+- LaunchServer 切端口：候选服务先启动成功再停止旧服务，避免新端口失败时旧服务被提前关闭并无法恢复。
+- 扩展事务：插件目录、CRX/Web Store、本地目录安装和跨 Profile 清理增加 staging/rollback，DAO 或文件步骤失败时恢复旧目录、包和 runtime 状态。
+- 备份与快照：统一原子文件替换、唯一临时文件和维护锁顺序；修复定时备份与实例启动的 TOCTOU 竞态；Snapshot 恢复改为 staging 切换，并增加路径、symlink、句柄和回滚保护。
+- 实例包安全：增加条目数、总解压大小、单文件大小、重复路径和 symlink 校验；导入导出的运行态统一归一为 `stopped`。
+- CDP 标签页：详情页标签页改为读取真实 `/json/list` page targets，不再返回写死示例数据；正式 Wails 包在 bindings 缺失时 fail-closed，mock 仅保留给开发模式。
+- 发布链：Windows Installer/Portable 发布脚本兼容 npm 12 的 remote tarball 策略，通过 `replace-registry-host=always` 做受控 registry 重写；版本统一升级为 `1.8.1-fork.5`。
+
 ## 1.8.1 - 2026-09-14
 
 - 备份凭据迁移：OpenList Token 和 S3 访问凭据稳定保存到用户配置目录中的 `backup.local.yaml`；兼容 Windows 旧安装目录凭据迁移，避免升级或卸载后丢失配置。
