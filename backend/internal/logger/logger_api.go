@@ -104,6 +104,7 @@ func (l *Logger) log(level Level, msg string, fields ...Field) {
 
 // writeEntry 写入日志条目到所有写入器
 func (l *Logger) writeEntry(entry *LogEntry) {
+	entry = redactLogEntry(entry)
 	l.mu.RLock()
 	writers := l.writers
 	fileWriter := l.fileWriter

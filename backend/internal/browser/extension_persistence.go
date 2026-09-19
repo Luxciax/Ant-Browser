@@ -119,7 +119,7 @@ func (m *Manager) PrepareProfileExtensionsContext(ctx context.Context, profile *
 		if _, ok := desired[runtimeState.ExtensionID]; ok {
 			continue
 		}
-		if err := cleanupProfileExtensionRuntime(userDataDir, runtimeState.RuntimeExtensionID); err != nil {
+		if err := disableProfileExtensionRuntime(userDataDir, runtimeState.RuntimeExtensionID); err != nil {
 			warnings = append(warnings, fmt.Errorf("清理实例插件运行态失败（%s）：%w", runtimeState.ExtensionID, err))
 			continue
 		}
@@ -149,7 +149,7 @@ func (m *Manager) PrepareProfileExtensionsContext(ctx context.Context, profile *
 			continue
 		}
 		for _, runtimeID := range legacyIDs {
-			if err := cleanupProfileExtensionRuntime(userDataDir, runtimeID); err != nil {
+			if err := disableProfileExtensionRuntime(userDataDir, runtimeID); err != nil {
 				warnings = append(warnings, fmt.Errorf("清理旧版插件目录失败（%s）：%w", runtimeID, err))
 			}
 		}
@@ -363,7 +363,7 @@ func (m *Manager) RemoveExtensionFromStoppedProfiles(extensionID string) error {
 	for index, plan := range plans {
 		processed := index + 1
 		for _, runtimeID := range plan.runtimeIDs {
-			if err := cleanupProfileExtensionRuntime(plan.userDataDir, runtimeID); err != nil {
+			if err := disableProfileExtensionRuntime(plan.userDataDir, runtimeID); err != nil {
 				return rollback(processed, err)
 			}
 		}
@@ -616,6 +616,12 @@ func (m *Manager) ensurePersistentExtensionInstalledContext(ctx context.Context,
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	if runtimeErr == nil {
+		if err := restoreDisabledExtensionPreferences(userDataDir, runtimeState.RuntimeExtensionID, targetRuntimeID); err != nil {
+			restoreErr := restoreProfileExtensionState(userDataDir, backupPath, legacyRuntimeIDs, targetRuntimeID)
+			return "", errors.Join(err, restoreErr)
+		}
+	}
 	runtimeExtensionID, err := installExtensionPackageIntoProfile(userDataDir, packagePath, extension)
 	if err != nil {
 		_ = restoreProfileExtensionState(userDataDir, backupPath, legacyRuntimeIDs, "")
@@ -688,6 +694,9 @@ func (m *Manager) ensurePersistentExtensionInstalledContext(ctx context.Context,
 	if err := m.ExtensionDAO.UpsertProfileExtensionRuntime(runtimeState); err != nil {
 		_ = restoreProfileExtensionState(userDataDir, backupPath, legacyRuntimeIDs, runtimeExtensionID)
 		return "", err
+	}
+	for _, id := range legacyRuntimeIDs {
+		forgetDisabledExtensionPreferences(userDataDir, id)
 	}
 	return persistentExtensionCodePath(userDataDir, runtimeExtensionID, extension.Version), nil
 }
@@ -1034,14 +1043,15 @@ func ensureProfileScopedExtensionRegistration(userDataDir string, codePath strin
 	if err != nil {
 		return err
 	}
-	permissions := extensionPermissionSnapshot(manifest)
 	return updateProfileExtensionSettings(userDataDir, func(root profileExtensionJSON, settings profileExtensionJSON) error {
 		setting := profileExtensionJSON{}
 		if existing, ok := settings[runtimeExtensionID].(map[string]any); ok {
 			setting = existing
 		}
-		setting["active_permissions"] = permissions
-		setting["granted_permissions"] = permissions
+		active, _ := setting["active_permissions"].(map[string]any)
+		granted, _ := setting["granted_permissions"].(map[string]any)
+		setting["active_permissions"] = preserveOptionalExtensionPermissions(manifest, active)
+		setting["granted_permissions"] = preserveOptionalExtensionPermissions(manifest, granted)
 		setting["commands"] = ensureProfileJSONValue(setting, "commands", profileExtensionJSON{})
 		setting["content_settings"] = ensureProfileJSONValue(setting, "content_settings", []any{})
 		setting["creation_flags"] = 1
@@ -1093,7 +1103,7 @@ func ensureProfileJSONValue(values profileExtensionJSON, key string, fallback an
 func extensionPermissionSnapshot(manifest profileExtensionJSON) profileExtensionJSON {
 	api := make([]any, 0)
 	explicitHost := make([]any, 0)
-	for _, key := range []string{"permissions", "optional_permissions", "host_permissions"} {
+	for _, key := range []string{"permissions", "host_permissions"} {
 		items, ok := manifest[key].([]any)
 		if !ok {
 			continue
@@ -1793,6 +1803,9 @@ func restoreProfileExtensionState(userDataDir string, backupPath string, legacyR
 	}
 	_ = cleanupProfileExtensionRuntime(userDataDir, runtimeExtensionID)
 	for _, runtimeID := range uniqueExtensionIDs(append(append([]string{}, legacyRuntimeIDs...), runtimeExtensionID)) {
+		if err := os.Remove(disabledExtensionPreferencesPath(userDataDir, runtimeID)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 		_ = cleanupProfileExtensionRuntime(userDataDir, runtimeID)
 		for _, rootName := range []string{"Local Extension Settings", "Sync Extension Settings", "Managed Extension Settings", "Extension State", "Extension Rules", "Extension Scripts"} {
 			_ = os.RemoveAll(filepath.Join(userDataDir, "Default", rootName, runtimeID))
@@ -1925,6 +1938,7 @@ func removePersistentExtensionCode(userDataDir string, runtimeExtensionID string
 
 func extensionRuntimeStoragePaths(runtimeID string) []string {
 	return []string{
+		filepath.Join(".ant-extension-state", safeExtensionPathSegment(runtimeID)+".json"),
 		filepath.Join("Extensions", runtimeID),
 		filepath.Join("Local Extension Settings", runtimeID),
 		filepath.Join("Sync Extension Settings", runtimeID),

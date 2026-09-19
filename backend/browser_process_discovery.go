@@ -3,7 +3,10 @@ package backend
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -78,10 +81,28 @@ func detectBrowserRuntimeByActivePort(userDataDir string) (browserRuntimeDetecti
 		return browserRuntimeDetection{}, false
 	}
 
-	if debugPort, err := readBrowserDebugPortFile(userDataDir); err == nil && debugPort > 0 {
-		if err := probeBrowserDebugPort(debugPort, browserDebugProbeTimeout); err == nil {
-			return browserRuntimeDetection{DebugPort: debugPort, DebugReady: true}, true
-		}
+	data, err := os.ReadFile(filepath.Join(userDataDir, "DevToolsActivePort"))
+	if err != nil {
+		return browserRuntimeDetection{}, false
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) < 2 {
+		return browserRuntimeDetection{}, false
+	}
+	debugPort, err := strconv.Atoi(strings.TrimSpace(lines[0]))
+	expected := strings.TrimSpace(lines[1])
+	if err != nil || debugPort <= 0 || debugPort > 65535 || !strings.HasPrefix(expected, "/devtools/browser/") {
+		return browserRuntimeDetection{}, false
+	}
+	var version struct {
+		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+	}
+	if err := fetchBrowserDebugJSON(&http.Client{Timeout: browserDebugProbeTimeout}, debugPort, "/json/version", &version); err != nil {
+		return browserRuntimeDetection{}, false
+	}
+	endpoint, err := url.Parse(version.WebSocketDebuggerURL)
+	if err == nil && endpoint.Scheme == "ws" && endpoint.Path == expected && endpoint.Port() == strconv.Itoa(debugPort) && (endpoint.Hostname() == "127.0.0.1" || endpoint.Hostname() == "localhost" || endpoint.Hostname() == "::1") {
+		return browserRuntimeDetection{DebugPort: debugPort, DebugReady: true}, true
 	}
 
 	return browserRuntimeDetection{}, false

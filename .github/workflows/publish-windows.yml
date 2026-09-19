@@ -45,6 +45,13 @@ jobs:
           if ($wails.info.productVersion -ne $env:RELEASE_VERSION -or $package.version -ne $env:RELEASE_VERSION -or $lock.version -ne $env:RELEASE_VERSION -or $lock.packages[''].version -ne $env:RELEASE_VERSION) {
             throw 'Release version mismatch'
           }
+      - name: Test backend before packaging
+        run: |
+          $env:ANT_BROWSER_TEST_SINGBOX = (Resolve-Path -LiteralPath 'bin/sing-box.exe').Path
+          go test ./backend/... ./internal/... ./tools/...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go vet ./backend/... ./internal/... ./tools/...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install Wails and NSIS
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
@@ -56,13 +63,6 @@ jobs:
           }
       - name: Build installer and portable package
         run: ./bat/publish.ps1 -Target WINDOWS -WindowsFormat BOTH -Version $env:RELEASE_VERSION
-      - name: Test including real sing-box recovery
-        run: |
-          $env:ANT_BROWSER_TEST_SINGBOX = (Resolve-Path -LiteralPath 'bin/sing-box.exe').Path
-          go test ./...
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          go vet ./...
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Validate packages and create checksums
         run: |
           $output = Join-Path $PWD 'publish/output'

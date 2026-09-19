@@ -6,10 +6,11 @@ package backend
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunPowerShellJSONBindsNamedArguments(t *testing.T) {
-	output, err := runPowerShellJSON(`param([string]$Value)
+	output, err := runPowerShellJSONWithTimeout(30*time.Second, `param([string]$Value)
 [pscustomobject]@{ value = $Value } | ConvertTo-Json -Compress`, "-Value", "bound value")
 	if err != nil {
 		t.Fatalf("runPowerShellJSON returned error: %v", err)

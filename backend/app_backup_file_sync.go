@@ -15,6 +15,11 @@ func backupSyncDir(src, dst string, stats *backupMergeStats, shouldSkip func(rel
 	if !backupPathExists(src) {
 		return nil
 	}
+	if levelDB, err := backupLevelDBDir(src); err != nil {
+		return err
+	} else if levelDB {
+		return backupImportLevelDB(src, dst, stats)
+	}
 	if err := os.MkdirAll(dst, 0755); err != nil {
 		return err
 	}
@@ -48,7 +53,28 @@ func backupSyncDir(src, dst string, stats *backupMergeStats, shouldSkip func(rel
 
 		target := filepath.Join(dst, filepath.FromSlash(rel))
 		if d.IsDir() {
+			if levelDB, err := backupLevelDBDir(path); err != nil {
+				return err
+			} else if levelDB {
+				if err := backupImportLevelDB(path, target, stats); err != nil {
+					return err
+				}
+				return filepath.SkipDir
+			}
 			return os.MkdirAll(target, 0755)
+		}
+		// SQLite imports consume the WAL through the database engine. Standalone
+		// sidecars must never be copied onto an existing or missing base file.
+		if sidecar, err := backupSQLiteSidecar(path, target); err != nil {
+			return err
+		} else if sidecar {
+			stats.Skipped++
+			return nil
+		}
+		if sqliteFile, err := backupSQLiteFile(path); err != nil {
+			return err
+		} else if sqliteFile {
+			return backupImportSQLite(path, target, stats)
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			return err
