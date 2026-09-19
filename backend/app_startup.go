@@ -57,6 +57,13 @@ func (a *App) startup(ctx context.Context) {
 	a.db = db
 	if err := db.Migrate(); err != nil {
 		log.Error("数据库迁移失败", logger.F("error", err))
+		runtime.LogFatal(ctx, fmt.Sprintf("数据库迁移失败: %v", err))
+		return
+	}
+	if err := a.recoverProfileFileTransactions(); err != nil {
+		log.Error("实例事务恢复失败，停止加载实例以保护现有数据", logger.F("error", err))
+		runtime.LogFatal(ctx, fmt.Sprintf("实例事务恢复失败（备份已保留）: %v", err))
+		return
 	}
 
 	a.startupInitManagers(cfg, db)

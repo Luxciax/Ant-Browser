@@ -9,4 +9,22 @@ fileignoreconfig:
   checksum: 8ce245514792632f66e2db7778e9a923594269568ac4b74b9f28f7ac6bb89b39
 - filename: backend/mcp_endpoint_test.go
   checksum: efad34e7cf456cfa34b8d46c237bc7314877b21c6b417894b53febaaa85d4fd3
+# Reviewed release 1.9.0 false positives; checksums expire on any file change.
+# SQL source code, not a database dump.
+- filename: backend/internal/database/sqlite.go
+  checksum: e1ae99304ec24fe9d1289b6332e1f5ec4b367d5f8fad5d313753265dd839da5d
+# Public Git commit ID recorded as audit evidence.
+- filename: docs/audits/release-quality-audit-2026-09-19.md
+  checksum: 31b94606a88da8f851ed7da4d8fe57f7ec5b4a83490fc491456e5a4392bfaf5c
+# Node-map lookup syntax; no credentials or literal access tokens.
+- filename: backend/internal/proxy/singbox_bridge_recovery.go
+  checksum: 33236be8f09511c0ac6cf7f05c97c27d9ea329dcb402c85a1a378079dc18a1af
+# Fixed, synthetic local test identities, never service credentials.
+- filename: backend/internal/proxy/singbox_recovery_audit_test.go
+  checksum: b0ec404028b0f594e0a17505593887c6370ce0764cddaeafd6bba7c2a62abd8a
+- filename: backend/internal/browser/extension_lifecycle_audit_test.go
+  checksum: d2f241e2c13ed7290b6f0c9f5791b95d4d5777c9810d08c9af890c9c58e88aab
+# Long TSX component line with React keys; no embedded secrets.
+- filename: frontend/src/ui-v2/fish/FishExtensionModals.tsx
+  checksum: c5c7069c8e5bebb6f7e2c8efa8cb8e3af3507aca5e01e12ec559ca0c512e692c
 version: "1.0"

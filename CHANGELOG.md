@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.9.0 - 2026-09-19
+
+- 修复插件首次迁移、runtime 索引恢复时用户脚本权限遗漏，以及安装失败回滚丢失目标 ID 数据的问题。
+- 修复 sing-box 异常退出后跳过同端口恢复；修正恢复期间的引用数处理。
+- 阻止运行中插件删除被拒绝后重复回滚，保护活跃 Profile；Preferences 改为原子替换。
+- 防止共享/父子 Profile 目录被另一实例的回收站清理误删，修复插件配置弹窗的过期异步请求。
+- Profile 导入和物理删除新增 SQLite 持久化事务恢复，覆盖异常退出、恢复再次中断、Windows 文件锁及关系记录一致性。
+- 新增 Windows GitHub Actions 构建发布：运行自动化检查后生成安装包、便携包和 SHA256 校验文件。
+- 升级会追加数据库 migration 18；旧版没有事务日志的残留目录仍需人工核对，真实扩展兼容与安装升级 GUI 验收尚未完成。
+
 ## 1.8.1-fork.7 - 2026-09-19
 
 - Fixed ScriptCat/Chromium `Allow User Scripts` permission being lost after extension runtime-ID migration and browser restart by migrating `user_scripts_enabled` in `Default/Preferences`.

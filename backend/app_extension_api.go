@@ -371,22 +371,28 @@ func (a *App) BrowserExtensionDelete(extensionID string) error {
 		return err
 	}
 	if err := a.browserMgr.RemoveExtensionFromStoppedProfiles(extensionID); err != nil {
-		rollbackErr := rollbackProfiles()
+		// Removal validates live profiles before mutation and rolls back its own
+		// failures. Replaying the outer snapshot here can overwrite Chromium's
+		// live state when removal was rejected precisely because it was running.
 		cleanupProfileSnapshot()
 		restoreErr := restoreEnabled()
-		return errors.Join(err, rollbackErr, wrapExtensionRollbackError("恢复插件启用状态失败", restoreErr))
+		return errors.Join(err, wrapExtensionRollbackError("恢复插件启用状态失败", restoreErr))
 	}
 	deletionStage, err := a.stageBrowserExtensionDeletion(extension)
 	if err != nil {
 		rollbackErr := rollbackProfiles()
-		cleanupProfileSnapshot()
+		if rollbackErr == nil {
+			cleanupProfileSnapshot()
+		}
 		restoreErr := restoreEnabled()
 		return errors.Join(err, rollbackErr, wrapExtensionRollbackError("恢复插件启用状态失败", restoreErr))
 	}
 	if err := a.browserMgr.ExtensionDAO.Delete(extensionID); err != nil {
 		fileRestoreErr := deletionStage.restore()
 		profileRestoreErr := rollbackProfiles()
-		cleanupProfileSnapshot()
+		if profileRestoreErr == nil {
+			cleanupProfileSnapshot()
+		}
 		enabledRestoreErr := restoreEnabled()
 		return errors.Join(
 			err,

@@ -21,6 +21,9 @@ func (m *Manager) Create(input ProfileInput) (*Profile, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := m.checkProfileDirectoryOwnershipLocked(profileId, m.ResolveUserDataDir(&Profile{ProfileId: profileId, UserDataDir: userDataDir})); err != nil {
+		return nil, err
+	}
 	resolvedProxy, err := m.resolveProfileProxyInput(input.ProxyId, input.ProxyConfig)
 	if err != nil {
 		log.Error("代理绑定失败", logger.F("profile_id", profileId), logger.F("proxy_id", strings.TrimSpace(input.ProxyId)), logger.F("error", err.Error()))

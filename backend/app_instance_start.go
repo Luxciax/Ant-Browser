@@ -33,6 +33,9 @@ func (a *App) browserInstanceStartInternal(profileId string, extraLaunchArgs []s
 // caller owns the per-profile lifecycle lock. Restart uses this helper so Stop
 // -> Start is one atomic lifecycle operation with no interleaving window.
 func (a *App) browserInstanceStartWithRuntimeLock(profileId string, extraLaunchArgs []string, startURLs []string, skipDefaultStartURLs bool, preferVisibleWindow bool, forceDirectProxy bool, proxyId string, proxyConfig string) (*BrowserProfile, error) {
+	if err := a.browserMgr.CheckProfileFileTransactions(); err != nil {
+		return nil, err
+	}
 	input := newBrowserStartInput(profileId, extraLaunchArgs, startURLs, skipDefaultStartURLs, preferVisibleWindow, forceDirectProxy, proxyId, proxyConfig)
 	a.browserMgr.InitData()
 	a.browserMgr.Mutex.Lock()

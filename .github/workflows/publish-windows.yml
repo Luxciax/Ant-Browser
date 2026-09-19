@@ -1,0 +1,126 @@
+name: Publish Windows 1.9.0
+
+on:
+  push:
+    branches: [release/1.9.0]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-windows-1.9.0
+  cancel-in-progress: false
+
+env:
+  RELEASE_VERSION: 1.9.0
+
+jobs:
+  build:
+    if: github.repository == 'Luxciax/Ant-Browser' && github.ref == 'refs/heads/release/1.9.0'
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      CGO_ENABLED: '0'
+      GOPROXY: https://proxy.golang.org,direct
+      BROWSERSLIST_IGNORE_OLD_DATA: '1'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Check release versions
+        run: |
+          $wails = Get-Content wails.json -Raw | ConvertFrom-Json
+          $package = Get-Content frontend/package.json -Raw | ConvertFrom-Json
+          $lock = Get-Content frontend/package-lock.json -Raw | ConvertFrom-Json -AsHashtable
+          if ($wails.info.productVersion -ne $env:RELEASE_VERSION -or $package.version -ne $env:RELEASE_VERSION -or $lock.version -ne $env:RELEASE_VERSION -or $lock.packages[''].version -ne $env:RELEASE_VERSION) {
+            throw 'Release version mismatch'
+          }
+      - name: Install Wails and NSIS
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          (Join-Path (go env GOPATH) 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          if (!(Test-Path -LiteralPath 'C:\Program Files (x86)\NSIS\makensis.exe')) {
+            choco install nsis --version=3.11 --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Build installer and portable package
+        run: ./bat/publish.ps1 -Target WINDOWS -WindowsFormat BOTH -Version $env:RELEASE_VERSION
+      - name: Test including real sing-box recovery
+        run: |
+          $env:ANT_BROWSER_TEST_SINGBOX = (Resolve-Path -LiteralPath 'bin/sing-box.exe').Path
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Validate packages and create checksums
+        run: |
+          $output = Join-Path $PWD 'publish/output'
+          $names = @("AntBrowser-Setup-$env:RELEASE_VERSION.exe", "AntBrowser-$env:RELEASE_VERSION-windows-amd64-portable.zip")
+          foreach ($name in $names) {
+            $file = Get-Item -LiteralPath (Join-Path $output $name)
+            if ($file.Length -le 0) { throw "Empty artifact: $name" }
+          }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [IO.Compression.ZipFile]::OpenRead((Join-Path $output $names[1]))
+          try {
+            $prefix = "AntBrowser-$env:RELEASE_VERSION-windows-amd64-portable/"
+            foreach ($path in @('ant-chrome.exe', 'config.yaml', 'bin/xray.exe', 'bin/sing-box.exe')) {
+              if (!$zip.GetEntry($prefix + $path)) { throw "Portable file missing: $path" }
+            }
+          } finally { $zip.Dispose() }
+          $lines = foreach ($name in $names) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $output $name)).Hash.ToLowerInvariant()
+            "$hash  $name"
+          }
+          [IO.File]::WriteAllLines((Join-Path $output 'SHA256SUMS.txt'), $lines, [Text.UTF8Encoding]::new($false))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-1.9.0
+          if-no-files-found: error
+          path: |
+            publish/output/AntBrowser-Setup-1.9.0.exe
+            publish/output/AntBrowser-1.9.0-windows-amd64-portable.zip
+            publish/output/SHA256SUMS.txt
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-1.9.0
+          path: release-artifacts
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd release-artifacts
+          sha256sum --check SHA256SUMS.txt
+          cd ..
+          if gh release view "v${RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo 'Release already exists; refusing to overwrite assets.' >&2
+            exit 1
+          fi
+          gh release create "v${RELEASE_VERSION}" \
+            release-artifacts/AntBrowser-Setup-1.9.0.exe \
+            release-artifacts/AntBrowser-1.9.0-windows-amd64-portable.zip \
+            release-artifacts/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" --title "Ant Browser ${RELEASE_VERSION}" \
+            --notes-file publish/release-notes-1.9.0.md --latest

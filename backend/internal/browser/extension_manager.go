@@ -155,6 +155,9 @@ func (m *Manager) InstallExtensionFromWebStoreWithHTTPClient(ctx context.Context
 }
 
 func (m *Manager) InstallExtensionPackageBytes(extensionID string, sourceURL string, data []byte) (Extension, error) {
+	if err := m.CheckProfileFileTransactions(); err != nil {
+		return Extension{}, err
+	}
 	if len(data) == 0 {
 		return Extension{}, fmt.Errorf("插件包为空")
 	}
@@ -253,6 +256,9 @@ func (m *Manager) InstallExtensionPackageFile(path string) (Extension, error) {
 }
 
 func (m *Manager) InstallExtensionDirectory(sourceDir string) (Extension, error) {
+	if err := m.CheckProfileFileTransactions(); err != nil {
+		return Extension{}, err
+	}
 	normalizedDir := strings.TrimSpace(sourceDir)
 	if normalizedDir == "" {
 		return Extension{}, fmt.Errorf("插件目录不能为空")

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"ant-chrome/backend/internal/browser"
+	"ant-chrome/backend/internal/profiletxn"
 )
 
 const (
@@ -391,7 +392,7 @@ func queryProfilePackageExtensionRuntime(conn *sql.DB, profileID string) ([]brow
 	return result, rows.Err()
 }
 
-func (a *App) restoreProfilePackageDatabase(snapshot ProfilePackageDatabase, prepared []preparedProfilePackageImport, warnings *[]string) error {
+func (a *App) restoreProfilePackageDatabase(snapshot ProfilePackageDatabase, prepared []preparedProfilePackageImport, warnings *[]string, fileTransactions ...*profiletxn.Transaction) error {
 	if snapshot.Format != profilePackageDatabaseFormat || snapshot.Version != profilePackageDatabaseVersion {
 		return fmt.Errorf("不支持的实例数据库快照格式")
 	}
@@ -550,14 +551,19 @@ func (a *App) restoreProfilePackageDatabase(snapshot ProfilePackageDatabase, pre
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
+	if len(fileTransactions) > 0 && fileTransactions[0] != nil {
+		err = fileTransactions[0].Commit(tx)
+	} else {
+		err = tx.Commit()
+	}
+	if err != nil {
 		return fmt.Errorf("提交实例数据库恢复事务失败: %w", err)
 	}
 	committed = true
 	return nil
 }
 
-func (a *App) restoreLegacyProfilePackageDatabase(prepared []preparedProfilePackageImport) error {
+func (a *App) restoreLegacyProfilePackageDatabase(prepared []preparedProfilePackageImport, fileTransactions ...*profiletxn.Transaction) error {
 	if a == nil || a.db == nil || a.db.GetConn() == nil {
 		return fmt.Errorf("数据库未初始化，无法恢复实例配置")
 	}
@@ -583,7 +589,12 @@ func (a *App) restoreLegacyProfilePackageDatabase(prepared []preparedProfilePack
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
+	if len(fileTransactions) > 0 && fileTransactions[0] != nil {
+		err = fileTransactions[0].Commit(tx)
+	} else {
+		err = tx.Commit()
+	}
+	if err != nil {
 		return fmt.Errorf("提交实例配置恢复事务失败: %w", err)
 	}
 	committed = true

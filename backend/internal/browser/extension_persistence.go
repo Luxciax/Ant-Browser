@@ -2,6 +2,7 @@ package browser
 
 import (
 	"ant-chrome/backend/internal/fsutil"
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/base64"
@@ -213,6 +214,9 @@ func (m *Manager) RemoveExtensionFromStoppedProfiles(extensionID string) error {
 	if m == nil || m.ExtensionDAO == nil {
 		return nil
 	}
+	if err := m.CheckProfileFileTransactions(); err != nil {
+		return err
+	}
 	extensionID = strings.TrimSpace(extensionID)
 	if extensionID == "" {
 		return nil
@@ -264,11 +268,11 @@ func (m *Manager) RemoveExtensionFromStoppedProfiles(extensionID string) error {
 	}
 
 	type removalPlan struct {
-		profileID      string
-		userDataDir    string
-		runtimeIDs     []string
-		backupPath     string
-		hadRuntime     bool
+		profileID       string
+		userDataDir     string
+		runtimeIDs      []string
+		backupPath      string
+		hadRuntime      bool
 		previousRuntime ProfileExtensionRuntime
 		nextRuntime     ProfileExtensionRuntime
 	}
@@ -556,10 +560,15 @@ func (m *Manager) ensurePersistentExtensionInstalledContext(ctx context.Context,
 		return "", runtimeErr
 	}
 	if runtimeErr == sql.ErrNoRows {
-		if artifactPath, recovered, recoverErr := m.recoverExistingPersistentExtensionRuntime(profile, userDataDir, packagePath, packageHash, extension); recoverErr != nil {
+		if _, recovered, recoverErr := m.recoverExistingPersistentExtensionRuntime(profile, userDataDir, packagePath, packageHash, extension); recoverErr != nil {
 			return "", recoverErr
 		} else if recovered {
-			return artifactPath, nil
+			// Continue through the installed path so a recovered index does not
+			// postpone legacy storage/permission repair until the next launch.
+			runtimeState, runtimeErr = m.ExtensionDAO.GetProfileExtensionRuntime(profile.ProfileId, extension.ExtensionID)
+			if runtimeErr != nil {
+				return "", runtimeErr
+			}
 		}
 	}
 	if runtimeErr == nil && runtimeState.Status == ExtensionRuntimeStatusInstalled &&
@@ -591,6 +600,13 @@ func (m *Manager) ensurePersistentExtensionInstalledContext(ctx context.Context,
 	if runtimeErr == nil && strings.TrimSpace(runtimeState.RuntimeExtensionID) != "" {
 		legacyRuntimeIDs = append(legacyRuntimeIDs, runtimeState.RuntimeExtensionID)
 	}
+	// A previous launch/import may have created target storage without a runtime
+	// row. Rollback removes both IDs, so snapshot both before changing either.
+	targetRuntimeID, err := runtimeExtensionIDFromPackage(packagePath, extension)
+	if err != nil {
+		return "", err
+	}
+	legacyRuntimeIDs = append(legacyRuntimeIDs, targetRuntimeID)
 	legacyRuntimeIDs = uniqueExtensionIDs(legacyRuntimeIDs)
 
 	backupPath, err := m.backupProfileExtensionState(profile.ProfileId, extension.ExtensionID, userDataDir, legacyRuntimeIDs)
@@ -610,6 +626,11 @@ func (m *Manager) ensurePersistentExtensionInstalledContext(ctx context.Context,
 	for _, legacyRuntimeID := range legacyRuntimeIDs {
 		if legacyRuntimeID == runtimeExtensionID {
 			continue
+		}
+		if err := migrateProfileExtensionUserScriptsPreference(userDataDir, legacyRuntimeID, runtimeExtensionID); err != nil {
+			restoreErr := restoreProfileExtensionState(userDataDir, backupPath, legacyRuntimeIDs, runtimeExtensionID)
+			m.recordProfileExtensionRuntimeError(profile.ProfileId, extension, runtimeState, packageHash, backupPath, err)
+			return "", errors.Join(fmt.Errorf("迁移插件权限失败（%s -> %s）：%w；安装前备份在 %s", legacyRuntimeID, runtimeExtensionID, err, backupPath), restoreErr)
 		}
 		if err := migrateExtensionStorage(userDataDir, legacyRuntimeID, runtimeExtensionID); err != nil {
 			_ = restoreProfileExtensionState(userDataDir, backupPath, legacyRuntimeIDs, runtimeExtensionID)
@@ -1164,51 +1185,17 @@ func ensureProfileJSONMap(parent profileExtensionJSON, key string) (profileExten
 }
 
 func writeProfileJSON(path string, root profileExtensionJSON) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("创建 profile 配置目录失败: %w", err)
-	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".profile-preferences-*.tmp")
-	if err != nil {
-		return fmt.Errorf("创建 profile 配置临时文件失败: %w", err)
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	encoder := json.NewEncoder(temporary)
+	var data bytes.Buffer
+	encoder := json.NewEncoder(&data)
 	encoder.SetEscapeHTML(false)
 	encoder.SetIndent("", "\t")
 	if err := encoder.Encode(root); err != nil {
-		_ = temporary.Close()
 		return fmt.Errorf("写入 profile 配置失败: %w", err)
 	}
-	if err := temporary.Sync(); err != nil {
-		_ = temporary.Close()
-		return fmt.Errorf("刷新 profile 配置失败: %w", err)
-	}
-	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("关闭 profile 配置失败: %w", err)
-	}
-	backupPath := fmt.Sprintf("%s.backup-%d", path, time.Now().UnixNano())
-	hadOriginal := false
-	if _, err := os.Stat(path); err == nil {
-		if err := os.Rename(path, backupPath); err != nil {
-			return fmt.Errorf("替换 profile 配置失败: %w", err)
-		}
-		hadOriginal = true
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("读取原 profile 配置失败: %w", err)
-	}
-	if err := os.Rename(temporaryPath, path); err != nil {
-		if hadOriginal {
-			if restoreErr := os.Rename(backupPath, path); restoreErr != nil {
-				return fmt.Errorf("保存 profile 配置失败: %w；原配置恢复失败: %v", err, restoreErr)
-			}
-		}
+	// Replacing directly avoids a crash window where Preferences is absent
+	// between moving the original away and moving the new file into place.
+	if err := fsutil.AtomicWriteFile(path, data.Bytes(), 0o600); err != nil {
 		return fmt.Errorf("保存 profile 配置失败: %w", err)
-	}
-	if hadOriginal {
-		if err := os.Remove(backupPath); err != nil {
-			return fmt.Errorf("profile 配置已保存，但清理备份失败: %w", err)
-		}
 	}
 	return nil
 }
