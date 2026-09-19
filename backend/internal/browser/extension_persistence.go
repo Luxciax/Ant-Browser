@@ -1572,6 +1572,9 @@ func (m *Manager) repairLegacyProfileExtensionStorage(profile *Profile, userData
 		return cause
 	}
 	for _, legacyRuntimeID := range filteredLegacyIDs {
+		if err := migrateProfileExtensionUserScriptsPreference(userDataDir, legacyRuntimeID, currentRuntimeID); err != nil {
+			return backupPath, rollback(err)
+		}
 		if err := migrateExtensionStorage(userDataDir, legacyRuntimeID, currentRuntimeID); err != nil {
 			return backupPath, rollback(err)
 		}
@@ -1580,6 +1583,58 @@ func (m *Manager) repairLegacyProfileExtensionStorage(profile *Profile, userData
 		}
 	}
 	return backupPath, nil
+}
+
+// migrateProfileExtensionUserScriptsPreference carries Chromium's per-extension
+// "Allow User Scripts" choice across an Ant Browser runtime-ID migration.
+// ScriptCat's own scripts live in extension storage, but Chrome stores this
+// toggle in Default/Preferences under extensions.settings.<extension-id>.
+// Preserve an explicit value already present on the new runtime ID.
+func migrateProfileExtensionUserScriptsPreference(userDataDir string, oldRuntimeID string, newRuntimeID string) error {
+	oldRuntimeID = NormalizeExtensionID(oldRuntimeID)
+	newRuntimeID = NormalizeExtensionID(newRuntimeID)
+	if oldRuntimeID == "" || newRuntimeID == "" || oldRuntimeID == newRuntimeID {
+		return nil
+	}
+
+	path := filepath.Join(userDataDir, "Default", "Preferences")
+	root, err := readProfileJSON(path, false)
+	if err != nil || root == nil {
+		return err
+	}
+	extensions, err := ensureProfileJSONMapIfPresent(root, "extensions")
+	if err != nil || extensions == nil {
+		return err
+	}
+	settings, err := ensureProfileJSONMapIfPresent(extensions, "settings")
+	if err != nil || settings == nil {
+		return err
+	}
+
+	oldSetting, ok := settings[oldRuntimeID].(map[string]any)
+	if !ok {
+		return nil
+	}
+	enabled, ok := oldSetting["user_scripts_enabled"].(bool)
+	if !ok {
+		return nil
+	}
+
+	newSetting := profileExtensionJSON{}
+	if existing, exists := settings[newRuntimeID]; exists && existing != nil {
+		mapped, ok := existing.(map[string]any)
+		if !ok {
+			return fmt.Errorf("profile 配置字段格式错误: extensions.settings.%s", newRuntimeID)
+		}
+		newSetting = mapped
+	}
+	if _, exists := newSetting["user_scripts_enabled"]; exists {
+		return nil
+	}
+
+	newSetting["user_scripts_enabled"] = enabled
+	settings[newRuntimeID] = newSetting
+	return writeProfileJSON(path, root)
 }
 
 func (m *Manager) backupProfileExtensionState(profileID string, extensionID string, userDataDir string, runtimeIDs []string) (string, error) {

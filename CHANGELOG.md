@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.1-fork.7 - 2026-09-19
+
+- Fixed ScriptCat/Chromium `Allow User Scripts` permission being lost after extension runtime-ID migration and browser restart by migrating `user_scripts_enabled` in `Default/Preferences`.
+- Preserve an explicit permission choice already stored under the current runtime ID instead of overwriting it with legacy state.
+- Retains the extension-data recovery and Xray startup hardening shipped in fork.6.
+
 ## 1.8.1-fork.6 - 2026-09-18
 
 - ScriptCat 旧数据恢复：识别旧版 `location=8` 的 `AntiBrowserExtensions` 注册，即使当前 runtime 已标记为 `installed` 也会执行兼容修复；当新 runtime 只有 Chromium 新建的空壳存储、旧 runtime 明显包含真实数据时，先完整备份再把旧 Local/Sync Extension Settings 安全迁入新 ID。

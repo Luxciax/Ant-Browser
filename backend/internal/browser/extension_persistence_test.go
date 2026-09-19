@@ -601,6 +601,7 @@ func TestRepairLegacyProfileExtensionStorageRecoversScriptCatStyleLegacyData(t *
 	installDir := filepath.Join(appRoot, "data", "extensions", currentRuntimeID)
 	legacyPath := filepath.Join(userDataDir, "AntiBrowserExtensions", currentRuntimeID)
 	securePreferencesPath := filepath.Join(userDataDir, "Default", "Secure Preferences")
+	preferencesPath := filepath.Join(userDataDir, "Default", "Preferences")
 	if err := os.MkdirAll(filepath.Dir(securePreferencesPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -623,6 +624,23 @@ func TestRepairLegacyProfileExtensionStorageRecoversScriptCatStyleLegacyData(t *
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(securePreferencesPath, preferencesData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	userPreferences := map[string]any{
+		"extensions": map[string]any{
+			"settings": map[string]any{
+				oldRuntimeID: map[string]any{
+					"user_scripts_enabled": true,
+				},
+				currentRuntimeID: map[string]any{},
+			},
+		},
+	}
+	userPreferencesData, err := json.Marshal(userPreferences)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(preferencesPath, userPreferencesData, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -687,6 +705,78 @@ func TestRepairLegacyProfileExtensionStorageRecoversScriptCatStyleLegacyData(t *
 	}
 	if _, exists := settings[currentRuntimeID]; !exists {
 		t.Fatalf("current ScriptCat registration %s was removed", currentRuntimeID)
+	}
+	preferencesRoot, err := readProfileJSON(preferencesPath, false)
+	if err != nil {
+		t.Fatalf("read repaired Preferences returned error: %v", err)
+	}
+	preferencesExtensions, err := ensureProfileJSONMapIfPresent(preferencesRoot, "extensions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	preferencesSettings, err := ensureProfileJSONMapIfPresent(preferencesExtensions, "settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentSetting, ok := preferencesSettings[currentRuntimeID].(map[string]any)
+	if !ok {
+		t.Fatalf("current ScriptCat preferences %s missing", currentRuntimeID)
+	}
+	if enabled, ok := currentSetting["user_scripts_enabled"].(bool); !ok || !enabled {
+		t.Fatalf("current ScriptCat user_scripts_enabled = %#v, want true", currentSetting["user_scripts_enabled"])
+	}
+}
+
+func TestMigrateProfileExtensionUserScriptsPreferencePreservesCurrentChoice(t *testing.T) {
+	userDataDir := t.TempDir()
+	oldRuntimeID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	newRuntimeID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	path := filepath.Join(userDataDir, "Default", "Preferences")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	root := map[string]any{
+		"extensions": map[string]any{
+			"settings": map[string]any{
+				oldRuntimeID: map[string]any{
+					"user_scripts_enabled": true,
+				},
+				newRuntimeID: map[string]any{
+					"user_scripts_enabled": false,
+				},
+			},
+		},
+	}
+	data, err := json.Marshal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrateProfileExtensionUserScriptsPreference(userDataDir, oldRuntimeID, newRuntimeID); err != nil {
+		t.Fatalf("migrateProfileExtensionUserScriptsPreference returned error: %v", err)
+	}
+
+	reloaded, err := readProfileJSON(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extensions, err := ensureProfileJSONMapIfPresent(reloaded, "extensions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings, err := ensureProfileJSONMapIfPresent(extensions, "settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentSetting, ok := settings[newRuntimeID].(map[string]any)
+	if !ok {
+		t.Fatalf("current runtime preferences missing")
+	}
+	if enabled, ok := currentSetting["user_scripts_enabled"].(bool); !ok || enabled {
+		t.Fatalf("current user_scripts_enabled = %#v, want preserved false", currentSetting["user_scripts_enabled"])
 	}
 }
 
