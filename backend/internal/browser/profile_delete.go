@@ -23,6 +23,10 @@ func (m *Manager) Delete(profileId string) error {
 		log.Error("浏览器配置不存在", logger.F("profile_id", profileId))
 		return fmt.Errorf("profile not found")
 	}
+	if profile.Running || profile.DebugReady || profile.Pid > 0 {
+		log.Warn("拒绝删除运行中的浏览器配置", logger.F("profile_id", profileId), logger.F("pid", profile.Pid), logger.F("debug_port", profile.DebugPort))
+		return fmt.Errorf("profile is running; stop it before deletion")
+	}
 	deletedAt := time.Now().Format(time.RFC3339)
 	if m.ProfileDAO != nil {
 		if err := m.ProfileDAO.SoftDelete(profileId, deletedAt); err != nil {

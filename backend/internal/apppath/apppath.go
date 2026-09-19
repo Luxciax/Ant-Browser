@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
-	"sync"
 )
 
 const appStateDirName = "ant-browser"
@@ -17,8 +16,6 @@ type roots struct {
 	stateRoot   string
 	detached    bool
 }
-
-var rootsCache sync.Map
 
 // InstallRoot 返回应用安装根目录的绝对路径。
 func InstallRoot(appRoot string) string {
@@ -105,11 +102,6 @@ func detect(appRoot string) roots {
 
 func detectForOS(appRoot, goos string) roots {
 	normalized := normalizeRoot(appRoot)
-	cacheKey := buildCacheKey(goos, normalized)
-	if cached, ok := rootsCache.Load(cacheKey); ok {
-		return cached.(roots)
-	}
-
 	root := roots{
 		installRoot: normalized,
 		stateRoot:   normalized,
@@ -118,13 +110,7 @@ func detectForOS(appRoot, goos string) roots {
 		root.stateRoot = userStateRootForOS(goos, normalized)
 		root.detached = root.stateRoot != "" && root.stateRoot != normalized
 	}
-
-	actual, _ := rootsCache.LoadOrStore(cacheKey, root)
-	return actual.(roots)
-}
-
-func buildCacheKey(goos, root string) string {
-	return normalizeGOOS(goos) + "\x00" + root
+	return root
 }
 
 func normalizeGOOS(goos string) string {

@@ -141,6 +141,11 @@ func NewLaunchServer(service *LaunchCodeService, starter BrowserStarter, mgr *br
 //   - port <= 0：自动分配随机可用端口（仅内部测试/显式传 0 时）
 //   - port > 0：绑定指定固定端口；若被占用则直接返回错误
 func (s *LaunchServer) Start() error {
+	auth := s.apiAuthConfig()
+	if auth.Requested() && !auth.Configured() {
+		return fmt.Errorf("LaunchServer authentication is enabled but api_key is empty")
+	}
+
 	handler := s.buildHandler(true)
 
 	preferredPort := s.port
@@ -160,11 +165,8 @@ func (s *LaunchServer) Start() error {
 	} else {
 		log.Debug("LaunchServer 使用固定端口", logger.F("port", port))
 	}
-	auth := s.apiAuthConfig()
 	if auth.Active() {
 		log.Info("LaunchServer API 认证已启用", logger.F("header", auth.Header))
-	} else if auth.Requested() && !auth.Configured() {
-		log.Warn("LaunchServer API 认证配置未生效", logger.F("reason", "api_key is empty"), logger.F("header", auth.Header))
 	}
 	log.Info("LaunchServer 已启动", logger.F("port", port))
 

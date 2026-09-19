@@ -16,8 +16,17 @@ var managedLaunchArgSpecs = []managedLaunchArgSpec{
 	{prefix: "--remote-debugging-address", takesValue: true},
 	{prefix: "--remote-debugging-pipe", takesValue: false},
 	{prefix: "--proxy-server", takesValue: true},
+	{prefix: "--proxy-pac-url", takesValue: true},
 	{prefix: "--load-extension", takesValue: true},
 	{prefix: "--disable-extensions-except", takesValue: true},
+	{prefix: "--renderer-cmd-prefix", takesValue: true},
+	{prefix: "--utility-cmd-prefix", takesValue: true},
+	{prefix: "--gpu-launcher", takesValue: true},
+	{prefix: "--browser-subprocess-path", takesValue: true},
+	{prefix: "--no-sandbox", takesValue: false},
+	{prefix: "--disable-sandbox", takesValue: false},
+	{prefix: "--single-process", takesValue: false},
+	{prefix: "--remote-allow-origins", takesValue: true},
 	{prefix: "--restore-last-session", takesValue: false},
 }
 

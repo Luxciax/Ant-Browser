@@ -25,6 +25,8 @@ func (dao *blockingProxySpeedDAO) Delete(string) error { return nil }
 
 func (dao *blockingProxySpeedDAO) DeleteAll() error { return nil }
 
+func (dao *blockingProxySpeedDAO) ReplaceAll([]Proxy) error { return nil }
+
 func (dao *blockingProxySpeedDAO) UpdateSpeedResult(string, bool, int64, string) error {
 	close(dao.finished)
 	return nil

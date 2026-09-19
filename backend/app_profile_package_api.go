@@ -3,6 +3,7 @@ package backend
 import (
 	"archive/zip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -557,7 +558,7 @@ func (a *App) importProfilePackageFromPathWithModeAndConfirmation(zipPath string
 	return a.importProfilePackageFromPathWithModeAndActions(zipPath, mode, confirmConflict, nil)
 }
 
-func (a *App) importProfilePackageFromPathWithModeAndActions(zipPath string, mode string, confirmConflict bool, actions []ProfilePackageImportAction) (ProfilePackageImportResult, error) {
+func (a *App) importProfilePackageFromPathWithModeAndActions(zipPath string, mode string, confirmConflict bool, actions []ProfilePackageImportAction) (result ProfilePackageImportResult, retErr error) {
 	mode = normalizeProfilePackageImportMode(mode)
 	if mode == "" {
 		return ProfilePackageImportResult{}, fmt.Errorf("不支持的实例导入冲突处理方式")
@@ -647,20 +648,20 @@ func (a *App) importProfilePackageFromPathWithModeAndActions(zipPath string, mod
 		if committed {
 			return
 		}
-		rollbackProfilePackageDirectorySwaps(swaps)
-		if len(originalProfiles) == 0 {
-			return
-		}
-		a.browserMgr.Mutex.Lock()
-		for profileID, original := range originalProfiles {
-			if original == nil {
-				delete(a.browserMgr.Profiles, profileID)
-				continue
+		rollbackErr := rollbackProfilePackageDirectorySwaps(swaps)
+		if len(originalProfiles) > 0 {
+			a.browserMgr.Mutex.Lock()
+			for profileID, original := range originalProfiles {
+				if original == nil {
+					delete(a.browserMgr.Profiles, profileID)
+					continue
+				}
+				copyProfile := *original
+				a.browserMgr.Profiles[profileID] = &copyProfile
 			}
-			copyProfile := *original
-			a.browserMgr.Profiles[profileID] = &copyProfile
+			a.browserMgr.Mutex.Unlock()
 		}
-		a.browserMgr.Mutex.Unlock()
+		retErr = combineProfilePackageRollbackError(retErr, rollbackErr)
 	}()
 
 	seenSourceIDs := make(map[string]struct{}, len(contents.Profiles))
@@ -1198,7 +1199,9 @@ func replaceProfileUserDataDirWithBackup(stagingDir string, finalDir string) (pr
 	}
 	if err := os.Rename(stagingDir, finalDir); err != nil {
 		if swap.HadOriginal {
-			_ = os.Rename(backupDir, finalDir)
+			if restoreErr := os.Rename(backupDir, finalDir); restoreErr != nil {
+				return profilePackageDirectorySwap{}, fmt.Errorf("提交用户数据目录失败: %w; IMPORT_ROLLBACK_FAILED: 恢复原目录失败: %v", err, restoreErr)
+			}
 		}
 		return profilePackageDirectorySwap{}, fmt.Errorf("提交用户数据目录失败: %w", err)
 	}
@@ -1214,17 +1217,38 @@ func finalizeProfilePackageDirectorySwaps(swaps []profilePackageDirectorySwap) {
 	}
 }
 
-func rollbackProfilePackageDirectorySwaps(swaps []profilePackageDirectorySwap) {
+func rollbackProfilePackageDirectorySwaps(swaps []profilePackageDirectorySwap) error {
+	rollbackErrors := make([]error, 0)
 	for index := len(swaps) - 1; index >= 0; index-- {
 		swap := swaps[index]
 		if strings.TrimSpace(swap.FinalDir) == "" {
 			continue
 		}
-		_ = os.RemoveAll(swap.FinalDir)
+		if err := os.RemoveAll(swap.FinalDir); err != nil {
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("清理失败导入目录 %s: %w", swap.FinalDir, err))
+		}
 		if swap.HadOriginal && strings.TrimSpace(swap.BackupDir) != "" {
-			_ = os.Rename(swap.BackupDir, swap.FinalDir)
+			if err := os.Rename(swap.BackupDir, swap.FinalDir); err != nil {
+				rollbackErrors = append(rollbackErrors, fmt.Errorf("恢复原用户数据目录 %s: %w", swap.FinalDir, err))
+				continue
+			}
+			if _, err := os.Stat(swap.FinalDir); err != nil {
+				rollbackErrors = append(rollbackErrors, fmt.Errorf("验证恢复后的用户数据目录 %s: %w", swap.FinalDir, err))
+			}
 		}
 	}
+	return errors.Join(rollbackErrors...)
+}
+
+func combineProfilePackageRollbackError(importErr error, rollbackErr error) error {
+	if rollbackErr == nil {
+		return importErr
+	}
+	rollbackFailure := fmt.Errorf("IMPORT_ROLLBACK_FAILED: %w", rollbackErr)
+	if importErr == nil {
+		return rollbackFailure
+	}
+	return errors.Join(importErr, rollbackFailure)
 }
 
 func (a *App) profilePackageImportStagingRoot(batchID string) string {
