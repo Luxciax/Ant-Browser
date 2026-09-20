@@ -1316,7 +1316,13 @@ func profileExtensionSettingMatches(userDataDir string, runtimeExtensionID strin
 		return false
 	}
 	location, ok := value["location"].(float64)
-	if !ok || (int(location) != 1 && int(location) != 3) {
+	// Chromium rewrites extensions supplied through --load-extension as
+	// COMMAND_LINE (location=8). That is the expected steady state for Ant
+	// Browser's prepared extensions. Treat the entry as valid when the runtime
+	// ID, version and persisted artifact path still match; otherwise every start
+	// rewrites the tracked extensions.settings entry, drops its protection MAC,
+	// and Chromium loses extension-specific prefs such as user_scripts_enabled.
+	if !ok || (int(location) != 1 && int(location) != 3 && int(location) != 8) {
 		return false
 	}
 	storedPath, ok := value["path"].(string)
@@ -1333,7 +1339,11 @@ func profileExtensionSettingMatches(userDataDir string, runtimeExtensionID strin
 	}
 	manifest, ok := value["manifest"].(map[string]any)
 	if !ok {
-		return false
+		// Chromium command-line registrations may omit the embedded manifest.
+		// The artifact path above was resolved only after reading the actual
+		// on-disk manifest for the requested version, so matching location=8
+		// plus the exact artifact path is sufficient to keep this stable state.
+		return int(location) == 8 && strings.TrimSpace(version) != ""
 	}
 	storedVersion, _ := manifest["version"].(string)
 	return strings.TrimSpace(storedVersion) == strings.TrimSpace(version)
@@ -1584,9 +1594,11 @@ func (m *Manager) repairLegacyProfileExtensionStorage(profile *Profile, userData
 
 // migrateProfileExtensionUserScriptsPreference carries Chromium's per-extension
 // "Allow User Scripts" choice across an Ant Browser runtime-ID migration.
-// ScriptCat's own scripts live in extension storage, but Chrome stores this
-// toggle in Default/Preferences under extensions.settings.<extension-id>.
-// Preserve an explicit value already present on the new runtime ID.
+// Chromium stores extension-specific prefs under extensions.settings, which is
+// a protected preference and therefore lives in Default/Secure Preferences on
+// Windows. fork.7/1.9.0 incorrectly targeted Default/Preferences. Keep that
+// legacy copy as a compatibility mirror when it exists, but treat Secure
+// Preferences as the Chromium source of truth.
 func migrateProfileExtensionUserScriptsPreference(userDataDir string, oldRuntimeID string, newRuntimeID string) error {
 	oldRuntimeID = NormalizeExtensionID(oldRuntimeID)
 	newRuntimeID = NormalizeExtensionID(newRuntimeID)
@@ -1594,46 +1606,102 @@ func migrateProfileExtensionUserScriptsPreference(userDataDir string, oldRuntime
 		return nil
 	}
 
-	path := filepath.Join(userDataDir, "Default", "Preferences")
-	root, err := readProfileJSON(path, false)
-	if err != nil || root == nil {
+	securePath := filepath.Join(userDataDir, "Default", "Secure Preferences")
+	secureRoot, err := readProfileJSON(securePath, false)
+	if err != nil || secureRoot == nil {
 		return err
 	}
-	extensions, err := ensureProfileJSONMapIfPresent(root, "extensions")
-	if err != nil || extensions == nil {
+	secureExtensions, err := ensureProfileJSONMapIfPresent(secureRoot, "extensions")
+	if err != nil || secureExtensions == nil {
 		return err
 	}
-	settings, err := ensureProfileJSONMapIfPresent(extensions, "settings")
-	if err != nil || settings == nil {
+	secureSettings, err := ensureProfileJSONMapIfPresent(secureExtensions, "settings")
+	if err != nil || secureSettings == nil {
 		return err
 	}
 
-	oldSetting, ok := settings[oldRuntimeID].(map[string]any)
-	if !ok {
-		return nil
+	legacyPath := filepath.Join(userDataDir, "Default", "Preferences")
+	legacyRoot, err := readProfileJSON(legacyPath, false)
+	if err != nil {
+		return err
 	}
-	enabled, ok := oldSetting["user_scripts_enabled"].(bool)
-	if !ok {
+	var legacySettings profileExtensionJSON
+	if legacyRoot != nil {
+		legacyExtensions, mapErr := ensureProfileJSONMapIfPresent(legacyRoot, "extensions")
+		if mapErr != nil {
+			return mapErr
+		}
+		if legacyExtensions != nil {
+			legacySettings, mapErr = ensureProfileJSONMapIfPresent(legacyExtensions, "settings")
+			if mapErr != nil {
+				return mapErr
+			}
+		}
+	}
+
+	var enabled bool
+	var found bool
+	if oldSetting, ok := secureSettings[oldRuntimeID].(map[string]any); ok {
+		enabled, found = oldSetting["user_scripts_enabled"].(bool)
+	}
+	if !found && legacySettings != nil {
+		if legacySetting, ok := legacySettings[oldRuntimeID].(map[string]any); ok {
+			enabled, found = legacySetting["user_scripts_enabled"].(bool)
+		}
+	}
+	if !found {
 		return nil
 	}
 
 	newSetting := profileExtensionJSON{}
-	if existing, exists := settings[newRuntimeID]; exists && existing != nil {
+	if existing, exists := secureSettings[newRuntimeID]; exists && existing != nil {
 		mapped, ok := existing.(map[string]any)
 		if !ok {
 			return fmt.Errorf("profile 配置字段格式错误: extensions.settings.%s", newRuntimeID)
 		}
 		newSetting = mapped
 	}
-	if _, exists := newSetting["user_scripts_enabled"]; exists {
-		return nil
+
+	resolvedEnabled := enabled
+	secureChanged := false
+	if currentEnabled, exists := newSetting["user_scripts_enabled"].(bool); exists {
+		resolvedEnabled = currentEnabled
+	} else {
+		newSetting["user_scripts_enabled"] = resolvedEnabled
+		secureSettings[newRuntimeID] = newSetting
+		if _, err := removeProfileExtensionProtectionMACs(secureRoot, newRuntimeID); err != nil {
+			return err
+		}
+		secureChanged = true
+	}
+	if secureChanged {
+		if err := writeProfileJSON(securePath, secureRoot); err != nil {
+			return err
+		}
 	}
 
-	newSetting["user_scripts_enabled"] = enabled
-	settings[newRuntimeID] = newSetting
-	return writeProfileJSON(path, root)
+	// Preserve the mistaken fork.7/1.9.0 storage shape only when it already
+	// exists. This keeps downgrade/recovery compatibility without creating the
+	// legacy structure in clean profiles.
+	if legacySettings != nil {
+		legacyNew := profileExtensionJSON{}
+		if existing, exists := legacySettings[newRuntimeID]; exists && existing != nil {
+			mapped, ok := existing.(map[string]any)
+			if !ok {
+				return fmt.Errorf("profile 配置字段格式错误: extensions.settings.%s", newRuntimeID)
+			}
+			legacyNew = mapped
+		}
+		if _, exists := legacyNew["user_scripts_enabled"].(bool); !exists {
+			legacyNew["user_scripts_enabled"] = resolvedEnabled
+			legacySettings[newRuntimeID] = legacyNew
+			if err := writeProfileJSON(legacyPath, legacyRoot); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
-
 func (m *Manager) backupProfileExtensionState(profileID string, extensionID string, userDataDir string, runtimeIDs []string) (string, error) {
 	if len(runtimeIDs) == 0 {
 		return "", nil

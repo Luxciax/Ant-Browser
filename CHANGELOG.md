@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.1 - 2026-09-19
+
+- 修复 ScriptCat/Tampermonkey `Allow User Scripts` 每次启动后重新关闭：Ant Browser 不再把 Chromium 已写回的 `location=8` command-line 扩展注册误判为损坏并重写 `Secure Preferences`。
+- `user_scripts_enabled` 的 runtime-ID 迁移改为写入 Windows 上真正的受保护扩展设置 `Secure Preferences`；同时兼容 fork.7/1.9.0 曾错误写入普通 `Preferences` 的旧数据。
+- 新增与真实 Chromium 148 Profile 结构一致的回归测试：`location=8`、`creation_flags=38`、无内嵌 manifest 时，启动准备不得修改扩展设置、保护 MAC 或用户脚本开关。
+
 ## 1.9.0 - 2026-09-19
 
 - 修复插件首次迁移、runtime 索引恢复时用户脚本权限遗漏，以及安装失败回滚丢失目标 ID 数据的问题。
