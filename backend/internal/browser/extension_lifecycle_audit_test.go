@@ -74,13 +74,16 @@ func TestAuditRecoveredRuntimeMigratesLegacyPermissionOnFirstLaunch(t *testing.T
 	}
 	oldID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	securePath := filepath.Join(dir, "Default", "Secure Preferences")
-	root, err := readProfileJSON(securePath, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	settings := root["extensions"].(map[string]any)["settings"].(map[string]any)
-	settings[oldID] = profileExtensionJSON{"location": 8, "path": ext.InstallDir}
-	if err := writeProfileJSON(securePath, root); err != nil {
+	// Chromium owns its registration file. Seed only the legacy state that
+	// this test needs to migrate; installing the managed artifact must not be
+	// expected to fabricate a current Chromium registration.
+	if err := writeProfileJSON(securePath, profileExtensionJSON{
+		"extensions": profileExtensionJSON{
+			"settings": profileExtensionJSON{
+				oldID: profileExtensionJSON{"location": 8, "path": ext.InstallDir},
+			},
+		},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	preferencesPath := filepath.Join(dir, "Default", "Preferences")
@@ -90,11 +93,11 @@ func TestAuditRecoveredRuntimeMigratesLegacyPermissionOnFirstLaunch(t *testing.T
 	if _, err := m.ensurePersistentExtensionInstalled(profile, dir, "unused", ext, nil); err != nil {
 		t.Fatal(err)
 	}
-	root, err = readProfileJSON(preferencesPath, false)
+	root, err := readProfileJSON(preferencesPath, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings = root["extensions"].(map[string]any)["settings"].(map[string]any)
+	settings := root["extensions"].(map[string]any)["settings"].(map[string]any)
 	setting, ok := settings[ext.ExtensionID].(map[string]any)
 	if !ok || setting["user_scripts_enabled"] != true {
 		t.Fatalf("index recovery postponed migration until a second launch: %#v", settings)

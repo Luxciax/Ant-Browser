@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.9.2 - 2026-09-19
+
+- 修复 ScriptCat/Tampermonkey `Allow User Scripts` 重启后再次关闭的根因：正常启动、升级与 runtime 恢复不再手工重写 Chromium 自己维护的 `Secure Preferences` 扩展注册。
+- Ant Browser 只维护扩展 artifact，并继续通过 `--load-extension` 交给 Chromium 自行生成和维护 location、creation_flags、manifest、保护 MAC、last_update_time 与 user_scripts_enabled。
+- 删除基于 Chromium 内部 location/manifest 的稳态注册 matcher，避免把合法 `location=4` / `location=8` 状态误判为损坏后重写。
+- 真实 Chromium 148 A/B 验证：旧 1.9.1 风格改写会导致正常退出后 `user_scripts_enabled` 被删除；修复后的 control 保持 `chrome.userScripts` 可用。
+- 空 Profile 实机验证通过：无需预写 `Secure Preferences`，仅复制扩展 artifact + `--load-extension` 即可正常加载 ScriptCat service worker 并由 Chromium 自行注册。
+
 ## 1.9.1 - 2026-09-19
 
 - 修复 ScriptCat/Tampermonkey `Allow User Scripts` 每次启动后重新关闭：Ant Browser 不再把 Chromium 已写回的 `location=8` command-line 扩展注册误判为损坏并重写 `Secure Preferences`。

@@ -6,7 +6,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -155,96 +154,6 @@ func TestPrepareProfileExtensionsUsesLocalPackageWithoutLaunchingBrowserHelper(t
 	}
 }
 
-func TestProfileExtensionRegistrationUsesChromeRelativePathAndClearsMAC(t *testing.T) {
-	userDataDir := t.TempDir()
-	runtimeID := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	version := "1.2.3"
-	codePath := persistentExtensionCodePath(userDataDir, runtimeID, version)
-	if err := os.MkdirAll(codePath, 0o755); err != nil {
-		t.Fatalf("MkdirAll returned error: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(codePath, "manifest.json"), []byte(`{"name":"Test","version":"1.2.3"}`), 0o644); err != nil {
-		t.Fatalf("WriteFile returned error: %v", err)
-	}
-	root := profileExtensionJSON{
-		"extensions": profileExtensionJSON{
-			"settings": profileExtensionJSON{
-				runtimeID: profileExtensionJSON{
-					"location": 8,
-					"path":     `E:\\shared\\extension`,
-				},
-			},
-		},
-		"protection": profileExtensionJSON{
-			"macs": profileExtensionJSON{
-				"extensions": profileExtensionJSON{
-					"settings":                profileExtensionJSON{runtimeID: "old-mac"},
-					"settings_encrypted_hash": profileExtensionJSON{runtimeID: "old-hash"},
-				},
-			},
-		},
-	}
-	if err := writeProfileJSON(filepath.Join(userDataDir, "Default", "Secure Preferences"), root); err != nil {
-		t.Fatalf("writeProfileJSON returned error: %v", err)
-	}
-
-	if err := ensureProfileScopedExtensionRegistration(userDataDir, codePath, runtimeID, ""); err != nil {
-		t.Fatalf("ensureProfileScopedExtensionRegistration returned error: %v", err)
-	}
-	storedRoot, err := readProfileJSON(filepath.Join(userDataDir, "Default", "Secure Preferences"), false)
-	if err != nil {
-		t.Fatalf("readProfileJSON returned error: %v", err)
-	}
-	storedSetting := storedRoot["extensions"].(map[string]any)["settings"].(map[string]any)[runtimeID].(map[string]any)
-	if storedSetting["location"] != float64(1) {
-		t.Fatalf("location = %#v, want 1", storedSetting["location"])
-	}
-	expectedPath, err := profileExtensionRelativePath(userDataDir, codePath)
-	if err != nil {
-		t.Fatalf("profileExtensionRelativePath returned error: %v", err)
-	}
-	if storedSetting["path"] != expectedPath {
-		t.Fatalf("path = %#v, want %q", storedSetting["path"], expectedPath)
-	}
-	macs := storedRoot["protection"].(map[string]any)["macs"].(map[string]any)["extensions"].(map[string]any)
-	if _, exists := macs["settings"].(map[string]any)[runtimeID]; exists {
-		t.Fatal("old settings MAC was not removed")
-	}
-	if _, exists := macs["settings_encrypted_hash"].(map[string]any)[runtimeID]; exists {
-		t.Fatal("old encrypted settings hash was not removed")
-	}
-	if !profileExtensionSettingMatches(userDataDir, runtimeID, version) {
-		t.Fatal("profileExtensionSettingMatches = false for a valid profile registration")
-	}
-	storedSetting["location"] = float64(3)
-	storedSetting["path"] = expectedPath
-	if err := writeProfileJSON(filepath.Join(userDataDir, "Default", "Secure Preferences"), storedRoot); err != nil {
-		t.Fatalf("writeProfileJSON external registration returned error: %v", err)
-	}
-	if !profileExtensionSettingMatches(userDataDir, runtimeID, version) {
-		t.Fatal("profileExtensionSettingMatches = false for a valid external profile registration")
-	}
-	if err := ensureProfileExtensionRegistration(userDataDir, codePath, runtimeID, ""); err != nil {
-		t.Fatalf("ensureProfileExtensionRegistration returned error: %v", err)
-	}
-	storedRoot, err = readProfileJSON(filepath.Join(userDataDir, "Default", "Secure Preferences"), false)
-	if err != nil {
-		t.Fatalf("readProfileJSON external registration returned error: %v", err)
-	}
-	storedSetting = storedRoot["extensions"].(map[string]any)["settings"].(map[string]any)[runtimeID].(map[string]any)
-	if storedSetting["location"] != float64(3) {
-		t.Fatalf("external registration location = %#v, want 3", storedSetting["location"])
-	}
-
-	storedSetting["path"] = `wrong\\path`
-	if err := writeProfileJSON(filepath.Join(userDataDir, "Default", "Secure Preferences"), storedRoot); err != nil {
-		t.Fatalf("writeProfileJSON wrong path returned error: %v", err)
-	}
-	if profileExtensionSettingMatches(userDataDir, runtimeID, version) {
-		t.Fatal("profileExtensionSettingMatches = true for a wrong profile path")
-	}
-}
-
 func TestCleanupProfileExtensionRuntimeKeepsWorkflowStorageAndRemovesRegistration(t *testing.T) {
 	userDataDir := t.TempDir()
 	runtimeID := "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -262,8 +171,14 @@ func TestCleanupProfileExtensionRuntimeKeepsWorkflowStorageAndRemovesRegistratio
 	if err := os.WriteFile(workflowPath, []byte("workflow"), 0o644); err != nil {
 		t.Fatalf("WriteFile workflow returned error: %v", err)
 	}
-	if err := ensureProfileScopedExtensionRegistration(userDataDir, codePath, runtimeID, ""); err != nil {
-		t.Fatalf("ensureProfileScopedExtensionRegistration returned error: %v", err)
+	if err := writeProfileJSON(filepath.Join(userDataDir, "Default", "Secure Preferences"), profileExtensionJSON{
+		"extensions": profileExtensionJSON{
+			"settings": profileExtensionJSON{
+				runtimeID: profileExtensionJSON{"location": 4, "path": filepath.Join(runtimeID, "1.0.0_0")},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("seed Chromium registration returned error: %v", err)
 	}
 	if err := cleanupProfileExtensionRuntime(userDataDir, runtimeID); err != nil {
 		t.Fatalf("cleanupProfileExtensionRuntime returned error: %v", err)
@@ -274,49 +189,22 @@ func TestCleanupProfileExtensionRuntimeKeepsWorkflowStorageAndRemovesRegistratio
 	if _, err := os.Stat(workflowPath); err != nil {
 		t.Fatalf("workflow storage was removed: %v", err)
 	}
-	if profileExtensionSettingMatches(userDataDir, runtimeID, "1.0.0") {
-		t.Fatal("profile extension registration still matches after cleanup")
-	}
-}
-
-func TestRepeatedProfileExtensionRegistrationPreservesRuntimeStorage(t *testing.T) {
-	userDataDir := t.TempDir()
-	runtimeID := "cccccccccccccccccccccccccccccccc"
-	version := "1.0.0"
-	codePath := persistentExtensionCodePath(userDataDir, runtimeID, version)
-	if err := os.MkdirAll(codePath, 0o755); err != nil {
-		t.Fatalf("MkdirAll code returned error: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(codePath, "manifest.json"), []byte(`{"name":"Script state test","version":"1.0.0"}`), 0o644); err != nil {
-		t.Fatalf("WriteFile manifest returned error: %v", err)
-	}
-
-	if err := ensureProfileScopedExtensionRegistration(userDataDir, codePath, runtimeID, ""); err != nil {
-		t.Fatalf("initial registration returned error: %v", err)
-	}
-	storagePath := filepath.Join(userDataDir, "Default", "Local Extension Settings", runtimeID, "CURRENT")
-	if err := os.MkdirAll(filepath.Dir(storagePath), 0o755); err != nil {
-		t.Fatalf("MkdirAll storage returned error: %v", err)
-	}
-	const state = "scriptcat-user-scripts-and-settings"
-	if err := os.WriteFile(storagePath, []byte(state), 0o644); err != nil {
-		t.Fatalf("WriteFile storage returned error: %v", err)
-	}
-
-	// Startup verification for an already-installed extension must only repair
-	// registration metadata. It must never replace or clean the runtime storage.
-	if err := ensureProfileExtensionRegistration(userDataDir, codePath, runtimeID, ""); err != nil {
-		t.Fatalf("repeat registration returned error: %v", err)
-	}
-	data, err := os.ReadFile(storagePath)
+	root, err := readProfileJSON(filepath.Join(userDataDir, "Default", "Secure Preferences"), false)
 	if err != nil {
-		t.Fatalf("ReadFile storage after repeat registration returned error: %v", err)
+		t.Fatalf("read Secure Preferences after cleanup returned error: %v", err)
 	}
-	if string(data) != state {
-		t.Fatalf("extension runtime storage changed across repeat registration: %q", data)
+	extensions, err := ensureProfileJSONMapIfPresent(root, "extensions")
+	if err != nil {
+		t.Fatalf("read extensions after cleanup returned error: %v", err)
 	}
-	if !profileExtensionSettingMatches(userDataDir, runtimeID, version) {
-		t.Fatal("profile registration no longer matches after repeat verification")
+	settings, err := ensureProfileJSONMapIfPresent(extensions, "settings")
+	if err != nil {
+		t.Fatalf("read extension settings after cleanup returned error: %v", err)
+	}
+	if settings != nil {
+		if _, exists := settings[runtimeID]; exists {
+			t.Fatal("profile extension registration still exists after explicit cleanup")
+		}
 	}
 }
 
@@ -351,10 +239,6 @@ func TestRecoverExistingPersistentExtensionRuntimePreservesBrowserStorage(t *tes
 	if err := os.WriteFile(filepath.Join(codePath, "marker.txt"), []byte(codeMarker), 0o644); err != nil {
 		t.Fatalf("WriteFile marker returned error: %v", err)
 	}
-	if err := ensureProfileScopedExtensionRegistration(userDataDir, codePath, runtimeID, packagePath); err != nil {
-		t.Fatalf("ensureProfileScopedExtensionRegistration returned error: %v", err)
-	}
-
 	storageFiles := map[string]string{
 		filepath.Join(userDataDir, "Default", "Local Extension Settings", runtimeID, "CURRENT"):                         "scriptcat-local-settings",
 		filepath.Join(userDataDir, "Default", "Sync Extension Settings", runtimeID, "CURRENT"):                          "scriptcat-sync-settings",
@@ -406,7 +290,7 @@ func TestRecoverExistingPersistentExtensionRuntimePreservesBrowserStorage(t *tes
 	}
 }
 
-func TestRecoverExistingPersistentExtensionRuntimeRejectsMismatchedRegistration(t *testing.T) {
+func TestRecoverExistingPersistentExtensionRuntimeIgnoresStaleChromiumRegistration(t *testing.T) {
 	appRoot := t.TempDir()
 	userDataDir := filepath.Join(appRoot, "profile")
 	packagePath := filepath.Join(appRoot, "extension.crx")
@@ -435,8 +319,13 @@ func TestRecoverExistingPersistentExtensionRuntimeRejectsMismatchedRegistration(
 			},
 		},
 	}
-	if err := writeProfileJSON(filepath.Join(userDataDir, "Default", "Secure Preferences"), root); err != nil {
+	securePath := filepath.Join(userDataDir, "Default", "Secure Preferences")
+	if err := writeProfileJSON(securePath, root); err != nil {
 		t.Fatalf("writeProfileJSON returned error: %v", err)
+	}
+	before, err := os.ReadFile(securePath)
+	if err != nil {
+		t.Fatalf("ReadFile Secure Preferences returned error: %v", err)
 	}
 
 	manager := NewManager(config.DefaultConfig(), appRoot)
@@ -445,11 +334,18 @@ func TestRecoverExistingPersistentExtensionRuntimeRejectsMismatchedRegistration(
 	extension := Extension{ExtensionID: runtimeID, Name: "Test", Version: version, PackagePath: packagePath, InstallMode: ExtensionInstallModePersistent}
 	if _, recovered, err := manager.recoverExistingPersistentExtensionRuntime(profile, userDataDir, packagePath, extensionPackageHash(packageData), extension); err != nil {
 		t.Fatalf("recoverExistingPersistentExtensionRuntime returned error: %v", err)
-	} else if recovered {
-		t.Fatal("recoverExistingPersistentExtensionRuntime = true for mismatched Secure Preferences registration")
+	} else if !recovered {
+		t.Fatal("recoverExistingPersistentExtensionRuntime = false for an exact managed artifact")
 	}
-	if _, err := manager.ExtensionDAO.GetProfileExtensionRuntime(profile.ProfileId, extension.ExtensionID); err != sql.ErrNoRows {
-		t.Fatalf("runtime row was created for invalid registration: %v", err)
+	if _, err := manager.ExtensionDAO.GetProfileExtensionRuntime(profile.ProfileId, extension.ExtensionID); err != nil {
+		t.Fatalf("runtime row was not recovered from exact managed artifact: %v", err)
+	}
+	after, err := os.ReadFile(securePath)
+	if err != nil {
+		t.Fatalf("ReadFile Secure Preferences after recovery returned error: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("runtime index recovery rewrote stale Chromium-owned Secure Preferences")
 	}
 }
 

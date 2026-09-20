@@ -575,21 +575,23 @@ func (m *Manager) ensurePersistentExtensionInstalledContext(ctx context.Context,
 		runtimeState.InstalledVersion == extension.Version && runtimeState.PackageHash == packageHash {
 		expectedArtifactPath := persistentExtensionCodePath(userDataDir, runtimeState.RuntimeExtensionID, extension.Version)
 		if artifactPath := persistentExtensionArtifactPath(userDataDir, runtimeState.RuntimeExtensionID, extension.Version); artifactPath != "" && sameProfileExtensionPath(artifactPath, expectedArtifactPath) {
-			if err := ensureProfileExtensionRegistration(userDataDir, artifactPath, runtimeState.RuntimeExtensionID, packagePath); err == nil {
-				legacyBackupPath, repairErr := m.repairLegacyProfileExtensionStorage(profile, userDataDir, extension, runtimeState.RuntimeExtensionID)
-				if repairErr != nil {
-					return "", fmt.Errorf("修复旧插件数据失败（%s）：%w", extension.Name, repairErr)
-				}
-				if strings.TrimSpace(runtimeState.BackupPath) == "" && strings.TrimSpace(legacyBackupPath) != "" {
-					runtimeState.BackupPath = legacyBackupPath
-				}
-				runtimeState.LastVerifiedAt = time.Now().Format(time.RFC3339)
-				runtimeState.LastError = ""
-				if err := m.ExtensionDAO.UpsertProfileExtensionRuntime(runtimeState); err != nil {
-					return "", err
-				}
-				return artifactPath, nil
+			// Steady-state startup must not rewrite Chromium-owned extension prefs.
+			// --load-extension below will load the exact managed artifact. Chromium
+			// owns location, creation_flags, protection MACs and extension-specific
+			// preferences such as user_scripts_enabled.
+			legacyBackupPath, repairErr := m.repairLegacyProfileExtensionStorage(profile, userDataDir, extension, runtimeState.RuntimeExtensionID)
+			if repairErr != nil {
+				return "", fmt.Errorf("修复旧插件数据失败（%s）：%w", extension.Name, repairErr)
 			}
+			if strings.TrimSpace(runtimeState.BackupPath) == "" && strings.TrimSpace(legacyBackupPath) != "" {
+				runtimeState.BackupPath = legacyBackupPath
+			}
+			runtimeState.LastVerifiedAt = time.Now().Format(time.RFC3339)
+			runtimeState.LastError = ""
+			if err := m.ExtensionDAO.UpsertProfileExtensionRuntime(runtimeState); err != nil {
+				return "", err
+			}
+			return artifactPath, nil
 		}
 	}
 
@@ -660,14 +662,8 @@ func (m *Manager) ensurePersistentExtensionInstalledContext(ctx context.Context,
 		m.recordProfileExtensionRuntimeError(profile.ProfileId, extension, runtimeState, packageHash, backupPath, installErr)
 		return "", fmt.Errorf("插件持久安装失败（%s）：%w；安装前备份已保留在 %s", extension.Name, installErr, backupPath)
 	}
-	if err := ensureProfileExtensionRegistration(userDataDir, artifactPath, runtimeExtensionID, packagePath); err != nil {
-		installErr := fmt.Errorf("实例插件注册失败：%w", err)
-		_ = restoreProfileExtensionState(userDataDir, backupPath, legacyRuntimeIDs, runtimeExtensionID)
-		m.recordProfileExtensionRuntimeError(profile.ProfileId, extension, runtimeState, packageHash, backupPath, installErr)
-		return "", fmt.Errorf("插件持久安装失败（%s）：%w；安装前备份已保留在 %s", extension.Name, installErr, backupPath)
-	}
-	if !persistentExtensionArtifactMatches(userDataDir, runtimeExtensionID, extension.Version) || !profileExtensionSettingMatches(userDataDir, runtimeExtensionID, extension.Version) {
-		installErr := fmt.Errorf("实例插件未通过最终校验：代码或 Secure Preferences 注册缺失（%s）", persistentExtensionCodePath(userDataDir, runtimeExtensionID, extension.Version))
+	if !persistentExtensionArtifactMatches(userDataDir, runtimeExtensionID, extension.Version) {
+		installErr := fmt.Errorf("实例插件未通过最终校验：代码目录缺失或版本不匹配（%s）", persistentExtensionCodePath(userDataDir, runtimeExtensionID, extension.Version))
 		_ = restoreProfileExtensionState(userDataDir, backupPath, legacyRuntimeIDs, runtimeExtensionID)
 		m.recordProfileExtensionRuntimeError(profile.ProfileId, extension, runtimeState, packageHash, backupPath, installErr)
 		return "", fmt.Errorf("插件持久安装失败（%s）：%w；安装前备份已保留在 %s", extension.Name, installErr, backupPath)
@@ -720,9 +716,9 @@ func (m *Manager) recoverExistingPersistentExtensionRuntime(profile *Profile, us
 	if artifactPath == "" || expectedPath == "" || !sameProfileExtensionPath(artifactPath, expectedPath) {
 		return "", false, nil
 	}
-	if !profileExtensionSettingMatches(userDataDir, runtimeID, extension.Version) {
-		return "", false, nil
-	}
+	// The managed artifact is sufficient to recover Ant Browser's runtime
+	// index. Chromium registration metadata is recreated/maintained by Chromium
+	// itself when the same artifact is supplied through --load-extension.
 
 	now := time.Now().Format(time.RFC3339)
 	runtimeState := ProfileExtensionRuntime{
@@ -954,14 +950,11 @@ func installExtensionPackageIntoProfile(userDataDir string, packagePath string, 
 	if err := writeProfileScopedExtensionManifest(filepath.Join(targetPath, "manifest.json"), packageData, runtimeID); err != nil {
 		return "", err
 	}
-	if err := ensureProfileScopedExtensionRegistration(userDataDir, targetPath, runtimeID, packagePath); err != nil {
-		return "", err
-	}
 	if err := removeStalePersistentExtensionVersions(userDataDir, runtimeID, targetPath); err != nil {
 		return "", err
 	}
-	if !persistentExtensionArtifactMatches(userDataDir, runtimeID, manifest.Version) || !profileExtensionSettingMatches(userDataDir, runtimeID, manifest.Version) {
-		return "", fmt.Errorf("实例插件目录或 Secure Preferences 校验失败：%s", targetPath)
+	if !persistentExtensionArtifactMatches(userDataDir, runtimeID, manifest.Version) {
+		return "", fmt.Errorf("实例插件目录校验失败：%s", targetPath)
 	}
 	rollback = false
 	return runtimeID, nil
@@ -1007,127 +1000,6 @@ func writeProfileScopedExtensionManifest(manifestPath string, packageData []byte
 
 type profileExtensionJSON = map[string]any
 
-func ensureProfileScopedExtensionRegistration(userDataDir string, codePath string, runtimeExtensionID string, packagePath string) error {
-	runtimeExtensionID = NormalizeExtensionID(runtimeExtensionID)
-	if runtimeExtensionID == "" {
-		return fmt.Errorf("实例插件运行时 ID 无效")
-	}
-	manifestPath := filepath.Join(codePath, "manifest.json")
-	manifestData, err := os.ReadFile(manifestPath)
-	if err != nil {
-		return fmt.Errorf("读取实例插件 manifest 失败: %w", err)
-	}
-	var manifest profileExtensionJSON
-	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		return fmt.Errorf("解析实例插件 manifest 失败: %w", err)
-	}
-	version, _ := manifest["version"].(string)
-	version = strings.TrimSpace(version)
-	if version == "" {
-		return fmt.Errorf("实例插件 manifest 缺少版本")
-	}
-	if strings.TrimSpace(packagePath) != "" {
-		if packageData, readErr := os.ReadFile(packagePath); readErr == nil {
-			if err := writeProfileScopedExtensionManifest(manifestPath, packageData, runtimeExtensionID); err == nil {
-				manifestData, err = os.ReadFile(manifestPath)
-				if err != nil {
-					return fmt.Errorf("读取已签名实例插件 manifest 失败: %w", err)
-				}
-				if err := json.Unmarshal(manifestData, &manifest); err != nil {
-					return fmt.Errorf("解析已签名实例插件 manifest 失败: %w", err)
-				}
-			}
-		}
-	}
-	relativePath, err := profileExtensionRelativePath(userDataDir, codePath)
-	if err != nil {
-		return err
-	}
-	return updateProfileExtensionSettings(userDataDir, func(root profileExtensionJSON, settings profileExtensionJSON) error {
-		setting := profileExtensionJSON{}
-		if existing, ok := settings[runtimeExtensionID].(map[string]any); ok {
-			setting = existing
-		}
-		active, _ := setting["active_permissions"].(map[string]any)
-		granted, _ := setting["granted_permissions"].(map[string]any)
-		setting["active_permissions"] = preserveOptionalExtensionPermissions(manifest, active)
-		setting["granted_permissions"] = preserveOptionalExtensionPermissions(manifest, granted)
-		setting["commands"] = ensureProfileJSONValue(setting, "commands", profileExtensionJSON{})
-		setting["content_settings"] = ensureProfileJSONValue(setting, "content_settings", []any{})
-		setting["creation_flags"] = 1
-		setting["disable_reasons"] = ensureProfileJSONValue(setting, "disable_reasons", []any{})
-		setting["from_webstore"] = ensureProfileJSONValue(setting, "from_webstore", false)
-		setting["incognito_content_settings"] = ensureProfileJSONValue(setting, "incognito_content_settings", []any{})
-		setting["incognito_preferences"] = ensureProfileJSONValue(setting, "incognito_preferences", profileExtensionJSON{})
-		setting["last_update_time"] = chromeExtensionTimeNow()
-		setting["location"] = 1
-		setting["manifest"] = manifest
-		setting["path"] = relativePath
-		setting["preferences"] = ensureProfileJSONValue(setting, "preferences", profileExtensionJSON{})
-		setting["regular_only_preferences"] = ensureProfileJSONValue(setting, "regular_only_preferences", profileExtensionJSON{})
-		setting["was_installed_by_default"] = ensureProfileJSONValue(setting, "was_installed_by_default", false)
-		setting["was_installed_by_oem"] = ensureProfileJSONValue(setting, "was_installed_by_oem", false)
-		setting["withholding_permissions"] = ensureProfileJSONValue(setting, "withholding_permissions", false)
-		settings[runtimeExtensionID] = setting
-		_, err := removeProfileExtensionProtectionMACs(root, runtimeExtensionID)
-		return err
-	})
-}
-
-func ensureProfileExtensionRegistration(userDataDir string, codePath string, runtimeExtensionID string, packagePath string) error {
-	if profileExtensionSettingMatches(userDataDir, runtimeExtensionID, extensionManifestVersion(codePath)) {
-		return nil
-	}
-	return ensureProfileScopedExtensionRegistration(userDataDir, codePath, runtimeExtensionID, packagePath)
-}
-
-func extensionManifestVersion(codePath string) string {
-	manifestData, err := os.ReadFile(filepath.Join(codePath, "manifest.json"))
-	if err != nil {
-		return ""
-	}
-	var manifest extensionManifest
-	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		return ""
-	}
-	return strings.TrimSpace(manifest.Version)
-}
-
-func ensureProfileJSONValue(values profileExtensionJSON, key string, fallback any) any {
-	if value, ok := values[key]; ok && value != nil {
-		return value
-	}
-	return fallback
-}
-
-func extensionPermissionSnapshot(manifest profileExtensionJSON) profileExtensionJSON {
-	api := make([]any, 0)
-	explicitHost := make([]any, 0)
-	for _, key := range []string{"permissions", "host_permissions"} {
-		items, ok := manifest[key].([]any)
-		if !ok {
-			continue
-		}
-		for _, raw := range items {
-			value, ok := raw.(string)
-			if !ok || strings.TrimSpace(value) == "" {
-				continue
-			}
-			if strings.Contains(value, "://") || strings.Contains(value, "*") || value == "<all_urls>" {
-				explicitHost = append(explicitHost, value)
-			} else {
-				api = append(api, value)
-			}
-		}
-	}
-	return profileExtensionJSON{
-		"api":                  api,
-		"explicit_host":        explicitHost,
-		"manifest_permissions": []any{},
-		"scriptable_host":      []any{},
-	}
-}
-
 func profileExtensionRelativePath(userDataDir string, codePath string) (string, error) {
 	defaultDir := filepath.Clean(filepath.Join(userDataDir, "Default", "Extensions"))
 	absoluteCodePath, err := filepath.Abs(codePath)
@@ -1139,26 +1011,6 @@ func profileExtensionRelativePath(userDataDir string, codePath string) (string, 
 		return "", fmt.Errorf("实例插件目录不在 profile 内: %s", codePath)
 	}
 	return filepath.Clean(relativePath), nil
-}
-
-func updateProfileExtensionSettings(userDataDir string, update func(profileExtensionJSON, profileExtensionJSON) error) error {
-	path := filepath.Join(userDataDir, "Default", "Secure Preferences")
-	root, err := readProfileJSON(path, true)
-	if err != nil {
-		return err
-	}
-	extensions, err := ensureProfileJSONMap(root, "extensions")
-	if err != nil {
-		return err
-	}
-	settings, err := ensureProfileJSONMap(extensions, "settings")
-	if err != nil {
-		return err
-	}
-	if err := update(root, settings); err != nil {
-		return err
-	}
-	return writeProfileJSON(path, root)
 }
 
 func readProfileJSON(path string, createIfMissing bool) (profileExtensionJSON, error) {
@@ -1297,58 +1149,6 @@ func ensureProfileJSONMapIfPresent(parent profileExtensionJSON, key string) (pro
 	return mapped, nil
 }
 
-func profileExtensionSettingMatches(userDataDir string, runtimeExtensionID string, version string) bool {
-	path := filepath.Join(userDataDir, "Default", "Secure Preferences")
-	root, err := readProfileJSON(path, false)
-	if err != nil || root == nil {
-		return false
-	}
-	extensions, err := ensureProfileJSONMapIfPresent(root, "extensions")
-	if err != nil || extensions == nil {
-		return false
-	}
-	settings, err := ensureProfileJSONMapIfPresent(extensions, "settings")
-	if err != nil || settings == nil {
-		return false
-	}
-	value, ok := settings[NormalizeExtensionID(runtimeExtensionID)].(map[string]any)
-	if !ok {
-		return false
-	}
-	location, ok := value["location"].(float64)
-	// Chromium rewrites extensions supplied through --load-extension as
-	// COMMAND_LINE (location=8). That is the expected steady state for Ant
-	// Browser's prepared extensions. Treat the entry as valid when the runtime
-	// ID, version and persisted artifact path still match; otherwise every start
-	// rewrites the tracked extensions.settings entry, drops its protection MAC,
-	// and Chromium loses extension-specific prefs such as user_scripts_enabled.
-	if !ok || (int(location) != 1 && int(location) != 3 && int(location) != 8) {
-		return false
-	}
-	storedPath, ok := value["path"].(string)
-	if !ok {
-		return false
-	}
-	artifactPath := persistentExtensionArtifactPath(userDataDir, runtimeExtensionID, version)
-	if artifactPath == "" {
-		return false
-	}
-	expectedPath, err := profileExtensionRelativePath(userDataDir, artifactPath)
-	if err != nil || !sameProfileExtensionPath(storedPath, expectedPath) {
-		return false
-	}
-	manifest, ok := value["manifest"].(map[string]any)
-	if !ok {
-		// Chromium command-line registrations may omit the embedded manifest.
-		// The artifact path above was resolved only after reading the actual
-		// on-disk manifest for the requested version, so matching location=8
-		// plus the exact artifact path is sufficient to keep this stable state.
-		return int(location) == 8 && strings.TrimSpace(version) != ""
-	}
-	storedVersion, _ := manifest["version"].(string)
-	return strings.TrimSpace(storedVersion) == strings.TrimSpace(version)
-}
-
 func sameProfileExtensionPath(left string, right string) bool {
 	left = filepath.Clean(filepath.FromSlash(strings.TrimSpace(left)))
 	right = filepath.Clean(filepath.FromSlash(strings.TrimSpace(right)))
@@ -1397,10 +1197,6 @@ func removeStalePersistentExtensionVersions(userDataDir string, runtimeExtension
 	return nil
 }
 
-func chromeExtensionTimeNow() int64 {
-	epoch := time.Date(1601, time.January, 1, 0, 0, 0, 0, time.UTC)
-	return time.Now().UTC().Sub(epoch).Microseconds()
-}
 func persistentExtensionCodePath(userDataDir string, runtimeExtensionID string, version string) string {
 	runtimeExtensionID = NormalizeExtensionID(runtimeExtensionID)
 	version = strings.TrimSpace(version)

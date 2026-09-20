@@ -8,42 +8,42 @@ import (
 	"testing"
 )
 
-func TestMatchingCommandLineRegistrationDoesNotRewriteUserScriptsPreference(t *testing.T) {
-	userDataDir := t.TempDir()
-	runtimeID := "ndcooeababalnlpkfedmmbbbgkljhpjf"
-	version := "1.4.0"
-	codePath := persistentExtensionCodePath(userDataDir, runtimeID, version)
-	if err := os.MkdirAll(codePath, 0o755); err != nil {
-		t.Fatal(err)
+func TestSteadyStateStartupDoesNotTouchChromiumProtectedExtensionPrefs(t *testing.T) {
+	m, profile, ext, userDataDir := auditExtensionFixture(t)
+	if _, err := m.ensurePersistentExtensionInstalled(profile, userDataDir, "unused", ext, nil); err != nil {
+		t.Fatalf("initial managed artifact install returned error: %v", err)
 	}
-	manifestData := []byte(`{"name":"ScriptCat","version":"1.4.0","permissions":["userScripts"]}`)
-	if err := os.WriteFile(filepath.Join(codePath, "manifest.json"), manifestData, 0o644); err != nil {
-		t.Fatal(err)
-	}
+
+	codePath := persistentExtensionCodePath(userDataDir, ext.ExtensionID, ext.Version)
 	relativePath, err := profileExtensionRelativePath(userDataDir, codePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	securePath := filepath.Join(userDataDir, "Default", "Secure Preferences")
-	if err := os.MkdirAll(filepath.Dir(securePath), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	root := map[string]any{
 		"extensions": map[string]any{
 			"settings": map[string]any{
-				runtimeID: map[string]any{
-					"location":             8,
+				ext.ExtensionID: map[string]any{
+					"location":             4,
 					"creation_flags":       38,
 					"path":                 relativePath,
+					"last_update_time":     "13434338937035235",
 					"user_scripts_enabled": true,
+					"active_permissions": map[string]any{
+						"api": []any{"storage", "userScripts"},
+					},
+					"granted_permissions": map[string]any{
+						"api": []any{"storage", "userScripts"},
+					},
+					"has_started_service_worker": true,
 				},
 			},
 		},
 		"protection": map[string]any{
 			"macs": map[string]any{
 				"extensions": map[string]any{
-					"settings":                map[string]any{runtimeID: "valid-entry-mac"},
-					"settings_encrypted_hash": map[string]any{runtimeID: "valid-entry-hash"},
+					"settings":                map[string]any{ext.ExtensionID: "browser-owned-settings-mac"},
+					"settings_encrypted_hash": map[string]any{ext.ExtensionID: "browser-owned-encrypted-hash"},
 				},
 			},
 		},
@@ -60,15 +60,15 @@ func TestMatchingCommandLineRegistrationDoesNotRewriteUserScriptsPreference(t *t
 		t.Fatal(err)
 	}
 
-	if err := ensureProfileExtensionRegistration(userDataDir, codePath, runtimeID, ""); err != nil {
-		t.Fatalf("ensureProfileExtensionRegistration returned error: %v", err)
+	if _, err := m.ensurePersistentExtensionInstalled(profile, userDataDir, "unused", ext, nil); err != nil {
+		t.Fatalf("steady-state startup verification returned error: %v", err)
 	}
 	after, err := os.ReadFile(securePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(before, after) {
-		t.Fatalf("matching location=8 registration was rewritten; this would invalidate Chromium's protected extension prefs")
+		t.Fatal("steady-state startup rewrote Chromium-owned Secure Preferences")
 	}
 }
 

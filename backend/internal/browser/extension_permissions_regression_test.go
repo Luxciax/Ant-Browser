@@ -55,15 +55,44 @@ func TestAuditReviewUpgradePreservesOptionalGrant(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "Default", "Secure Preferences")
-	root, err := readProfileJSON(path, false)
+	codePath := persistentExtensionCodePath(dir, ext.ExtensionID, "2.0.0")
+	relativePath, err := profileExtensionRelativePath(dir, codePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	settings := root["extensions"].(map[string]any)["settings"].(map[string]any)
-	old := settings[ext.ExtensionID].(map[string]any)
-	old["active_permissions"] = profileExtensionJSON{"api": []any{"tabs"}, "explicit_host": []any{"https://example.org/*"}}
-	old["granted_permissions"] = old["active_permissions"]
+	root := profileExtensionJSON{
+		"extensions": profileExtensionJSON{
+			"settings": profileExtensionJSON{
+				ext.ExtensionID: profileExtensionJSON{
+					"location":       4,
+					"creation_flags": 38,
+					"path":           relativePath,
+					"active_permissions": profileExtensionJSON{
+						"api":           []any{"storage", "tabs", "userScripts"},
+						"explicit_host": []any{"https://example.org/*"},
+					},
+					"granted_permissions": profileExtensionJSON{
+						"api":           []any{"storage", "tabs", "userScripts"},
+						"explicit_host": []any{"https://example.org/*"},
+					},
+					"user_scripts_enabled": true,
+				},
+			},
+		},
+		"protection": profileExtensionJSON{
+			"macs": profileExtensionJSON{
+				"extensions": profileExtensionJSON{
+					"settings":                profileExtensionJSON{ext.ExtensionID: "browser-owned-settings-mac"},
+					"settings_encrypted_hash": profileExtensionJSON{ext.ExtensionID: "browser-owned-encrypted-hash"},
+				},
+			},
+		},
+	}
 	if err := writeProfileJSON(path, root); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
 		t.Fatal(err)
 	}
 	data := reviewOptionalCRX(t, "3.0.0")
@@ -74,6 +103,13 @@ func TestAuditReviewUpgradePreservesOptionalGrant(t *testing.T) {
 	if _, err := m.ensurePersistentExtensionInstalled(p, dir, "unused", ext, nil); err != nil {
 		t.Fatal(err)
 	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("upgrade rewrote Chromium-owned Secure Preferences; optional grants, userScripts or protection MACs may be lost")
+	}
 	root, err = readProfileJSON(path, false)
 	if err != nil {
 		t.Fatal(err)
@@ -81,8 +117,8 @@ func TestAuditReviewUpgradePreservesOptionalGrant(t *testing.T) {
 	next := root["extensions"].(map[string]any)["settings"].(map[string]any)[ext.ExtensionID].(map[string]any)
 	permission := next["granted_permissions"].(map[string]any)
 	hosts, _ := permission["explicit_host"].([]any)
-	if len(hosts) != 1 || hosts[0] != "https://example.org/*" {
-		t.Fatalf("upgrade discarded existing optional host grant: %#v", permission)
+	if len(hosts) != 1 || hosts[0] != "https://example.org/*" || next["user_scripts_enabled"] != true {
+		t.Fatalf("upgrade discarded Chromium-owned permission state: %#v", next)
 	}
 }
 
@@ -147,18 +183,5 @@ func TestDisabledPermissionSurvivesEnableFailureAndRetry(t *testing.T) {
 	entry := root["extensions"].(map[string]any)["settings"].(map[string]any)[ext.ExtensionID].(map[string]any)
 	if entry["user_scripts_enabled"] != true {
 		t.Fatal("retry lost saved permission")
-	}
-}
-
-func TestOptionalPermissionsRespectManifestAndUserChoice(t *testing.T) {
-	manifest := profileExtensionJSON{"permissions": []any{"storage"}, "optional_permissions": []any{"tabs"}, "optional_host_permissions": []any{"https://*.example.org/*"}}
-	old := profileExtensionJSON{"api": []any{"tabs", "debugger"}, "explicit_host": []any{"https://sub.example.org/*", "https://removed.test/*"}}
-	got := preserveOptionalExtensionPermissions(manifest, old)
-	if len(got["api"].([]any)) != 2 || len(got["explicit_host"].([]any)) != 1 {
-		t.Fatalf("wrong permission diff: %#v", got)
-	}
-	fresh := preserveOptionalExtensionPermissions(manifest, nil)
-	if len(fresh["api"].([]any)) != 1 || len(fresh["explicit_host"].([]any)) != 0 {
-		t.Fatalf("granted optional permissions without user choice: %#v", fresh)
 	}
 }
