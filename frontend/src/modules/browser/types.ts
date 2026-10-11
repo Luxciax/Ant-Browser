@@ -49,6 +49,7 @@ export interface BrowserProfileInput {
 }
 
 export interface BrowserFingerprintRuntimeInfo {
+  worker?: { language: string; languages: string[]; timezone: string; hardwareConcurrency: number; platform: string; userAgent: string; error?: string }
   language: string
   languages: string[]
   timezone: string
@@ -104,6 +105,9 @@ export interface BrowserFingerprintExpectedInfo {
 }
 
 export interface BrowserFingerprintCheckResult {
+  status?: 'passed_basic' | 'mismatch' | 'unverified'
+  issues?: string[]
+  limitations?: string[]
   profileId: string
   runtime: BrowserFingerprintRuntimeInfo
   expected: BrowserFingerprintExpectedInfo

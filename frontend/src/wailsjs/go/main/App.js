@@ -638,6 +638,9 @@ export function GetAppLogs() {
   return window['go']['main']['App']['GetAppLogs']();
 }
 
+export function GetAppLogStatus() { return window['go']['main']['App']['GetAppLogStatus'](); }
+export function ExportBrowserDiagnostics() { return window['go']['main']['App']['ExportBrowserDiagnostics'](); }
+
 export function GetAutomationState() {
   return window['go']['main']['App']['GetAutomationState']();
 }

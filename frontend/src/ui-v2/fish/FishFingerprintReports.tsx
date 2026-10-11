@@ -75,6 +75,9 @@ function CheckRow({ label, expected, actual, mode }: { label: string; expected?:
 export function FishFingerprintCheckReport({ result }: { result: BrowserFingerprintCheckResult }) {
   return (
     <div className="fish-check-table">
+      <p role="status">基础自测：{result.status === 'passed_basic' ? '基础项一致（不代表完整伪装认证）' : result.status === 'mismatch' ? '发现不一致' : '未完整验证'}。{[...(result.issues || []), ...(result.limitations || [])].join('；')}</p>
+      <CheckRow label="Worker 时区" expected={result.runtime.timezone} actual={result.runtime.worker?.timezone} />
+      <CheckRow label="Worker CPU" expected={result.runtime.hardwareConcurrency} actual={result.runtime.worker?.hardwareConcurrency} />
       <div className="fish-check-head"><span>项目</span><span>配置值</span><span>实际值</span><span>状态</span></div>
       <CheckRow label="语言" expected={result.expected.language} actual={result.runtime.language} />
       <CheckRow label="语言列表" expected={result.expected.acceptLanguage} actual={result.runtime.languages} />

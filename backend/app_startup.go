@@ -207,19 +207,12 @@ func (a *App) startupInitAutomation() {
 
 func (a *App) startupInitBridgeHooks() {
 	a.xrayMgr.OnBridgeDied = func(key string, err error) {
-		a.emitRuntimeEvent("proxy:bridge:died", map[string]interface{}{
-			"engine": "xray",
-			"key":    bridgeEventKey(key),
-			"error":  errorMessage(err),
-		})
+		a.recordBridgeFailure("xray", key, err)
 	}
 	a.singboxMgr.OnBridgeDied = func(key string, err error) {
-		a.emitRuntimeEvent("proxy:bridge:died", map[string]interface{}{
-			"engine": "singbox",
-			"key":    bridgeEventKey(key),
-			"error":  errorMessage(err),
-		})
+		a.recordBridgeFailure("sing-box", key, err)
 	}
+	a.clashMgr.OnBridgeDied = func(key string, err error) { a.recordBridgeFailure("mihomo", key, err) }
 }
 
 func bridgeEventKey(key string) string {

@@ -62,6 +62,7 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 			memoryLimitCleanup()
 		}
 	}()
+	monitor.profileID, monitor.runID = input.ProfileID, profile.LastStartAt
 	monitor.Start()
 
 	var lastStartErr error
@@ -102,13 +103,15 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 
 			log.Info("实例启动",
 				logger.F("profile_id", input.ProfileID),
+				logger.F("run_id", profile.LastStartAt),
+				logger.F("chrome", plan.chromeBinaryPath),
 				logger.F("debug_port", stableDebugPort),
 				logger.F("pid", profile.Pid),
 				logger.F("proxy", plan.effectiveProxy),
 				logger.F("memory_limit_mb", profile.MemoryLimitMB),
 				logger.F("attempt", attempt),
 				logger.F("max_attempts", plan.maxStartAttempts),
-				logger.F("args", strings.Join(plan.args, " ")),
+				logger.F("args", strings.Join(diagnosticLaunchArgs(plan.args), " ")),
 			)
 			a.emitBrowserInstanceStarted(profile, false)
 

@@ -95,7 +95,9 @@ type Logger struct {
 	mu sync.RWMutex
 
 	// 文件写入失败标志
-	fileWriteFailed bool
+	fileWriteFailed    bool
+	fileInitError      error
+	configuredFilePath string
 }
 
 // 全局日志实例

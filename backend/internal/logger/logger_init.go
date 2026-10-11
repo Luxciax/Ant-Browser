@@ -43,10 +43,11 @@ func InitWithConfig(ctx context.Context, config LoggerConfig) {
 	consoleWriter := NewConsoleWriter(formatter)
 
 	logger := &Logger{
-		level:         level,
-		ctx:           ctx,
-		writers:       []Writer{consoleWriter, globalMemoryWriter},
-		consoleWriter: consoleWriter,
+		configuredFilePath: config.FilePath,
+		level:              level,
+		ctx:                ctx,
+		writers:            []Writer{consoleWriter, globalMemoryWriter},
+		consoleWriter:      consoleWriter,
 	}
 
 	// 如果启用文件日志，创建文件写入器
@@ -56,6 +57,7 @@ func InitWithConfig(ctx context.Context, config LoggerConfig) {
 			// 文件写入器创建失败，回退到仅控制台输出
 			fmt.Printf("[WARN] Failed to create file writer: %v, falling back to console only\n", err)
 			logger.fileWriteFailed = true
+			logger.fileInitError = err
 		} else {
 			logger.fileWriter = fileWriter
 			logger.rotationManager = rotationManager
@@ -64,6 +66,15 @@ func InitWithConfig(ctx context.Context, config LoggerConfig) {
 	}
 
 	globalLogger = logger
+	if config.FileEnabled && strings.EqualFold(config.Format, "json") {
+		if history, err := ReadRecentHistory(config.FilePath, defaultMemoryBufferSize); err == nil {
+			globalMemoryWriter.mu.Lock()
+			globalMemoryWriter.entries = history
+			globalMemoryWriter.mu.Unlock()
+		} else if logger.fileWriter != nil {
+			logger.fileWriter.recordError(fmt.Errorf("read previous log history: %w", err))
+		}
+	}
 }
 
 // createFileWriterWithRotation 创建带分片功能的文件写入器
@@ -118,6 +129,7 @@ func createFileWriterWithRotation(config LoggerConfig, formatter Formatter) (*Fi
 			Policy:     rotationPolicy,
 		})
 	}
+	fileWriter.rotation = rotationManager
 
 	return fileWriter, rotationManager, nil
 }

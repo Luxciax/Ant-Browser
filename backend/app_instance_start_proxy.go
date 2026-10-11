@@ -41,12 +41,17 @@ func (a *App) resolveBrowserStartProxy(input browserStartInput, profile *Browser
 			return "", profileProxyBridgeRef{}, false, startErr
 		}
 	} else if resolvedProxyID != "" {
+		found := false
 		for _, item := range proxies {
 			if strings.EqualFold(item.ProxyId, resolvedProxyID) {
 				resolvedProxyID = strings.TrimSpace(item.ProxyId)
 				resolvedProxyConfig = strings.TrimSpace(item.ProxyConfig)
+				found = true
 				break
 			}
+		}
+		if !found && resolvedProxyConfig == "" {
+			return "", profileProxyBridgeRef{}, false, fmt.Errorf("实例启动失败：绑定代理 %s 已丢失，请重新选择代理；不会自动直连", resolvedProxyID)
 		}
 	}
 

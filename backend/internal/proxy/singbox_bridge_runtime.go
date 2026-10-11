@@ -453,6 +453,14 @@ func (m *SingBoxManager) tryReuseBridge(key string, pin bool) (string, bool) {
 
 	m.mu.Lock()
 	if bridge, ok := m.Bridges[key]; ok && bridge != nil {
+		if bridge.RefCount > 0 && !bridge.Stopping {
+			if pin {
+				bridge.RefCount++
+			}
+			bridge.LastUsedAt = time.Now()
+			m.mu.Unlock()
+			return fmt.Sprintf("socks5://127.0.0.1:%d", bridge.Port), true
+		}
 		alive := bridge.Running && bridge.Cmd != nil && bridge.Cmd.Process != nil && bridge.Cmd.ProcessState == nil
 		if alive && waitSocks5Ready("127.0.0.1", bridge.Port, 800*time.Millisecond) == nil {
 			if pin {
@@ -487,7 +495,7 @@ func (m *SingBoxManager) registerBridge(key string, bridge *SingBoxBridge, pin b
 		}
 
 		alive := existing.Running && existing.Cmd != nil && existing.Cmd.Process != nil && existing.Cmd.ProcessState == nil
-		if alive && waitSocks5Ready("127.0.0.1", existing.Port, 800*time.Millisecond) == nil {
+		if (!existing.Stopping && existing.RefCount > 0 && !existing.Restarting) || (alive && waitSocks5Ready("127.0.0.1", existing.Port, 800*time.Millisecond) == nil) {
 			if pin {
 				existing.RefCount++
 			}
@@ -509,12 +517,12 @@ func (m *SingBoxManager) registerBridge(key string, bridge *SingBoxBridge, pin b
 		existing.Stopping = true
 		delete(m.Bridges, key)
 		duplicate = existing
-		if transferredRefCount > 0 && !pin {
+		if transferredRefCount > 0 {
 			bridge.RefCount = transferredRefCount
 		}
 	}
 	if pin {
-		bridge.RefCount = 1
+		bridge.RefCount++
 	}
 	bridge.LastUsedAt = time.Now()
 	m.Bridges[key] = bridge
@@ -530,7 +538,7 @@ func (m *SingBoxManager) watchBridge(bridge *SingBoxBridge, key string) {
 	if bridge == nil || bridge.Cmd == nil {
 		return
 	}
-	_ = bridge.waitExit()
+	exitErr := bridge.waitExit()
 
 	var shouldRestart bool
 	var refCount int
@@ -548,6 +556,9 @@ func (m *SingBoxManager) watchBridge(bridge *SingBoxBridge, key string) {
 	stopping := bridge.Stopping
 	m.mu.Unlock()
 
+	if !stopping {
+		logger.New("SingBox").Warn("sing-box 桥接进程退出", logger.F("key", key), logger.F("port", bridge.Port), logger.F("pid", bridge.Pid), logger.F("exit_error", exitErr), logger.F("stderr_tail", bridgeStderrTail(bridge.Cmd, "singbox-stderr.log")))
+	}
 	if shouldRestart {
 		log := logger.New("SingBox")
 		if err := m.restartBridgeOnSamePort(log, key, bridge, refCount); err == nil {

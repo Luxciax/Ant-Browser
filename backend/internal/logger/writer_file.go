@@ -30,11 +30,13 @@ func DefaultFileWriterConfig(filePath string) FileWriterConfig {
 // FileWriter 文件写入器
 // 支持缓冲写入和异步写入
 type FileWriter struct {
-	config    FileWriterConfig
-	formatter Formatter
-	file      *os.File
-	buffer    *bufio.Writer
-	mu        sync.Mutex
+	lifecycleMu sync.RWMutex
+	closed      bool
+	config      FileWriterConfig
+	formatter   Formatter
+	file        *os.File
+	buffer      *bufio.Writer
+	mu          sync.Mutex
 
 	// 异步写入相关
 	asyncChan   chan *LogEntry
@@ -42,6 +44,8 @@ type FileWriter struct {
 	wg          sync.WaitGroup
 	asyncMode   bool
 	flushTicker *time.Ticker
+	rotation    *RotationManager
+	lastError   error
 }
 
 // NewFileWriter 创建新的文件写入器（同步模式）
@@ -83,6 +87,11 @@ func NewFileWriter(config FileWriterConfig, formatter Formatter) (*FileWriter, e
 
 // Write 写入日志条目到文件（同步模式）
 func (w *FileWriter) Write(entry *LogEntry) error {
+	w.lifecycleMu.RLock()
+	defer w.lifecycleMu.RUnlock()
+	if w.closed {
+		return os.ErrClosed
+	}
 	if entry == nil {
 		return nil
 	}
@@ -104,12 +113,39 @@ func (w *FileWriter) writeSync(entry *LogEntry) error {
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.file == nil {
+		return os.ErrClosed
+	}
+	if w.rotation != nil {
+		info, statErr := w.file.Stat()
+		if statErr != nil {
+			return statErr
+		}
+		if w.rotation.ShouldRotate(info, entry) {
+			if err := w.buffer.Flush(); err != nil {
+				return err
+			}
+			if _, err := w.rotation.Rotate(w.file); err != nil {
+				return err
+			}
+			file, err := os.OpenFile(w.config.FilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+			if err != nil {
+				return err
+			}
+			w.file = file
+			w.buffer.Reset(file)
+			resetRotationTime(w.rotation.config.Policy, entry.Timestamp)
+		}
+	}
 
 	_, err = w.buffer.Write(data)
 	if err != nil {
 		return fmt.Errorf("failed to write to buffer: %w", err)
 	}
-
+	// A recorded crash must not wait for the next periodic flush.
+	if entry.Level >= ERROR {
+		return w.buffer.Flush()
+	}
 	return nil
 }
 
@@ -126,6 +162,12 @@ func (w *FileWriter) Flush() error {
 
 // Close 关闭文件写入器
 func (w *FileWriter) Close() error {
+	w.lifecycleMu.Lock()
+	defer w.lifecycleMu.Unlock()
+	if w.closed {
+		return nil
+	}
+	w.closed = true
 	// 如果是异步模式，先停止异步写入
 	if w.asyncMode {
 		w.stopAsync()
@@ -213,11 +255,11 @@ func (w *FileWriter) asyncWriteLoop() {
 				return
 			}
 			// 写入日志（忽略错误，避免阻塞）
-			_ = w.writeSync(entry)
+			w.recordError(w.writeSync(entry))
 
 		case <-w.flushTicker.C:
 			// 定期刷新缓冲区
-			_ = w.Flush()
+			w.recordError(w.Flush())
 
 		case <-w.done:
 			// 收到停止信号，处理剩余日志
@@ -235,7 +277,7 @@ func (w *FileWriter) drainQueue() {
 			if !ok {
 				return
 			}
-			_ = w.writeSync(entry)
+			w.recordError(w.writeSync(entry))
 		default:
 			// 队列已空
 			return
@@ -250,7 +292,9 @@ func (w *FileWriter) writeAsync(entry *LogEntry) error {
 		return nil
 	default:
 		// 队列满，丢弃日志（非阻塞）
-		return fmt.Errorf("async queue full, log entry dropped")
+		err := fmt.Errorf("async queue full, log entry dropped")
+		w.recordError(err)
+		return err
 	}
 }
 
@@ -279,13 +323,43 @@ func (w *FileWriter) stopAsync() {
 
 // IsAsync 返回是否为异步模式
 func (w *FileWriter) IsAsync() bool {
+	w.lifecycleMu.RLock()
+	defer w.lifecycleMu.RUnlock()
 	return w.asyncMode
 }
 
 // QueueLength 返回当前异步队列长度（用于监控）
 func (w *FileWriter) QueueLength() int {
+	w.lifecycleMu.RLock()
+	defer w.lifecycleMu.RUnlock()
 	if !w.asyncMode {
 		return 0
 	}
 	return len(w.asyncChan)
+}
+
+func (w *FileWriter) recordError(err error) {
+	if err == nil {
+		return
+	}
+	w.mu.Lock()
+	w.lastError = err
+	w.mu.Unlock()
+}
+
+func (w *FileWriter) Error() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.lastError
+}
+
+func resetRotationTime(policy RotationPolicy, at time.Time) {
+	switch p := policy.(type) {
+	case *TimeRotationPolicy:
+		p.UpdateLastRotate(at)
+	case *CompositeRotationPolicy:
+		for _, child := range p.GetPolicies() {
+			resetRotationTime(child, at)
+		}
+	}
 }

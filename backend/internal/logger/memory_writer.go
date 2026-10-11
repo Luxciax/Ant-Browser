@@ -48,7 +48,7 @@ func (w *MemoryWriter) Write(entry *LogEntry) error {
 	defer w.mu.Unlock()
 
 	item := MemoryLogEntry{
-		Time:      entry.Timestamp.Format("2006-01-02 15:04:05"),
+		Time:      entry.Timestamp.Format("2006-01-02 15:04:05.000Z07:00"),
 		Level:     entry.Level.String(),
 		Component: entry.Component,
 		Message:   entry.Message,

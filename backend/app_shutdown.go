@@ -89,6 +89,7 @@ func ShouldBlockClose(a *App, ctx context.Context) bool {
 }
 
 func (a *App) stopRuntimeServices() {
+	a.stopAllBrowserDiagnostics()
 	a.stopRuntimeEvents()
 	a.waitBackgroundTasks()
 	a.stopServicesOnce.Do(func() {
@@ -114,6 +115,7 @@ func (a *App) stopRuntimeServices() {
 }
 
 func (a *App) stopAppOnlyRuntimeServices() {
+	a.stopAllBrowserDiagnostics()
 	a.stopRuntimeEvents()
 	a.waitBackgroundTasks()
 	if a.automationMgr != nil {

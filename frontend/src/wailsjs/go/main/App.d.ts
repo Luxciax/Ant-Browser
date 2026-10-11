@@ -328,6 +328,9 @@ export function GetAppConfig():Promise<Record<string, any>>;
 
 export function GetAppLogs():Promise<Array<logger.MemoryLogEntry>>;
 
+export function GetAppLogStatus():Promise<Record<string,string>>;
+export function ExportBrowserDiagnostics():Promise<Record<string,any>>;
+
 export function GetAutomationState():Promise<Record<string, any>>;
 
 export function GetBackupFileInfo(arg1:string):Promise<Record<string, any>>;
