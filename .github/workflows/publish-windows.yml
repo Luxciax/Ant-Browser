@@ -2,7 +2,7 @@ name: Publish Windows 1.9.2
 
 on:
   push:
-    branches: [release/1.9.2]
+    branches: [release/1.9.2, codex/ant-stability-diagnostics]
   workflow_dispatch:
 
 permissions:
@@ -17,7 +17,7 @@ env:
 
 jobs:
   build:
-    if: github.repository == 'Luxciax/Ant-Browser' && github.ref == 'refs/heads/release/1.9.2'
+    if: github.repository == 'Luxciax/Ant-Browser' && (github.ref == 'refs/heads/release/1.9.2' || github.ref == 'refs/heads/codex/ant-stability-diagnostics')
     runs-on: windows-2022
     timeout-minutes: 45
     env:
@@ -94,6 +94,7 @@ jobs:
             publish/output/SHA256SUMS.txt
 
   release:
+    if: github.ref == 'refs/heads/release/1.9.2'
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 10
