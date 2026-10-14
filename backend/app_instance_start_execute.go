@@ -12,6 +12,7 @@ import (
 func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStartInput, plan *browserStartPlan) (*BrowserProfile, error) {
 	log := logger.New("Browser")
 	profile := plan.profile
+	a.configureKernelDiagnosticLog(plan)
 	a.clearDeferredStartTargets(input.ProfileID)
 	a.browserMgr.Mutex.Lock()
 	a.markProfileLastLaunchArgsLocked(profile, plan.args)
@@ -33,6 +34,7 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 		return profile, startErr
 	}
 	if err := cmd.Start(); err != nil {
+		monitor.closeCapture()
 		startErr := fmt.Errorf("%s", describeChromeProcessStartError(plan.chromeBinaryPath, err))
 		log.Error("浏览器进程启动失败",
 			logger.F("profile_id", input.ProfileID),
@@ -45,6 +47,7 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 	}
 	memoryLimitCleanup, err := applyBrowserProcessMemoryLimit(cmd, profile.MemoryLimitMB)
 	if err != nil {
+		monitor.closeCapture()
 		_ = a.stopProcessCmd(cmd)
 		startErr := fmt.Errorf("实例启动失败：无法应用实例内存限制 %d MB。原因：%v。", profile.MemoryLimitMB, err)
 		log.Error("浏览器进程内存限制应用失败",
@@ -63,6 +66,8 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 		}
 	}()
 	monitor.profileID, monitor.runID = input.ProfileID, profile.LastStartAt
+	monitor.kernelBinary = plan.chromeBinaryPath
+	a.prepareKernelDiagnosticLog(plan, monitor)
 	monitor.Start()
 
 	var lastStartErr error
@@ -102,6 +107,8 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 			}
 
 			log.Info("实例启动",
+				logger.F("event", "browser.started"),
+				logger.F("critical", true),
 				logger.F("profile_id", input.ProfileID),
 				logger.F("run_id", profile.LastStartAt),
 				logger.F("chrome", plan.chromeBinaryPath),

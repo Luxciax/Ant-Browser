@@ -115,7 +115,7 @@ func TestSnapshotManagedBrowserProfileDeepCopiesSlices(t *testing.T) {
 	root := t.TempDir()
 	manager := browser.NewManager(config.DefaultConfig(), root)
 	profile := &browser.Profile{
-		ProfileId:        "profile-copy",
+		ProfileId:       "profile-copy",
 		FingerprintArgs: []string{"--fingerprint=1"},
 		LaunchArgs:      []string{"--flag"},
 		LastLaunchArgs:  []string{"--last"},
@@ -212,43 +212,47 @@ func TestMarkProfileRunningRegistersDetachedBrowserMonitor(t *testing.T) {
 	manager.Mutex.Unlock()
 }
 
-func TestDetachedBrowserMonitorMarksProfileStoppedAfterDebugPortCloses(t *testing.T) {
+// A missing port is not evidence of process exit; failed discovery is unknown.
+func TestDetachedBrowserMonitorKeepsUnknownProcessAfterDebugPortCloses(t *testing.T) {
+	old := findBrowserUserDataProcesses
+	findBrowserUserDataProcesses = func(string) ([]browserUserDataProcess, error) { return nil, errors.New("simulated access denied") }
+	defer func() { findBrowserUserDataProcesses = old }()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("listen for debug port: %v", err)
+		t.Fatal(err)
 	}
-
-	root := t.TempDir()
-	manager := browser.NewManager(config.DefaultConfig(), root)
-	profile := &browser.Profile{ProfileId: "profile-1", ProfileName: "profile-1"}
-	manager.Profiles[profile.ProfileId] = profile
-	app := NewApp(root)
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	manager := browser.NewManager(config.DefaultConfig(), t.TempDir())
+	p := &browser.Profile{ProfileId: "unknown-test", Running: true, RuntimeState: browser.RuntimeRunning, LastStartAt: "unknown-run", DebugReady: true, DebugPort: port}
+	manager.Profiles[p.ProfileId] = p
+	app := NewApp("")
+	app.ctx = ctx
 	app.browserMgr = manager
-
-	debugPort := listener.Addr().(*net.TCPAddr).Port
-	manager.Mutex.Lock()
-	app.markProfileRunningLocked(profile.ProfileId, profile, nil, 1234, debugPort, true, "")
-	manager.Mutex.Unlock()
-
-	if err := listener.Close(); err != nil {
-		t.Fatalf("close debug listener: %v", err)
-	}
-
-	deadline := time.Now().Add(4 * time.Second)
+	app.runtimeStopped = true
+	monitor := newDetachedBrowserProcessMonitor()
+	app.browserProcessMonitors[p.ProfileId] = monitor
+	done := make(chan struct{})
+	go func() { app.monitorDetachedEvidence(p.ProfileId, port, monitor); close(done) }()
+	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		manager.Mutex.Lock()
-		running := profile.Running
-		pid := profile.Pid
-		port := profile.DebugPort
+		running, ready, warning := p.Running, p.DebugReady, p.RuntimeWarning
 		manager.Mutex.Unlock()
 		if !running {
-			if pid != 0 || port != 0 {
-				t.Fatalf("stopped profile retained runtime state: pid=%d debugPort=%d", pid, port)
+			t.Fatal("unknown process falsely stopped")
+		}
+		if !ready {
+			if warning == "" {
+				t.Fatal("missing degradation warning")
 			}
+			cancel()
+			<-done
 			return
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(20 * time.Millisecond)
 	}
-
-	t.Fatal("profile remained running after detached browser debug port closed")
+	t.Fatal("missing debug health degradation")
 }

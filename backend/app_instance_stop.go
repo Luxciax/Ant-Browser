@@ -39,13 +39,32 @@ func (a *App) browserInstanceStopWithRuntimeLock(profileId string) (*BrowserProf
 	if pid <= 0 && cmd != nil && cmd.Process != nil {
 		pid = cmd.Process.Pid
 	}
+	var stopEvidence *processEvidenceHandle
+	if pid > 0 {
+		stopEvidence = openProcessEvidence(pid)
+		defer func() {
+			proof := stopEvidence.snapshot()
+			logger.New("Browser").Info("实例关闭结果证据", logger.F("event", "browser.stop_result"), logger.F("critical", true), logger.F("profile_id", profileId), logger.F("run_id", profile.LastStartAt), logger.F("process", proof))
+			stopEvidence.close()
+		}()
+	}
 	userDataDir := a.browserMgr.ResolveUserDataDir(profile)
+	if monitor := a.browserProcessMonitors[profileId]; monitor != nil {
+		monitor.mu.Lock()
+		if monitor.stopIntent == "" {
+			monitor.stopIntent = "user_stop"
+		}
+		monitor.stopMethod = "cdp_then_process_tree"
+		monitor.mu.Unlock()
+	}
+	log.Info("实例关闭请求", logger.F("event", "browser.stop_requested"), logger.F("critical", true), logger.F("profile_id", profileId), logger.F("run_id", profile.LastStartAt), logger.F("pid", pid), logger.F("debug_port", debugPort))
 	a.markProfileStoppingLocked(profile)
 	stoppingSnapshot := copyBrowserProfileSnapshot(profile)
 	a.browserMgr.Mutex.Unlock()
 	a.closeProfilePageSession(profileId)
 	a.emitBrowserInstanceUpdated(stoppingSnapshot)
 
+	stopRun := profile.LastStartAt
 	closedByCDP := tryCloseBrowserViaCDP(debugPort, 5*time.Second)
 	if closedByCDP && waitBrowserRuntimeStopped(pid, debugPort, 5*time.Second) {
 		a.browserMgr.Mutex.Lock()
@@ -61,6 +80,7 @@ func (a *App) browserInstanceStopWithRuntimeLock(profileId string) (*BrowserProf
 		return snapshot, nil
 	}
 
+	log.Info("关闭升级为进程清理", logger.F("event", "browser.stop_escalated"), logger.F("critical", true), logger.F("profile_id", profileId), logger.F("run_id", stopRun), logger.F("method", "managed_process_and_user_data_dir"), logger.F("cdp_close_succeeded", closedByCDP))
 	if cmd != nil && cmd.Process != nil {
 		if err := a.stopBrowserProcess(cmd); err != nil {
 			log.Error("实例停止失败", logger.F("profile_id", profileId), logger.F("error", err))
@@ -99,6 +119,13 @@ func (a *App) BrowserInstanceRestart(profileId string) (*BrowserProfile, error) 
 	unlockRuntimeOp := a.lockProfileRuntimeOperation(profileId)
 	defer unlockRuntimeOp()
 
+	a.browserMgr.Mutex.Lock()
+	if monitor := a.browserProcessMonitors[profileId]; monitor != nil {
+		monitor.mu.Lock()
+		monitor.stopIntent = "user_restart"
+		monitor.mu.Unlock()
+	}
+	a.browserMgr.Mutex.Unlock()
 	if _, err := a.browserInstanceStopWithRuntimeLock(profileId); err != nil {
 		return nil, err
 	}

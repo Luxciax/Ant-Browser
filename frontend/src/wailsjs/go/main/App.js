@@ -800,3 +800,8 @@ export function ValidateProxyConfig(arg1, arg2) {
 export function WaitInstanceDebugReady(arg1, arg2, arg3) {
   return window['go']['main']['App']['WaitInstanceDebugReady'](arg1, arg2, arg3);
 }
+
+export function GetBrowserDiagnosticIncidents() { return window['go']['main']['App']['GetBrowserDiagnosticIncidents'](); }
+export function GetBrowserDiagnosticIncident(id) { return window['go']['main']['App']['GetBrowserDiagnosticIncident'](id); }
+export function GetBrowserDiagnosticRunLogs(profile, run) { return window['go']['main']['App']['GetBrowserDiagnosticRunLogs'](profile, run); }
+export function ExportBrowserDiagnosticIncident(id) { return window['go']['main']['App']['ExportBrowserDiagnosticIncident'](id); }

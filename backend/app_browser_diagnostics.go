@@ -35,21 +35,38 @@ func (a *App) startBrowserDiagnosticsLocked(p *BrowserProfile) {
 		default:
 			log.Info(e.Name, fields...)
 		}
-		if e.Name == "renderer.crashed" || e.Name == "diagnostics.disconnected" || e.Name == "diagnostics.connected" {
+		networkFault := e.Name == "network.failed" && e.Level == "ERROR" && (e.Fields["resource_type"] == "Document" || e.Fields["net_error"] == "net::ERR_PROXY_CONNECTION_FAILED" || e.Fields["net_error"] == "net::ERR_TUNNEL_CONNECTION_FAILED")
+		if e.Name == "renderer.crashed" || e.Name == "diagnostics.disconnected" || e.Name == "diagnostics.connected" || networkFault {
+			activeRun := false
 			a.browserMgr.Mutex.Lock()
 			p := a.browserMgr.Profiles[id]
 			if p != nil && p.Running && p.LastStartAt == runID {
+				activeRun = true
 				if e.Name == "diagnostics.connected" {
 					if strings.HasPrefix(p.RuntimeWarning, "diagnostics.disconnected") {
 						p.RuntimeWarning = ""
 					}
-				} else {
+				} else if !networkFault {
 					p.RuntimeWarning = fmt.Sprintf("%s：已记录诊断日志（target=%v）；浏览器主进程状态不代表页面健康", e.Name, e.Fields["target_id"])
 				}
 			}
 			snapshot := copyBrowserProfileSnapshot(p)
 			a.browserMgr.Mutex.Unlock()
-			if snapshot != nil {
+			if activeRun && (e.Name == "renderer.crashed" || networkFault) {
+				evidence := map[string]interface{}{}
+				for key, value := range e.Fields {
+					evidence[key] = value
+				}
+				a.browserMgr.Mutex.Lock()
+				if m := a.browserProcessMonitors[id]; m != nil {
+					m.mu.Lock()
+					evidence["kernel_binary"] = m.kernelBinary
+					m.mu.Unlock()
+				}
+				a.browserMgr.Mutex.Unlock()
+				a.recordDiagnosticIncident(id, runID, e.Name, evidence)
+			}
+			if snapshot != nil && activeRun {
 				a.emitBrowserInstanceUpdated(snapshot)
 			}
 		}

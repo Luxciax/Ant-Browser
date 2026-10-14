@@ -14,28 +14,33 @@ import (
 )
 
 const (
-	browserStderrTailMaxLines = 40
-	browserStderrTailMaxBytes = 4 * 1024
+	browserStderrTailMaxLines = 200
+	browserStderrTailMaxBytes = 64 * 1024
 )
 
 type browserProcessExitResult struct {
 	Err        error
 	StderrTail string
+	ExitCode   *int
 }
 
 type browserProcessMonitor struct {
-	cmd        *exec.Cmd
-	stderr     io.ReadCloser
-	stderrTail *tailTextBuffer
-	stderrInit chan struct{}
-	stderrDone chan struct{}
-	waitDone   chan struct{}
+	cmd          *exec.Cmd
+	stderr       io.ReadCloser
+	stderrWriter *os.File
+	stderrTail   *tailTextBuffer
+	stderrInit   chan struct{}
+	stderrDone   chan struct{}
+	waitDone     chan struct{}
 
-	mu        sync.Mutex
-	result    browserProcessExitResult
-	debugPort int
-	profileID string
-	runID     string
+	mu           sync.Mutex
+	result       browserProcessExitResult
+	debugPort    int
+	profileID    string
+	runID        string
+	stopIntent   string
+	stopMethod   string
+	kernelBinary string
 }
 
 func newBrowserProcessMonitor(cmd *exec.Cmd) (*browserProcessMonitor, error) {
@@ -43,18 +48,20 @@ func newBrowserProcessMonitor(cmd *exec.Cmd) (*browserProcessMonitor, error) {
 		return nil, fmt.Errorf("browser command is nil")
 	}
 
-	stderr, err := cmd.StderrPipe()
+	stderr, writer, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
 
+	cmd.Stderr = writer
 	return &browserProcessMonitor{
-		cmd:        cmd,
-		stderr:     stderr,
-		stderrTail: newTailTextBuffer(browserStderrTailMaxLines, browserStderrTailMaxBytes),
-		stderrInit: make(chan struct{}),
-		stderrDone: make(chan struct{}),
-		waitDone:   make(chan struct{}),
+		cmd:          cmd,
+		stderr:       stderr,
+		stderrWriter: writer,
+		stderrTail:   newTailTextBuffer(browserStderrTailMaxLines, browserStderrTailMaxBytes),
+		stderrInit:   make(chan struct{}),
+		stderrDone:   make(chan struct{}),
+		waitDone:     make(chan struct{}),
 	}, nil
 }
 
@@ -65,6 +72,9 @@ func newDetachedBrowserProcessMonitor() *browserProcessMonitor {
 }
 
 func (m *browserProcessMonitor) Start() {
+	if m.stderrWriter != nil {
+		_ = m.stderrWriter.Close()
+	}
 	go m.captureStderr()
 	<-m.stderrInit
 	go m.waitForExit()
@@ -88,7 +98,11 @@ func (m *browserProcessMonitor) Result() browserProcessExitResult {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.result
+	result := m.result
+	if m.stderrTail != nil {
+		result.StderrTail = m.stderrTail.String()
+	}
+	return result
 }
 
 func (m *browserProcessMonitor) Wait() error {
@@ -130,12 +144,12 @@ func (m *browserProcessMonitor) captureStderr() {
 	close(m.stderrInit)
 	for scanner.Scan() {
 		line := scanner.Text()
-		m.stderrTail.Append(line)
+		m.stderrTail.Append(logger.RedactDiagnosticText(line))
 		if strings.Contains(line, "ERROR:") || strings.Contains(line, "FATAL:") || strings.Contains(line, "crash") {
 			m.mu.Lock()
 			id, run := m.profileID, m.runID
 			m.mu.Unlock()
-			logger.New("Chromium").Warn("内核 stderr 异常", logger.F("profile_id", id), logger.F("run_id", run), logger.F("pid", m.cmd.Process.Pid), logger.F("stderr", line))
+			logger.New("Chromium").Warn("内核 stderr 异常", logger.F("profile_id", id), logger.F("run_id", run), logger.F("pid", m.cmd.Process.Pid), logger.F("event", "kernel.stderr"), logger.F("stderr", logger.RedactDiagnosticText(line)))
 		}
 		if port, ok := parseBrowserDebugPortFromStderrLine(line); ok {
 			m.SetDebugPort(port)
@@ -143,6 +157,15 @@ func (m *browserProcessMonitor) captureStderr() {
 	}
 	if err := scanner.Err(); err != nil && !shouldIgnoreBrowserStderrReadError(err) {
 		m.stderrTail.Append(fmt.Sprintf("[stderr read error] %v", err))
+	}
+}
+
+func (m *browserProcessMonitor) closeCapture() {
+	if m.stderrWriter != nil {
+		m.stderrWriter.Close()
+	}
+	if m.stderr != nil {
+		m.stderr.Close()
 	}
 }
 
@@ -161,12 +184,15 @@ func shouldIgnoreBrowserStderrReadError(err error) bool {
 
 func (m *browserProcessMonitor) waitForExit() {
 	err := m.cmd.Wait()
-	<-m.stderrDone
 
 	m.mu.Lock()
 	m.result = browserProcessExitResult{
 		Err:        err,
 		StderrTail: m.stderrTail.String(),
+	}
+	if m.cmd.ProcessState != nil {
+		code := m.cmd.ProcessState.ExitCode()
+		m.result.ExitCode = &code
 	}
 	m.mu.Unlock()
 	close(m.waitDone)
@@ -248,4 +274,11 @@ func parseBrowserDebugPortFromStderrLine(line string) (int, bool) {
 		return 0, false
 	}
 	return port, true
+}
+
+func (m *browserProcessMonitor) initialPID() int {
+	if m.cmd != nil && m.cmd.Process != nil {
+		return m.cmd.Process.Pid
+	}
+	return 0
 }

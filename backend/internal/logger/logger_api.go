@@ -105,6 +105,7 @@ func (l *Logger) log(level Level, msg string, fields ...Field) {
 // writeEntry 写入日志条目到所有写入器
 func (l *Logger) writeEntry(entry *LogEntry) {
 	entry = redactLogEntry(entry)
+	addEvidenceFields(entry)
 	l.mu.RLock()
 	writers := l.writers
 	fileWriter := l.fileWriter
@@ -119,7 +120,9 @@ func (l *Logger) writeEntry(entry *LogEntry) {
 		if err := writer.Write(entry); err != nil {
 			// 如果是文件写入器失败，标记并回退到控制台
 			if writer == fileWriter {
-				l.handleFileWriteError(entry, err)
+				if err != ErrQueueFull {
+					l.handleFileWriteError(entry, err)
+				}
 			}
 		}
 	}
@@ -150,13 +153,9 @@ func RedactValue(value any) any     { return redactLogValue("", value, 0) }
 
 // handleFileWriteError 处理文件写入错误
 func (l *Logger) handleFileWriteError(entry *LogEntry, err error) {
-	l.mu.Lock()
-	if !l.fileWriteFailed {
-		l.fileWriteFailed = true
-		// 记录错误到控制台
-		fmt.Printf("[ERROR] File write failed: %v, falling back to console only\n", err)
-	}
-	l.mu.Unlock()
+	// Disk failures are observable through writer health; a transient full queue
+	// or failed write must not permanently disable subsequent component logs.
+	l.fileWriter.recordError(err)
 }
 
 // LogEntry 直接写入日志条目（用于拦截器等高级用法）

@@ -132,11 +132,17 @@ func (m *XrayManager) watchBridge(bridge *XrayBridge, key string) {
 	m.mu.Unlock()
 
 	if !stopping {
-		logger.New("Xray").Warn("xray 桥接进程退出", logger.F("key", key), logger.F("port", bridge.Port), logger.F("pid", bridge.Pid), logger.F("exit_error", exitErr), logger.F("stderr_tail", bridgeStderrTail(bridge.Cmd, "xray-stderr.log")))
+		if m.OnBridgeEvidence != nil {
+			m.OnBridgeEvidence(key, "proxy.bridge_exited", map[string]interface{}{"process": bridgeExitEvidence(bridge.Cmd), "stderr_tail": bridgeStderrTail(bridge.Cmd, "xray-stderr.log"), "port": bridge.Port, "recovery_requested": shouldRestart})
+		}
+		logger.New("Xray").Warn("xray 桥接进程退出", logger.F("key", key), logger.F("port", bridge.Port), logger.F("pid", bridge.Pid), logger.F("exit_error", exitErr), logger.F("stderr_tail", bridgeStderrTail(bridge.Cmd, "xray-stderr.log")), logger.F("process_evidence", bridgeExitEvidence(bridge.Cmd)))
 	}
 	if shouldRestart {
 		log := logger.New("Xray")
 		if err := m.restartPinnedBridge(log, key, bridge); err == nil {
+			if m.OnBridgeEvidence != nil {
+				m.OnBridgeEvidence(key, "proxy.bridge_recovered", map[string]interface{}{"port": bridge.Port})
+			}
 			return
 		} else if errors.Is(err, errXrayBridgeRestartNotNeeded) {
 			return

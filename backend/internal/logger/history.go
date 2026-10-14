@@ -75,12 +75,32 @@ func ReadHistory(path string, limit int) ([]MemoryLogEntry, error) {
 			continue
 		} // older text logs may coexist.
 		entry := &LogEntry{Timestamp: time.Now(), Level: ParseLevel(row.Level), Component: row.Component, Message: row.Message, Fields: row.Fields}
+		if entry.Fields == nil {
+			entry.Fields = map[string]interface{}{}
+		}
+		if row.Error != "" {
+			entry.Fields["error"] = row.Error
+		}
+		if row.RequestID != "" {
+			entry.Fields["operation_id"] = row.RequestID
+		}
+		if row.Method != "" {
+			entry.Fields["method"] = row.Method
+		}
+		if row.DurationMs != 0 {
+			entry.Fields["duration_ms"] = row.DurationMs
+		}
 		at, parseErr := time.Parse(time.RFC3339Nano, row.Timestamp)
 		if parseErr == nil {
 			entry.Timestamp = at
 		}
+		timestamp := entry.Timestamp.Format("2006-01-02 15:04:05.000Z07:00")
+		if parseErr != nil {
+			timestamp = row.Timestamp
+			entry.Fields["timestamp_status"] = "invalid: preserved original value, not replaced by current time"
+		}
 		safe := redactLogEntry(entry)
-		out = append(out, MemoryLogEntry{Time: safe.Timestamp.Format("2006-01-02 15:04:05.000Z07:00"), Level: safe.Level.String(), Component: safe.Component, Message: safe.Message, Fields: safe.Fields})
+		out = append(out, MemoryLogEntry{Time: timestamp, Level: safe.Level.String(), Component: safe.Component, Message: safe.Message, Fields: safe.Fields})
 		if len(out) > limit {
 			out = out[1:]
 		}

@@ -18,9 +18,11 @@ type MemoryLogEntry struct {
 
 // MemoryWriter 内存环形缓冲写入器，线程安全
 type MemoryWriter struct {
-	mu      sync.RWMutex
-	entries []MemoryLogEntry
-	maxSize int
+	mu       sync.RWMutex
+	entries  []MemoryLogEntry
+	maxSize  int
+	runs     map[string]*runLogBuffer
+	runOrder []string
 }
 
 var globalMemoryWriter *MemoryWriter
@@ -58,6 +60,7 @@ func (w *MemoryWriter) Write(entry *LogEntry) error {
 		w.entries = w.entries[1:]
 	}
 	w.entries = append(w.entries, item)
+	w.recordRunLocked(item, criticalEntry(entry))
 	return nil
 }
 

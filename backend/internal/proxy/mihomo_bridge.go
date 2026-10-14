@@ -162,9 +162,14 @@ func (m *ClashManager) ensureNodeBridgeContext(ctx context.Context, proxyConfig 
 	hideWindow(cmd)
 	cmd.Dir = filepath.Dir(cfgPath)
 	stderrPath := filepath.Join(filepath.Dir(cfgPath), "mihomo-stderr.log")
-	stderrFile, _ := os.Create(stderrPath)
+	stderrFile, captureErr := logger.NewProcessLog(stderrPath)
+	if captureErr != nil {
+		return "", "", fmt.Errorf("mihomo output capture: %w", captureErr)
+	}
+	stderrPath = stderrFile.Path
 	if stderrFile != nil {
 		cmd.Stderr = stderrFile
+		cmd.Stdout = stderrFile
 	}
 	if err := cmd.Start(); err != nil {
 		if stderrFile != nil {
@@ -408,9 +413,15 @@ func (m *ClashManager) watchMihomoNodeBridge(bridge *MihomoNodeBridge) {
 			return
 		}
 		log := logger.New("Mihomo")
-		log.Warn("mihomo 桥接进程退出", logger.F("key", bridge.NodeKey), logger.F("port", bridge.Port), logger.F("exit_error", err), logger.F("stderr_tail", bridgeStderrTail(bridge.Cmd, "mihomo-stderr.log")), logger.F("restart_count", bridge.RestartCount))
+		if m.OnBridgeEvidence != nil {
+			m.OnBridgeEvidence(bridge.NodeKey, "proxy.bridge_exited", map[string]interface{}{"process": bridgeExitEvidence(bridge.Cmd), "stderr_tail": bridgeStderrTail(bridge.Cmd, "mihomo-stderr.log"), "port": bridge.Port, "recovery_requested": recoverPinned})
+		}
+		log.Warn("mihomo 桥接进程退出", logger.F("key", bridge.NodeKey), logger.F("port", bridge.Port), logger.F("exit_error", err), logger.F("process_evidence", bridgeExitEvidence(bridge.Cmd)), logger.F("stderr_tail", bridgeStderrTail(bridge.Cmd, "mihomo-stderr.log")), logger.F("restart_count", bridge.RestartCount))
 		if recoverPinned {
 			if recoveryErr := m.restartMihomoNodeBridge(bridge); recoveryErr == nil {
+				if m.OnBridgeEvidence != nil {
+					m.OnBridgeEvidence(bridge.NodeKey, "proxy.bridge_recovered", map[string]interface{}{"port": bridge.Port})
+				}
 				return
 			} else {
 				err = recoveryErr

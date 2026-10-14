@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>诊断日志开发验收 · 合成数据</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div>
+<script type="module">
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import { FishLogsPage } from '/src/ui-v2/fish/FishLogsPage.tsx'
+import '/src/ui-v2/fish/fish.css'
+const run='2026-10-14T17:40:16.9561204+08:00', profile='synthetic-profile-a19b5225-46bd-49e1-9fde-38547b0d1fc9'
+const rows=[{time:'2026-10-14 17:40:20.327+08:00',level:'ERROR',component:'BrowserDiagnostics',message:'renderer.crashed',fields:{profile_id:profile,run_id:run,event:'renderer.crashed',event_id:'test-1',event_seq:1,source_event:'Inspector.targetCrashed',error_code:null,status:null}},{time:'2026-10-14 17:40:22.327+08:00',level:'WARN',component:'BrowserDiagnostics',message:'浏览器进程仍存活，调试连接失联；自动化暂不可用',fields:{profile_id:profile,run_id:run,event:'browser.debug_health',event_id:'test-2',event_seq:2,process:{state:'alive',pid:12345},debug_ready:false}}]
+const incident={incident_id:'incident-synthetic',profile_id:profile,run_id:run,occurred_at:'2026-10-14T17:40:20.327+08:00',event:'renderer.crashed',status:'complete',timeline:rows,coverage:{cause:'unknown: a symptom alone does not establish the root cause',os:'unavailable: access denied',timeline:'bounded per-run history; 0 ordinary events omitted'},facts:[{event:'renderer.crashed',fields:{source_event:'Inspector.targetCrashed',error_code:null}}],snapshot:{process_at_fault:{state:'alive',pid:12345}},resources:{available_memory_bytes:12000000000},system_evidence:{state:'unavailable',reason:'synthetic access denied'}}
+window.go={main:{App:{GetAppLogs:async()=>rows,GetAppLogStatus:async()=>({path:'D:/Synthetic/Ant/data/logs/app.log',error:'',queue_length:'0',dropped_noncritical:'3'}),GetBrowserDiagnosticIncidents:async()=>[incident],GetBrowserDiagnosticIncident:async()=>incident,GetBrowserDiagnosticRunLogs:async()=>rows,ClearAppLogs:async()=>{},ExportBrowserDiagnosticIncident:async id=>{window.lastDiagnosticExport=id;return {cancelled:false,path:'D:/Synthetic/incident.json'}},ExportBrowserDiagnostics:async()=>({cancelled:true})}}}
+createRoot(document.getElementById('root')).render(React.createElement('main',{className:'fish-ui'},React.createElement(FishLogsPage)))
+</script></body></html>

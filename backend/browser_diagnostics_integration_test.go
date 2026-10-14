@@ -105,12 +105,23 @@ func TestNativeBrowserDiagnosticsAndWorker(t *testing.T) {
 	if status != "passed_basic" {
 		t.Fatalf("actual kernel basic spoof/Worker check: %s %v", status, issues)
 	}
+	verifyNativeDiagnosticEvents(t, port, waitEvent)
+	cancel()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("native observer did not stop")
+	}
+}
+
+func verifyNativeDiagnosticEvents(t *testing.T, port int, waitEvent func(string) diagnostics.Event) {
+	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte("local test refusal"))
 	}))
 	defer server.Close()
-	if _, err = cdpCall(port, "Page.navigate", map[string]any{"url": server.URL + "/?token=PRIVATE_DIAGNOSTIC_TEST"}); err != nil {
+	if _, err := cdpCall(port, "Page.navigate", map[string]any{"url": server.URL + "/?token=PRIVATE_DIAGNOSTIC_TEST"}); err != nil {
 		t.Fatal(err)
 	}
 	response := waitEvent("network.response")
@@ -137,11 +148,87 @@ func TestNativeBrowserDiagnosticsAndWorker(t *testing.T) {
 	if strings.Contains(string(encoded), "PRIVATE_DIAGNOSTIC_TEST") || strings.Contains(string(encoded), "private-test") {
 		t.Fatal("network contents leaked into diagnostic events")
 	}
+	t.Logf("native HTTP403=%v; network failure=%v; renderer crash=%v", response.Fields["http_status"], failure.Fields["net_error"], crash.Fields["status"])
+}
+
+// Separate diagnostic acceptance from the independent fingerprint capability test.
+func TestNativeKernelDiagnosticEvidence(t *testing.T) {
+	binary := os.Getenv("ANT_BROWSER_TEST_CHROME")
+	if binary == "" {
+		t.Skip("set ANT_BROWSER_TEST_CHROME for native diagnostic acceptance")
+	}
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	cmd := exec.Command(binary, "--headless=new", "--user-data-dir="+dir, "--remote-debugging-port=0", "--no-first-run", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--no-proxy-server", "about:blank")
+	m, err := newBrowserProcessMonitor(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = cmd.Start(); err != nil {
+		m.closeCapture()
+		t.Fatal(err)
+	}
+	m.Start()
+	port := 0
+	defer func() {
+		cancel()
+		if port > 0 {
+			_ = cdpBrowserCall(port, "Browser.close", nil)
+		}
+		select {
+		case <-m.Done():
+		case <-time.After(2 * time.Second):
+			cmd.Process.Kill()
+			<-m.Done()
+		}
+		m.closeCapture()
+	}()
+	port, err = waitBrowserDebugPortReadyContext(ctx, 0, dir, 8*time.Second, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := make(chan diagnostics.Event, 256)
+	done := make(chan struct{})
+	go func() {
+		diagnostics.Observe(ctx, port, func(e diagnostics.Event) {
+			select {
+			case events <- e:
+			default:
+			}
+		})
+		close(done)
+	}()
+	seen := map[string]bool{}
+	wait := func(name string) diagnostics.Event {
+		t.Helper()
+		timer := time.NewTimer(7 * time.Second)
+		defer timer.Stop()
+		for {
+			select {
+			case e := <-events:
+				seen[e.Name] = true
+				if e.Name == name {
+					return e
+				}
+			case <-timer.C:
+				t.Fatalf("native event %s missing", name)
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			}
+		}
+	}
+	connected := wait("diagnostics.connected")
+	t.Logf("actual configured binary=%s version=%v", binary, connected.Fields["browser_version"])
+	wait("diagnostics.network_ready")
+	verifyNativeDiagnosticEvents(t, port, wait)
+	if !seen["browser.gpu_info"] || !seen["browser.child_processes"] {
+		t.Fatalf("missing GPU/child evidence: %v", seen)
+	}
 	cancel()
 	select {
-	case <-stopped:
+	case <-done:
 	case <-time.After(time.Second):
-		t.Fatal("native observer did not stop")
+		t.Fatal("observer shutdown failed")
 	}
-	t.Logf("native HTTP403=%v; network failure=%v; renderer crash=%v; basic Worker=%s", response.Fields["http_status"], failure.Fields["net_error"], crash.Fields["status"], status)
 }

@@ -36,14 +36,15 @@ type SingBoxBridge struct {
 
 // SingBoxManager sing-box 桥接管理器
 type SingBoxManager struct {
-	Config       *config.Config
-	AppRoot      string // 应用根目录，所有相对路径基于此解析
-	Bridges      map[string]*SingBoxBridge
-	OnBridgeDied func(key string, err error)
-	mu           sync.Mutex
-	launchLocks  map[string]*bridgeLaunchLock
-	stopCh       chan struct{}
-	stopOnce     sync.Once
+	Config           *config.Config
+	AppRoot          string // 应用根目录，所有相对路径基于此解析
+	Bridges          map[string]*SingBoxBridge
+	OnBridgeEvidence func(key, event string, fields map[string]interface{})
+	OnBridgeDied     func(key string, err error)
+	mu               sync.Mutex
+	launchLocks      map[string]*bridgeLaunchLock
+	stopCh           chan struct{}
+	stopOnce         sync.Once
 }
 
 // NewSingBoxManager 创建 sing-box 管理器
