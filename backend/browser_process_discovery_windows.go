@@ -29,7 +29,7 @@ func findBrowserUserDataProcessesOS(userDataDir string) ([]browserUserDataProces
 	}
 
 	psScript := `param([string]$UserDataDir)
-$ErrorActionPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'
 $target = [System.IO.Path]::GetFullPath($UserDataDir).TrimEnd('\')
 $items = @()
 Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine -match '--user-data-dir=' } | ForEach-Object {
@@ -44,7 +44,7 @@ Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLin
   $port = 0
   $portMatch = [regex]::Match($cmd, '--remote-debugging-port=(\d+)')
   if ($portMatch.Success) { [void][int]::TryParse($portMatch.Groups[1].Value, [ref]$port) }
-  $items += [pscustomobject]@{ pid = [int]$_.ProcessId; debugPort = [int]$port; commandLine = $cmd }
+  $items += [pscustomobject]@{ pid = [int]$_.ProcessId; debugPort = [int]$port; commandLine = $cmd; parentPID = [int]$_.ParentProcessId; createdAt = $_.CreationDate.ToUniversalTime().ToString("o") }
 }
 $items | ConvertTo-Json -Compress
 `

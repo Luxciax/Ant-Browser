@@ -38,7 +38,7 @@ fileignoreconfig:
   checksum: 33236be8f09511c0ac6cf7f05c97c27d9ea329dcb402c85a1a378079dc18a1af
 # Fixed, synthetic local test identities, never service credentials.
 - filename: backend/internal/proxy/singbox_recovery_audit_test.go
-  checksum: b0ec404028b0f594e0a17505593887c6370ce0764cddaeafd6bba7c2a62abd8a
+  checksum: 820c5e6786ad482f980f7fea23df85d3e424aa6d729f1260a15726eba8bdad1a
 - filename: backend/internal/browser/extension_lifecycle_audit_test.go
   checksum: d2f241e2c13ed7290b6f0c9f5791b95d4d5777c9810d08c9af890c9c58e88aab
 # Long TSX component line with React keys; no embedded secrets.
@@ -48,27 +48,27 @@ fileignoreconfig:
 # references, React state/JSX, and fixed example.com/local synthetic test data.
 # Exact file checksums expire on any edit; detectors and hooks remain enabled.
 - filename: backend/app_bridge_diagnostics.go
-  checksum: 1fccd103f8870f62c509c361ec1d652530991bbaf9e49088a4454764849b42f4
+  checksum: 037e07935860be5696379a0171367d02991ef72c876b32a19041741942b586c0
 - filename: backend/app_diagnostic_export_test.go
   checksum: a1669589c247298d25f515cbd00e7fcd89e111232625d81381d9ebc2eabb1ff3
 - filename: backend/browser_launch_args_test.go
   checksum: c8d5a0bb6dc7b5b07c0a7a58caf5607d540c8fe34fc0c5c1ccb1f6251770ab05
 - filename: backend/app_startup.go
-  checksum: f860a50786a3fa4733a5b2cf5323c1078027615db087bc908cad2ff45f50268f
+  checksum: 3eed033d46b1c9deeb84ba58f44695544d6c89915e57bfe97ae5eac3e9d89755
 - filename: backend/internal/proxy/clash.go
-  checksum: c6381541ed4611495b463e4a90ae8cf90915aa72c64c808419327e7448110ca7
+  checksum: abb9bb3f207e38673ba468ba8cd100682ace507661d7df896b7582a1cc1ac20f
 - filename: backend/app_browser_diagnostics.go
-  checksum: 94986a9412bc99c94bde62b07c1dcdaa701c43a1da92b0eb0bc3ec647cac11e0
+  checksum: e4b357e75661d5dced23dca26dfb9c542cec7cf41e31559c2df7183975d7639a
 - filename: backend/internal/proxy/xray_bridge_runtime.go
   checksum: f78210edb5e4db50dce4664dcd22ce917b8f2661c43746d510208d70783aef90
 - filename: backend/internal/proxy/singbox_bridge_runtime.go
-  checksum: d9b2b7356c7a243491aa7bf2c2ed99401a7f2c9aec60c8e914201599549d86af
+  checksum: dc1bb93deb0e4f226633e9bbd86e0fc81b915dc29780e21315302c389a76797f
 - filename: backend/internal/proxy/mihomo_bridge.go
-  checksum: eb414ef0a0d0becd8b2c06f04bf923e2295875df39959cdb5d27725d19d56e0a
+  checksum: 67b6e8cb82e8c1688b71929be1569689e91a8d0a24d9e623e9902e8fc5b40402
 - filename: backend/internal/proxy/xray_bridge_store.go
-  checksum: 890f9255261b294119e85a6cfc26379eaef8ca807c17d63d7e2a0b464bbed3a5
+  checksum: 41f0d368034a641a2e02248d169ddc5ba748142c30a21afa099d1ac51ae74718
 - filename: backend/app_diagnostic_export.go
-  checksum: 1ff492660a52cd1b03a0f484f81a8ab89e0157ddcfd3175bd1edeebd5a9e49f2
+  checksum: fcebc8f610ed1765095b8ffb444325ff3278832e6fb2eec0373a7cdb508df33d
 - filename: frontend/src/modules/browser/pages/BrowserEditPage.tsx
   checksum: 9ee8bc1f53a340d7f7241a4fcf0805bac7705492de0fefa7f64285179b999039
 - filename: backend/internal/proxy/mihomo_bridge_recovery_test.go
@@ -82,7 +82,19 @@ fileignoreconfig:
 - filename: backend/internal/logger/persistence_test.go
   checksum: 06176830e9aaef9af17b52704b47a23235e6f0138fda31ff32ce80c37445d837
 - filename: frontend/src/ui-v2/fish/FishLogsPage.tsx
-  checksum: c6210cc4bf69612ba74ac24cb79894224ebe450dffdc3bfffc2b249ba379c466
+  checksum: 0119f09511ec10d192bbcabb2eee14c64cb17f6f027eb4c59fb421b766da8bae
 - filename: backend/internal/diagnostics/browser.go
-  checksum: 0ba39b6f04a89bf8cb24c0a24a3b63c095d7d01411fee7325960cc99e114b5e8
+  checksum: 02c733fd2d12f595fbafe705c225b7cf01026b0abb3bd2a9d33740a93974d154
+# Reviewed diagnostics evidence false positives: key identifiers, redaction regex,
+# and synthetic test literals. Exact checksums only; hook remains enabled.
+- filename: backend/internal/proxy/xray.go
+  checksum: ace9d4c4514e0c2a9690986c9eecbedeaac53249133b5f5523aa8fd198cce9ad
+- filename: backend/internal/proxy/singbox_types.go
+  checksum: 8687df21d6ba9ea8bbdcd5c2339d7884dd78f42eaae83361a9db1bda8e880f45
+- filename: backend/internal/logger/redaction.go
+  checksum: 8a29b99826c03af89e458330efcc9720ff6d2d191a7844b2620e6d7e950f8d08
+- filename: backend/internal/logger/run_history.go
+  checksum: 1930b13a0ddfa3d20d72a4897126d174c8a0ff10627d7105127cd97cbd0974c4
+- filename: backend/internal/logger/evidence_test.go
+  checksum: 81177670be63cd4b0ffd4bff8b28fde5a991255396f7c8ab87c9f18d37b25604
 version: "1.0"

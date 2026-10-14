@@ -2,6 +2,7 @@ package logger
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,13 +40,22 @@ type FileWriter struct {
 	mu          sync.Mutex
 
 	// 异步写入相关
-	asyncChan   chan *LogEntry
-	done        chan struct{}
-	wg          sync.WaitGroup
-	asyncMode   bool
-	flushTicker *time.Ticker
-	rotation    *RotationManager
-	lastError   error
+	asyncChan            chan *LogEntry
+	done                 chan struct{}
+	wg                   sync.WaitGroup
+	asyncMode            bool
+	flushTicker          *time.Ticker
+	rotation             *RotationManager
+	lastError            error
+	flushRequests        chan chan error
+	dropped              uint64
+	lastWrite            time.Time
+	lastFlush            time.Time
+	lastFailure          time.Time
+	bufferFailed         bool
+	discardedBufferBytes uint64
+	failedWrites         uint64
+	lastFailureError     string
 }
 
 // NewFileWriter 创建新的文件写入器（同步模式）
@@ -97,11 +107,13 @@ func (w *FileWriter) Write(entry *LogEntry) error {
 	}
 
 	// 如果是异步模式，发送到队列
-	if w.asyncMode {
+	if w.asyncMode && !criticalEntry(entry) {
 		return w.writeAsync(entry)
 	}
 
-	return w.writeSync(entry)
+	err := w.writeSync(entry)
+	w.recordError(err)
+	return err
 }
 
 // writeSync 同步写入
@@ -115,6 +127,11 @@ func (w *FileWriter) writeSync(entry *LogEntry) error {
 	defer w.mu.Unlock()
 	if w.file == nil {
 		return os.ErrClosed
+	}
+	if w.bufferFailed {
+		w.discardedBufferBytes += uint64(w.buffer.Buffered())
+		w.buffer.Reset(w.file)
+		w.bufferFailed = false
 	}
 	if w.rotation != nil {
 		info, statErr := w.file.Stat()
@@ -140,22 +157,64 @@ func (w *FileWriter) writeSync(entry *LogEntry) error {
 
 	_, err = w.buffer.Write(data)
 	if err != nil {
+		w.bufferFailed = true
 		return fmt.Errorf("failed to write to buffer: %w", err)
 	}
 	// A recorded crash must not wait for the next periodic flush.
-	if entry.Level >= ERROR {
-		return w.buffer.Flush()
+	w.lastWrite = time.Now()
+	if criticalEntry(entry) {
+		if err := w.buffer.Flush(); err != nil {
+			w.bufferFailed = true
+			return err
+		}
+		err := w.file.Sync()
+		if err == nil {
+			w.lastFlush = time.Now()
+		}
+		return err
 	}
 	return nil
 }
 
 // Flush 刷新缓冲区到文件
 func (w *FileWriter) Flush() error {
+	w.lifecycleMu.RLock()
+	defer w.lifecycleMu.RUnlock()
+	if w.closed {
+		return os.ErrClosed
+	}
+	if w.asyncMode {
+		reply := make(chan error, 1)
+		timer := time.NewTimer(2 * time.Second)
+		defer timer.Stop()
+		select {
+		case w.flushRequests <- reply:
+		case <-timer.C:
+			return fmt.Errorf("log flush queue barrier timeout")
+		}
+		select {
+		case err := <-reply:
+			return err
+		case <-timer.C:
+			return fmt.Errorf("log flush persistence timeout")
+		}
+	}
+	return w.flushBuffer()
+}
+
+func (w *FileWriter) flushBuffer() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if w.buffer != nil {
-		return w.buffer.Flush()
+		err := w.buffer.Flush()
+		if err != nil {
+			w.bufferFailed = true
+		}
+		if err == nil {
+			w.lastFlush = time.Now()
+		}
+		return err
 	}
 	return nil
 }
@@ -234,6 +293,7 @@ func (w *FileWriter) enableAsync() {
 	}
 
 	w.asyncChan = make(chan *LogEntry, queueSize)
+	w.flushRequests = make(chan chan error, 1)
 	w.done = make(chan struct{})
 	w.flushTicker = time.NewTicker(flushInterval)
 	w.asyncMode = true
@@ -259,7 +319,13 @@ func (w *FileWriter) asyncWriteLoop() {
 
 		case <-w.flushTicker.C:
 			// 定期刷新缓冲区
-			w.recordError(w.Flush())
+			w.recordError(w.flushBuffer())
+
+		case reply := <-w.flushRequests:
+			w.drainQueue()
+			err := w.flushBuffer()
+			w.recordError(err)
+			reply <- err
 
 		case <-w.done:
 			// 收到停止信号，处理剩余日志
@@ -271,7 +337,8 @@ func (w *FileWriter) asyncWriteLoop() {
 
 // drainQueue 清空队列中的剩余日志
 func (w *FileWriter) drainQueue() {
-	for {
+	// Bound the barrier to entries already queued; concurrent producers cannot starve it.
+	for remaining := len(w.asyncChan); remaining > 0; remaining-- {
 		select {
 		case entry, ok := <-w.asyncChan:
 			if !ok {
@@ -292,9 +359,10 @@ func (w *FileWriter) writeAsync(entry *LogEntry) error {
 		return nil
 	default:
 		// 队列满，丢弃日志（非阻塞）
-		err := fmt.Errorf("async queue full, log entry dropped")
-		w.recordError(err)
-		return err
+		w.mu.Lock()
+		w.dropped++
+		w.mu.Unlock()
+		return ErrQueueFull
 	}
 }
 
@@ -339,12 +407,42 @@ func (w *FileWriter) QueueLength() int {
 }
 
 func (w *FileWriter) recordError(err error) {
-	if err == nil {
-		return
-	}
 	w.mu.Lock()
 	w.lastError = err
+	if err != nil {
+		w.lastFailure = time.Now()
+		w.failedWrites++
+		w.lastFailureError = RedactText(err.Error())
+	}
 	w.mu.Unlock()
+}
+
+var ErrQueueFull = errors.New("async queue full, ordinary log entry dropped")
+
+func Health() map[string]interface{} {
+	globalMu.RLock()
+	defer globalMu.RUnlock()
+	out := map[string]interface{}{"app_session_id": evidenceSession, "dropped_noncritical": uint64(0)}
+	if globalLogger == nil || globalLogger.fileWriter == nil {
+		out["file_enabled"] = false
+		return out
+	}
+	w := globalLogger.fileWriter
+	out["file_enabled"] = true
+	out["queue_length"] = w.QueueLength()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out["dropped_noncritical"] = w.dropped
+	out["failed_write_attempts"] = w.failedWrites
+	out["discarded_buffer_bytes"] = w.discardedBufferBytes
+	out["last_failure_error"] = w.lastFailureError
+	out["last_buffer_write_at"] = w.lastWrite.Format(time.RFC3339Nano)
+	out["last_flush_at"] = w.lastFlush.Format(time.RFC3339Nano)
+	out["last_failure_at"] = w.lastFailure.Format(time.RFC3339Nano)
+	if w.lastError != nil {
+		out["error"] = RedactText(w.lastError.Error())
+	}
+	return out
 }
 
 func (w *FileWriter) Error() error {

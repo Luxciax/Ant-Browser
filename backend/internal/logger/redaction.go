@@ -11,9 +11,12 @@ import (
 const redacted = "[REDACTED]"
 
 var logURL = regexp.MustCompile(`(?i)(?:https?|socks5?|socks5h|vless|vmess|trojan|ss|ssr|hysteria2|hy2|tuic|anytls)://[^\s<>"']+`)
-var logCredential = regexp.MustCompile(`(?i)\b(password|passwd|secret|token|authorization|auth|api[_-]?key|access[_-]?key|private[_-]?key)\b["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;&]+)`)
+var logHeaders = regexp.MustCompile(`(?im)\b(authorization|proxy-authorization|cookie|set-cookie)\b["']?\s*[:=]\s*[^\r\n]*`)
+
+var logCredential = regexp.MustCompile(`(?i)\b(password|passwd|secret|token|authorization|auth|cookie|set-cookie|api[_-]?key|access[_-]?key|private[_-]?key)\b["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;&]+)`)
 
 func redactLogText(text string) string {
+	text = logHeaders.ReplaceAllString(text, "$1="+redacted)
 	text = logURL.ReplaceAllStringFunc(text, func(raw string) string {
 		u, err := url.Parse(raw)
 		if err != nil {

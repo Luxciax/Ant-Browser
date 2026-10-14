@@ -193,7 +193,7 @@ func (m *SingBoxManager) launchBridgeOnPortContext(ctx context.Context, log *log
 		return nil, fmt.Errorf("sing-box 配置生成失败: %w", err)
 	}
 	stderrPath := filepath.Join(filepath.Dir(cfgPath), "singbox-stderr.log")
-	if err := m.testRuntimeConfigContext(ctx, binaryPath, cfgPath, stderrPath); err != nil {
+	if err := m.testRuntimeConfigContext(ctx, binaryPath, cfgPath, strings.TrimSuffix(stderrPath, ".log")+"-preflight.log"); err != nil {
 		log.Error("sing-box 配置预检失败", logger.F("error", err), logger.F("attempt", attempt), logger.F("config", cfgPath))
 		return nil, err
 	}
@@ -201,9 +201,14 @@ func (m *SingBoxManager) launchBridgeOnPortContext(ctx context.Context, log *log
 	cmd := exec.Command(binaryPath, "run", "-c", cfgPath)
 	hideWindow(cmd)
 	cmd.Dir = filepath.Dir(cfgPath)
-	stderrFile, _ := os.Create(stderrPath)
+	stderrFile, captureErr := logger.NewProcessLog(stderrPath)
+	if captureErr != nil {
+		return nil, fmt.Errorf("proxy error log capture: %w", captureErr)
+	}
+	stderrPath = stderrFile.Path
 	if stderrFile != nil {
 		cmd.Stderr = stderrFile
+		cmd.Stdout = stderrFile
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -321,20 +326,25 @@ func (m *SingBoxManager) testRuntimeConfigContext(ctx context.Context, binaryPat
 	cmd := exec.CommandContext(ctx, binaryPath, "check", "-c", cfgPath)
 	hideWindow(cmd)
 	cmd.Dir = filepath.Dir(cfgPath)
-	stderrFile, _ := os.Create(stderrPath)
+	stderrFile, captureErr := logger.NewProcessLog(stderrPath)
+	if captureErr != nil {
+		return fmt.Errorf("proxy preflight log capture: %w", captureErr)
+	}
+	stderrPath = stderrFile.Path
 	if stderrFile != nil {
 		defer stderrFile.Close()
 		cmd.Stderr = stderrFile
+		cmd.Stdout = stderrFile
 	}
-	output, err := cmd.Output()
+	err := cmd.Run()
+	if flushErr := stderrFile.Close(); err == nil && flushErr != nil {
+		err = flushErr
+	}
 	if err == nil {
 		return nil
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return &singBoxLaunchError{err: ctxErr, retryable: false}
-	}
-	if len(output) > 0 && stderrFile != nil {
-		_, _ = stderrFile.Write(output)
 	}
 	return &singBoxLaunchError{
 		err:       fmt.Errorf("sing-box 配置预检失败: %w；%s", err, m.describeBridgeReadyError(err, cfgPath, stderrPath)),
@@ -557,11 +567,17 @@ func (m *SingBoxManager) watchBridge(bridge *SingBoxBridge, key string) {
 	m.mu.Unlock()
 
 	if !stopping {
-		logger.New("SingBox").Warn("sing-box 桥接进程退出", logger.F("key", key), logger.F("port", bridge.Port), logger.F("pid", bridge.Pid), logger.F("exit_error", exitErr), logger.F("stderr_tail", bridgeStderrTail(bridge.Cmd, "singbox-stderr.log")))
+		if m.OnBridgeEvidence != nil {
+			m.OnBridgeEvidence(key, "proxy.bridge_exited", map[string]interface{}{"process": bridgeExitEvidence(bridge.Cmd), "stderr_tail": bridgeStderrTail(bridge.Cmd, "singbox-stderr.log"), "port": bridge.Port, "recovery_requested": shouldRestart})
+		}
+		logger.New("SingBox").Warn("sing-box 桥接进程退出", logger.F("key", key), logger.F("port", bridge.Port), logger.F("pid", bridge.Pid), logger.F("exit_error", exitErr), logger.F("stderr_tail", bridgeStderrTail(bridge.Cmd, "singbox-stderr.log")), logger.F("process_evidence", bridgeExitEvidence(bridge.Cmd)))
 	}
 	if shouldRestart {
 		log := logger.New("SingBox")
 		if err := m.restartBridgeOnSamePort(log, key, bridge, refCount); err == nil {
+			if m.OnBridgeEvidence != nil {
+				m.OnBridgeEvidence(key, "proxy.bridge_recovered", map[string]interface{}{"port": bridge.Port})
+			}
 			return
 		} else if errors.Is(err, errSingBoxBridgeRestartNotNeeded) {
 			return

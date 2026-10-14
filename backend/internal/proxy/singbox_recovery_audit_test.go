@@ -46,6 +46,8 @@ func TestSingBoxRealProcessRecoversPinnedBridge(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Browser.SingBoxBinaryPath = binary
 	m := NewSingBoxManager(cfg, t.TempDir())
+	observations := make(chan string, 8)
+	m.OnBridgeEvidence = func(key, event string, fields map[string]interface{}) { observations <- event }
 	t.Cleanup(m.StopAll)
 	port, err := nextAvailablePort()
 	if err != nil {
@@ -70,6 +72,16 @@ func TestSingBoxRealProcessRecoversPinnedBridge(t *testing.T) {
 		if ready {
 			if err := waitSocks5Ready("127.0.0.1", port, time.Second); err != nil {
 				t.Fatal(err)
+			}
+			for _, expected := range []string{"proxy.bridge_exited", "proxy.bridge_recovered"} {
+				select {
+				case event := <-observations:
+					if event != expected {
+						t.Fatalf("evidence order: %s want %s", event, expected)
+					}
+				case <-time.After(time.Second):
+					t.Fatalf("missing %s", expected)
+				}
 			}
 			m.ReleaseBridge(key)
 			m.mu.Lock()

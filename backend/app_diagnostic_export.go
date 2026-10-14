@@ -13,12 +13,18 @@ import (
 
 func (a *App) GetAppLogStatus() map[string]string {
 	path, problem := logger.PersistenceStatus()
-	return map[string]string{"path": path, "error": problem}
+	out := map[string]string{"path": path, "error": problem}
+	for key, value := range logger.Health() {
+		out[key] = fmt.Sprint(value)
+	}
+	return out
 }
 
 func (a *App) diagnosticReport() (map[string]any, error) {
 	path, problem := logger.PersistenceStatus()
-	_ = logger.New("Diagnostics").Flush()
+	if err := logger.New("Diagnostics").Flush(); err != nil {
+		problem = "flush barrier: " + err.Error()
+	}
 	history := []logger.MemoryLogEntry{}
 	if path != "" {
 		var err error
@@ -42,6 +48,7 @@ func (a *App) diagnosticReport() (map[string]any, error) {
 			logs = append(logs, e)
 		}
 	}
+	logs = logger.MergeEntries(logs)
 	if len(logs) > 2000 {
 		logs = logs[len(logs)-2000:]
 	}
@@ -65,7 +72,7 @@ func (a *App) diagnosticReport() (map[string]any, error) {
 		settings["start_ready_timeout_ms"] = a.config.Browser.StartReadyTimeoutMs
 		settings["app_memory_limit_mb"] = a.config.Runtime.MaxMemoryMB
 	}
-	report := map[string]any{"cores": cores, "settings": settings, "schema_version": 1, "generated_at": time.Now().Format(time.RFC3339Nano), "app_version": a.appVersion(), "persistence_error": problem, "profiles": profiles, "logs": logs, "limitations": []string{"网络事件不采集请求/响应体、Cookie、Authorization 或完整 URL", "未记录到崩溃事件不代表没有崩溃", "历史 QUIC 失败不能单独证明本次断网原因"}}
+	report := map[string]any{"cores": cores, "settings": settings, "incidents": a.GetBrowserDiagnosticIncidents(), "logger_health": logger.Health(), "schema_version": 2, "generated_at": time.Now().Format(time.RFC3339Nano), "app_version": a.appVersion(), "persistence_error": problem, "profiles": profiles, "logs": logs, "limitations": []string{"网络事件不采集请求/响应体、Cookie、Authorization 或完整 URL", "未记录到崩溃事件不代表没有崩溃", "历史 QUIC 失败不能单独证明本次断网原因"}}
 	// Normalize JSON tags before reflection-based redaction (Time -> time etc.).
 	encoded, err := json.Marshal(report)
 	if err != nil {
@@ -83,7 +90,19 @@ func (a *App) ExportBrowserDiagnostics() (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	path, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{Title: "导出本地诊断包", DefaultFilename: "ant-diagnostics-" + time.Now().Format("20060102-150405") + ".json", Filters: []wailsruntime.FileFilter{{DisplayName: "JSON 诊断包", Pattern: "*.json"}}})
+	return a.saveDiagnosticReport(report, "ant-diagnostics-")
+}
+
+func (a *App) ExportBrowserDiagnosticIncident(id string) (map[string]any, error) {
+	report, err := a.incidentReport(id)
+	if err != nil {
+		return nil, err
+	}
+	return a.saveDiagnosticReport(report, "ant-incident-")
+}
+
+func (a *App) saveDiagnosticReport(report map[string]any, prefix string) (map[string]any, error) {
+	path, err := wailsruntime.SaveFileDialog(a.ctx, wailsruntime.SaveDialogOptions{Title: "导出本地诊断包", DefaultFilename: prefix + time.Now().Format("20060102-150405") + ".json", Filters: []wailsruntime.FileFilter{{DisplayName: "JSON 诊断包", Pattern: "*.json"}}})
 	if err != nil {
 		return nil, fmt.Errorf("选择诊断包保存位置失败: %w", err)
 	}

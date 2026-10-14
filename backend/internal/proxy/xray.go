@@ -16,14 +16,15 @@ const (
 
 // XrayManager Xray 桥接管理器
 type XrayManager struct {
-	Config       *config.Config
-	AppRoot      string // 应用根目录，所有相对路径基于此解析
-	Bridges      map[string]*XrayBridge
-	OnBridgeDied func(key string, err error) // 桥接进程意外退出回调
-	mu           sync.Mutex
-	launchLocks  map[string]*bridgeLaunchLock
-	stopCh       chan struct{}
-	stopOnce     sync.Once
+	Config           *config.Config
+	AppRoot          string // 应用根目录，所有相对路径基于此解析
+	Bridges          map[string]*XrayBridge
+	OnBridgeEvidence func(key, event string, fields map[string]interface{})
+	OnBridgeDied     func(key string, err error) // 桥接进程意外退出回调
+	mu               sync.Mutex
+	launchLocks      map[string]*bridgeLaunchLock
+	stopCh           chan struct{}
+	stopOnce         sync.Once
 }
 
 // NewXrayManager 创建 Xray 管理器

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -238,7 +239,7 @@ func (m *XrayManager) launchBridgeAttemptContext(ctx context.Context, log *logge
 		return "", nil, err
 	}
 	stderrPath := filepath.Join(filepath.Dir(cfgPath), "xray-stderr.log")
-	if err := m.testRuntimeConfigContext(ctx, binaryPath, cfgPath, stderrPath); err != nil {
+	if err := m.testRuntimeConfigContext(ctx, binaryPath, cfgPath, strings.TrimSuffix(stderrPath, ".log")+"-preflight.log"); err != nil {
 		log.Error("xray 配置预检失败", logger.F("error", err), logger.F("attempt", attempt), logger.F("config", cfgPath))
 		return "", nil, err
 	}
@@ -246,9 +247,14 @@ func (m *XrayManager) launchBridgeAttemptContext(ctx context.Context, log *logge
 	hideWindow(cmd)
 	cmd.Dir = filepath.Dir(cfgPath)
 
-	stderrFile, _ := os.Create(stderrPath)
+	stderrFile, captureErr := logger.NewProcessLog(stderrPath)
+	if captureErr != nil {
+		return "", nil, fmt.Errorf("proxy error log capture: %w", captureErr)
+	}
+	stderrPath = stderrFile.Path
 	if stderrFile != nil {
 		cmd.Stderr = stderrFile
+		cmd.Stdout = stderrFile
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -405,11 +411,11 @@ func chainHTTPOutbound(hop chainSocks5Hop, tag string, nextTag string) map[strin
 	return outbound
 }
 
-func (m *XrayManager) waitBridgeReady(log *logger.Logger, bridge *XrayBridge, cfgPath string, stderrPath string, stderrFile *os.File, attempt int) error {
+func (m *XrayManager) waitBridgeReady(log *logger.Logger, bridge *XrayBridge, cfgPath string, stderrPath string, stderrFile io.Closer, attempt int) error {
 	return m.waitBridgeReadyContext(context.Background(), log, bridge, cfgPath, stderrPath, stderrFile, attempt)
 }
 
-func (m *XrayManager) waitBridgeReadyContext(ctx context.Context, log *logger.Logger, bridge *XrayBridge, cfgPath string, stderrPath string, stderrFile *os.File, attempt int) error {
+func (m *XrayManager) waitBridgeReadyContext(ctx context.Context, log *logger.Logger, bridge *XrayBridge, cfgPath string, stderrPath string, stderrFile io.Closer, attempt int) error {
 	if err := m.waitBridgeSocksReadyContext(ctx, bridge, m.bridgeStartTimeout()); err != nil {
 		if stderrFile != nil {
 			stderrFile.Close()
@@ -462,20 +468,25 @@ func (m *XrayManager) testRuntimeConfigContext(ctx context.Context, binaryPath s
 	cmd := exec.CommandContext(ctx, binaryPath, "run", "-test", "-c", cfgPath)
 	hideWindow(cmd)
 	cmd.Dir = filepath.Dir(cfgPath)
-	stderrFile, _ := os.Create(stderrPath)
+	stderrFile, captureErr := logger.NewProcessLog(stderrPath)
+	if captureErr != nil {
+		return fmt.Errorf("proxy preflight log capture: %w", captureErr)
+	}
+	stderrPath = stderrFile.Path
 	if stderrFile != nil {
 		defer stderrFile.Close()
 		cmd.Stderr = stderrFile
+		cmd.Stdout = stderrFile
 	}
-	output, err := cmd.Output()
+	err := cmd.Run()
+	if flushErr := stderrFile.Close(); err == nil && flushErr != nil {
+		err = flushErr
+	}
 	if err == nil {
 		return nil
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return &xrayLaunchError{err: ctxErr, retryable: false}
-	}
-	if len(output) > 0 && stderrFile != nil {
-		_, _ = stderrFile.Write(output)
 	}
 	return &xrayLaunchError{
 		err:       fmt.Errorf("Xray 配置错误：%s", m.describeBridgeReadyError(err, cfgPath, stderrPath)),

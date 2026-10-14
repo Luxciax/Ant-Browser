@@ -94,6 +94,9 @@ func (a *App) markProfileFailedLocked(profileId string, profile *BrowserProfile,
 		return
 	}
 	a.stopBrowserDiagnostics(profileId)
+	if monitor := a.browserProcessMonitors[profileId]; monitor != nil {
+		monitor.closeCapture()
+	}
 	delete(a.browserProcessMonitors, profileId)
 	a.stopProfileWindowMarker(profileId)
 	profile.WindowMarkerCode = ""

@@ -4,7 +4,6 @@ import (
 	"ant-chrome/backend/internal/logger"
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
@@ -25,11 +24,12 @@ func (m *ClashManager) restartMihomoNodeBridge(old *MihomoNodeBridge) error {
 	cmd := exec.Command(old.Cmd.Path, "-f", old.ConfigPath, "-d", filepath.Dir(old.ConfigPath))
 	hideWindow(cmd)
 	cmd.Dir = filepath.Dir(old.ConfigPath)
-	stderr, err := os.OpenFile(filepath.Join(cmd.Dir, "mihomo-stderr.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	stderr, err := logger.NewProcessLog(filepath.Join(cmd.Dir, "mihomo-stderr.log"))
 	if err != nil {
 		return err
 	}
 	cmd.Stderr = stderr
+	cmd.Stdout = stderr
 	err = cmd.Start()
 	_ = stderr.Close()
 	if err != nil {

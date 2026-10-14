@@ -61,6 +61,11 @@ type App struct {
 	browserProcessMonitors        map[string]*browserProcessMonitor
 	diagnosticsMu                 sync.Mutex
 	browserDiagnostics            map[string]context.CancelFunc
+	incidentPersistMu             sync.Mutex
+	incidentMu                    sync.Mutex
+	incidents                     map[string]*diagnosticIncident
+	incidentOrder                 []string
+	incidentLoaded                bool
 	backupLocalConfigPathOverride string
 	stopServicesOnce              sync.Once
 	finalizeOnce                  sync.Once

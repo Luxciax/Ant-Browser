@@ -206,6 +206,15 @@ func (a *App) startupInitAutomation() {
 }
 
 func (a *App) startupInitBridgeHooks() {
+	a.xrayMgr.OnBridgeEvidence = func(key, event string, fields map[string]interface{}) {
+		a.recordBridgeEvidence("xray", key, event, fields)
+	}
+	a.singboxMgr.OnBridgeEvidence = func(key, event string, fields map[string]interface{}) {
+		a.recordBridgeEvidence("sing-box", key, event, fields)
+	}
+	a.clashMgr.OnBridgeEvidence = func(key, event string, fields map[string]interface{}) {
+		a.recordBridgeEvidence("mihomo", key, event, fields)
+	}
 	a.xrayMgr.OnBridgeDied = func(key string, err error) {
 		a.recordBridgeFailure("xray", key, err)
 	}

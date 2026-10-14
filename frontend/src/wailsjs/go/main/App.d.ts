@@ -409,3 +409,8 @@ export function ValidateProxyConfig(arg1:string,arg2:string):Promise<backend.Pro
 
 export function WaitInstanceDebugReady(arg1:string,arg2:number,arg3:time.Duration):Promise<browser.Profile>;
 export function BrowserProxyParseImport(arg1:string):Promise<Record<string, any>>;
+
+export function GetBrowserDiagnosticIncidents():Promise<Record<string,any>[]>;
+export function GetBrowserDiagnosticIncident(id:string):Promise<Record<string,any>>;
+export function GetBrowserDiagnosticRunLogs(profile:string,run:string):Promise<Record<string,any>[]>;
+export function ExportBrowserDiagnosticIncident(id:string):Promise<Record<string,any>>;

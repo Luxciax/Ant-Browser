@@ -17,6 +17,8 @@ type browserUserDataProcess struct {
 	PID         int    `json:"pid"`
 	DebugPort   int    `json:"debugPort"`
 	CommandLine string `json:"commandLine"`
+	ParentPID   int    `json:"parentPID,omitempty"`
+	CreatedAt   string `json:"createdAt,omitempty"`
 }
 
 type browserRuntimeDetection struct {
