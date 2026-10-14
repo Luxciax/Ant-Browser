@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.4 - 2026-10-14
+
+- 代理导入支持单条/多条节点链接、Base64 订阅、Clash YAML/JSON、sing-box JSON，以及 VMess、VLESS、Trojan、SS、HY2、TUIC、AnyTLS 等节点格式。
+- 节点导入、URL 订阅拉取和自动刷新统一解析；无法无损转换的配置明确拒绝，避免静默丢失参数。
+- 修复扩展管理三点菜单在窗口右侧被裁切的问题，增加边界避让、向上展开、限高滚动、键盘操作和主题适配。
+- 修复导入节点的 HTTPS 降级、IPv6 地址拼接及 TUIC 参数传递问题。
+
 ## 1.9.2 - 2026-09-19
 
 - 修复 ScriptCat/Tampermonkey `Allow User Scripts` 重启后再次关闭的根因：正常启动、升级与 runtime 恢复不再手工重写 Chromium 自己维护的 `Secure Preferences` 扩展注册。
