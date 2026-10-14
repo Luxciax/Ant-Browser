@@ -80,7 +80,7 @@ export function ProfilePackageExportModal({
           <span>
             <strong className="block font-medium text-[var(--color-text-primary)]">可迁移登录态（跨电脑）</strong>
             <span className="mt-1 block text-xs leading-5 text-[var(--color-text-secondary)]">
-              额外导出密码保护的浏览器加密主密钥，使 Cookie 和已保存登录信息可在另一台 Windows 电脑恢复。不会把 Cookie 或密码明文写入实例包。
+              迁移 Windows 传统 DPAPI 加密的 Cookie 和已保存登录信息，不写入明文。App-Bound 加密及其他系统暂不支持，后端会明确拒绝，需在目标机器重新登录。
             </span>
           </span>
         </label>

@@ -14,10 +14,18 @@ import {
 } from '../../modules/browser/utils/fingerprintSerializer'
 import { FINGERPRINT_CAPABILITIES, FINGERPRINT_PERSONAS, capabilityModeLabel } from '../../modules/browser/utils/fingerprintCapabilities'
 import { FishConfirm, FishModal, FishSwitch } from './FishFormPrimitives'
+import { FishIdentityPanel } from './FishIdentityPanel'
+import type { IdentityReport } from '../../modules/browser/api/identity'
 
 interface FishFingerprintEditorProps {
   value: string[]
   onChange: (args: string[]) => void
+  profileId?: string
+  coreId?: string
+  identityReport?: IdentityReport
+  identityLoading?: boolean
+  identityError?: string
+  onIdentityRetry?: () => void
 }
 
 const BRAND_OPTIONS = ['', 'Chrome', 'Edge', 'Opera', 'Vivaldi']
@@ -68,7 +76,7 @@ function FishField({ label, children, hint }: { label: string; children: React.R
   return <div className="fish-field"><label>{label}</label>{children}{hint ? <small>{hint}</small> : null}</div>
 }
 
-export function FishFingerprintEditor({ value, onChange }: FishFingerprintEditorProps) {
+export function FishFingerprintEditor({ value, onChange, profileId = '', coreId = '', identityReport, identityLoading, identityError, onIdentityRetry }: FishFingerprintEditorProps) {
   const [config, setConfig] = useState<FingerprintConfig>(() => deserialize(value))
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -107,6 +115,7 @@ export function FishFingerprintEditor({ value, onChange }: FishFingerprintEditor
 
   return (
     <div className="fish-fingerprint-editor">
+      <FishIdentityPanel args={value} profileId={profileId} coreId={coreId} report={identityReport} reportLoading={identityLoading} reportError={identityError} onRetry={onIdentityRetry} onChange={onChange} />
       <div className={`fish-validation ${validationTone}`}>
         <strong>{validation.valid ? (validation.issues.some((issue) => issue.level === 'warning') ? '配置可用，有提示' : '配置有效') : '配置需要修正'}</strong>
         {validation.issues.length > 0 ? <div>{validation.issues.slice(0, 4).map((issue, index) => <span key={`${issue.level}-${index}`}>{issue.message}</span>)}{validation.issues.length > 4 ? <span>还有 {validation.issues.length - 4} 项，请在高级模式中检查。</span> : null}</div> : null}

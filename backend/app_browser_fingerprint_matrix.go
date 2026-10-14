@@ -21,6 +21,7 @@ type BrowserFingerprintCapabilityReport struct {
 	LaunchArgs    []string                          `json:"launchArgs"`
 	Rows          []BrowserFingerprintCapabilityRow `json:"rows"`
 	Warnings      []string                          `json:"warnings"`
+	Identity      *BrowserIdentityReport            `json:"identity,omitempty"`
 }
 
 type BrowserFingerprintCapabilityRow struct {
@@ -139,6 +140,7 @@ func (a *App) buildBrowserFingerprintCapabilityReport(profileId string, coreId s
 	}
 
 	plan := buildBrowserFingerprintLaunchPlan(profileId, fingerprintArgs, chromeVersion)
+	identityReport := a.browserIdentityReport(profileId, normalizeBrowserLanguageArgs(fingerprintArgs), chromeVersion)
 	report := BrowserFingerprintCapabilityReport{
 		ProfileId:     profileId,
 		ChromeVersion: chromeVersion,
@@ -148,6 +150,7 @@ func (a *App) buildBrowserFingerprintCapabilityReport(profileId string, coreId s
 		LaunchArgs:    append([]string{}, plan.launchArgs...),
 		Rows:          append([]BrowserFingerprintCapabilityRow{}, plan.rows...),
 		Warnings:      append([]string{}, plan.warnings...),
+		Identity:      &identityReport,
 	}
 	if coreFound {
 		report.CoreId = core.CoreId
@@ -237,6 +240,10 @@ func buildBrowserFingerprintLaunchPlanForHost(profileId string, rawArgs []string
 
 	for index, arg := range args {
 		key := browserFingerprintArgKey(arg)
+		if key == "--ant-font-policy" || key == "--ant-identity-template" || key == "--ant-geolocation" {
+			// These are persisted app metadata, not Chromium switches.
+			continue
+		}
 		if key == "" {
 			plan.launchArgs = append(plan.launchArgs, arg)
 			continue
@@ -432,7 +439,8 @@ func buildBrowserFingerprintLaunchPlanForHost(profileId string, rawArgs []string
 	}
 
 	targetPlatform, targetPlatformArg := fingerprintPlatformFromArgs(args)
-	if targetPlatform != "" && hostPlatform != "" && targetPlatform != hostPlatform && !hasStringValue(disableSpoofingValues, "font") {
+	useHostFonts := browserArgValue(args, "--ant-font-policy") == "host"
+	if ((targetPlatform != "" && hostPlatform != "" && targetPlatform != hostPlatform) || useHostFonts) && fontPassthroughForArgs(args) && !hasStringValue(disableSpoofingValues, "font") {
 		disableSpoofingValues = appendUniqueStringValues(disableSpoofingValues, "font")
 		runtimeArg := "--disable-spoofing=" + strings.Join(disableSpoofingValues, ",")
 		if disableSpoofingIndex >= 0 {
@@ -447,10 +455,13 @@ func buildBrowserFingerprintLaunchPlanForHost(profileId string, rawArgs []string
 			InputArg:   targetPlatformArg,
 			RuntimeArg: runtimeArg,
 			Action:     "后端补齐",
-			Note:       fmt.Sprintf("目标平台 %s 与宿主平台 %s 不同；关闭字体伪装并使用宿主真实字体，避免日文、中文、韩文缺字", targetPlatform, hostPlatform),
+			Note:       fmt.Sprintf("字体兼容模式：使用宿主 %s 的真实字体（目标 %s），避免日文、中文、韩文缺字；可能暴露宿主系统", hostPlatform, targetPlatform),
 		})
 	}
 
+	if targetPlatform != "" && targetPlatform != hostPlatform && !fontPassthroughForArgs(args) {
+		plan.warnings = appendUniqueString(plan.warnings, "保留内核字体伪装；跨系统时若出现缺字，请显式切换为宿主字体兼容模式")
+	}
 	if disableSpoofingIndex >= 0 {
 		updateDisableSpoofingRows(&plan, plan.launchArgs[disableSpoofingIndex])
 	}

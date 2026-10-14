@@ -97,4 +97,27 @@ fileignoreconfig:
   checksum: 1930b13a0ddfa3d20d72a4897126d174c8a0ff10627d7105127cd97cbd0974c4
 - filename: backend/internal/logger/evidence_test.go
   checksum: 81177670be63cd4b0ffd4bff8b28fde5a991255396f7c8ab87c9f18d37b25604
+# Reviewed identity/coherence false positives: argument-map key variables,
+# JSX keys, Local State field declarations and synthetic UI/test fixtures.
+# Exact detector checksums only; no real credentials; hook remains enabled.
+- filename: backend/app_browser_fingerprint_matrix.go
+  checksum: f0eedfb850cfedbd28676e9444fd9126b84c8423c021f330a512a2089216bd5f
+- filename: backend/app_browser_fingerprint_page.go
+  checksum: ee7827d209e8a2c4faab0a187381b301ca832c6af801ebf95ae54ecd7f032f7b
+- filename: frontend/src/ui-v2/fish/FishBrowserEditPage.tsx
+  checksum: 66e9c683b492201791c82431c75613e664e434b9c6bbb930c89ae0505ccab92f
+- filename: frontend/src/modules/browser/api/identity.ts
+  checksum: d699b2303fe4d28320d0359e79c5aee0afbe3916bc8383a26d51ef86f3145193
+- filename: frontend/src/modules/browser/utils/fingerprintSerializer.ts
+  checksum: 7758d9a49d0970ca9c122c270778aa8c477039af44834f54fad5a170e18257f8
+- filename: backend/profile_portability.go
+  checksum: 5b1deb3bbcb0b3bd9b9221eb49bd5dba2f32dbb604941428d0446919b4bbe2d4
+- filename: frontend/scripts/identity-fixture.html
+  checksum: 7ab8b326bfe9a4b8b9cfac98da982d18a2bfd43372341a7820903e15ac621e89
+- filename: backend/identity_consistency_test.go
+  checksum: 8d14cc8db87f893d4b6d2a818327dcdec9a34c29ae88de17949d5b53c7c4b04c
+- filename: frontend/src/ui-v2/fish/FishIdentityPanel.tsx
+  checksum: 7b7d56e0290844c7fadc84489cbc2dff5c03a3d82eecd85eae0d13dd9df5c8ca
+- filename: backend/internal/identity/identity.go
+  checksum: 96ec1cfe4023a08818f852b2a2b995460326c12e5465f563f3ad25f338520470
 version: "1.0"

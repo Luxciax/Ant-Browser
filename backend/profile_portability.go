@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
@@ -30,7 +31,8 @@ const (
 
 var (
 	errPortableLoginKeyMissing   = errors.New("browser os_crypt encrypted_key is missing")
-	errPortableLoginUnsupported  = errors.New("portable login-state migration is unsupported on this platform")
+	errPortableLoginUnsupported  = errors.New("当前仅支持 Windows 传统 DPAPI 登录态迁移；此平台请使用普通数据导出，并在目标机器重新登录")
+	errPortableLoginAppBound     = errors.New("此环境包含 App-Bound 加密主密钥，当前无法保证跨机器登录态迁移；请使用普通数据导出并重新登录，不要禁用浏览器加密")
 	errPortableLoginBadPassword  = errors.New("portable login-state password is invalid")
 	errPortableLoginInvalidState = errors.New("browser Local State is invalid")
 )
@@ -50,6 +52,9 @@ func createProfilePortableLoginEnvelope(userDataDir string, password string) (*p
 	password = strings.TrimSpace(password)
 	if len(password) < 8 {
 		return nil, fmt.Errorf("portable login-state password must contain at least 8 characters")
+	}
+	if runtime.GOOS != "windows" {
+		return nil, errPortableLoginUnsupported
 	}
 
 	key, err := readAndUnprotectProfileOSCryptKey(userDataDir)
@@ -176,11 +181,15 @@ func readAndUnprotectProfileOSCryptKey(userDataDir string) ([]byte, error) {
 	}
 	var state struct {
 		OSCrypt struct {
-			EncryptedKey string `json:"encrypted_key"`
+			EncryptedKey         string `json:"encrypted_key"`
+			AppBoundEncryptedKey string `json:"app_bound_encrypted_key"`
 		} `json:"os_crypt"`
 	}
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("%w: %v", errPortableLoginInvalidState, err)
+	}
+	if state.OSCrypt.AppBoundEncryptedKey != "" {
+		return nil, errPortableLoginAppBound
 	}
 	encoded := strings.TrimSpace(state.OSCrypt.EncryptedKey)
 	if encoded == "" {

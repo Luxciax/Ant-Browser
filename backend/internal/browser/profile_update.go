@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"ant-chrome/backend/internal/identity"
 	"ant-chrome/backend/internal/logger"
 	"fmt"
 	"strings"
@@ -23,6 +24,11 @@ func (m *Manager) Update(profileId string, input ProfileInput) (*Profile, error)
 		return nil, fmt.Errorf("profile runtime is %s; stop it before changing runtime-sensitive settings", NormalizeProfileRuntimeState(profile))
 	}
 	previous := cloneProfileValue(profile)
+	for _, issue := range identity.ValidateArgs(input.FingerprintArgs, "") {
+		if issue.Level == "error" {
+			return nil, fmt.Errorf("无效指纹配置：%s", issue.Message)
+		}
+	}
 	userDataDir, err := m.normalizeManagedUserDataDir(input.UserDataDir, profileId)
 	if err != nil {
 		return nil, err

@@ -142,3 +142,6 @@ accounts.yml
 *.backup
 *.old
 *.orig
+
+# Generated local UI verification screenshots
+.impeccable/review/

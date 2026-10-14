@@ -4,8 +4,10 @@ import (
 	"ant-chrome/backend/internal/logger"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -20,6 +22,7 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 
 	cmd := exec.Command(plan.chromeBinaryPath, plan.args...)
 	cmd.Dir = filepath.Dir(plan.chromeBinaryPath)
+	cmd.Env = browserProcessEnv(os.Environ(), runtime.GOOS, plan.args)
 
 	monitor, err := newBrowserProcessMonitor(cmd)
 	if err != nil {
@@ -74,6 +77,9 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 	for attempt := 1; attempt <= plan.maxStartAttempts; attempt++ {
 		stableDebugPort, readyErr := waitBrowserDebugPortStableContext(ctx, plan.assignedDebugPort, plan.userDataDir, plan.startReadyTimeout, plan.startStableWindow, monitor)
 		if readyErr == nil {
+			if err := syncConfiguredBrowserWindowSize(stableDebugPort, plan.args); err != nil {
+				log.Warn("窗口尺寸校正失败", logger.F("profile_id", input.ProfileID), logger.F("error", err.Error()))
+			}
 			a.browserMgr.Mutex.Lock()
 			a.markProfileRunningLocked(input.ProfileID, profile, cmd, cmd.Process.Pid, stableDebugPort, true, "")
 			if plan.extensionWarning != "" {

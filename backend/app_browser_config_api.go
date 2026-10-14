@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -120,12 +121,13 @@ func (a *App) BrowserCoreImportLocal() (*BrowserCore, error) {
 		return nil, fmt.Errorf("browser manager is nil")
 	}
 
+	filters := []wailsruntime.FileFilter{{DisplayName: "Chrome 内核归档 (" + browser.SupportedCoreArchiveDescription() + ")", Pattern: browser.SupportedCoreArchiveDialogPatternForOS(runtime.GOOS)}}
+	if runtime.GOOS != "darwin" {
+		filters = append(filters, wailsruntime.FileFilter{DisplayName: "所有文件 (*.*)", Pattern: "*.*"})
+	}
 	selectedPath, err := wailsruntime.OpenFileDialog(a.ctx, wailsruntime.OpenDialogOptions{
-		Title: "选择 Chrome 内核归档文件",
-		Filters: []wailsruntime.FileFilter{
-			{DisplayName: "Chrome 内核归档 (" + browser.SupportedCoreArchiveDescription() + ")", Pattern: browser.SupportedCoreArchivePattern()},
-			{DisplayName: "所有文件 (*.*)", Pattern: "*.*"},
-		},
+		Title:   "选择 Chrome 内核归档文件",
+		Filters: filters,
 	})
 	if err != nil {
 		return nil, err

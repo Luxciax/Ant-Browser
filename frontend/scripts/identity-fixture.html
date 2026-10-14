@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>身份画像 UI 验证</title></head>
+<body><div id="root"></div><script type="module">
+import React, { useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { FishIdentityPanel } from '/src/ui-v2/fish/FishIdentityPanel.tsx';
+import '/src/ui-v2/fish/fish.css';
+import '/src/index.css';
+const templates = ['windows','macos','linux'].flatMap(platform => [4,8].flatMap(cpu => ['1366,768','1920,1080'].map(windowSize => ({ id: `${platform}-${cpu}-${windowSize.replace(',','x')}`, name: `${platform} · ${cpu} 核 · ${windowSize.replace(',',' × ')}`, platform, platformVersion: platform === 'windows' ? '10.0.0' : platform === 'macos' ? '15.2.0' : '', cpu, windowSize }))));
+const value = (args, key) => [...args].reverse().find(a => a.startsWith(key+'='))?.slice(key.length+1) || '';
+const set = (args, key, v) => [...args.filter(a => a.split('=')[0] !== key), ...(v ? [key+'='+v] : [])];
+function report(args) { return { identity: { seed: value(args,'--fingerprint'), platform: value(args,'--fingerprint-platform'), hardwareConcurrency: Number(value(args,'--fingerprint-hardware-concurrency')), windowSize:value(args,'--window-size'), brandVersion:'151.0.7922.137', userAgent:'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36', locale:'ja-JP', timezone:'Asia/Tokyo' }, kernelVersion:'151.0.7922.137', issues:[], duplicateProfiles:[], hash:'fixture' }; }
+window.go={main:{App:{
+ BrowserIdentityTemplates: async()=>{if(location.search.includes('templates=fail')) throw new Error('fixture template failure'); return templates;},
+ BrowserIdentityGenerate: async(input)=>{ let args=input.args; if(input.templateId){const t=templates.find(t=>t.id===input.templateId); for(const [key,v] of [['--fingerprint-platform',t.platform],['--fingerprint-hardware-concurrency',String(t.cpu)],['--window-size',t.windowSize],['--ant-font-policy','spoof']]) args=set(args,key,v); } if(input.geo) args=set(args,'--ant-geolocation',`${input.geo.latitude},${input.geo.longitude},${input.geo.accuracy}`); if(input.clearGeo) args=set(args,'--ant-geolocation',''); return {args,report:report(args)}; }
+}}};
+function Fixture(){ const [args,setArgs]=useState(['--fingerprint=42','--fingerprint-platform=windows','--fingerprint-hardware-concurrency=8','--lang=ja-JP','--timezone=Asia/Tokyo','--ant-font-policy=spoof']); return React.createElement('main',{className:'fish-ui fixture'},React.createElement('h1',null,'身份画像界面验证'),React.createElement('p',null,'仅用于 UI 验证，绑定为模拟数据；实际后端由 Go 测试验收。'),React.createElement(FishIdentityPanel,{args,profileId:'fixture',coreId:'fixture',report:report(args),onChange:setArgs}),React.createElement('output',{id:'args'},args.join('\n'))); }
+createRoot(document.getElementById('root')).render(React.createElement(Fixture));
+</script><style>body{margin:0}.fixture{padding:24px;max-width:1120px;margin:auto;min-height:100vh;box-sizing:border-box;display:block!important}.fixture h1{font-size:22px;margin:0 0 12px}.fixture>p{font-size:13px;margin:0 0 20px}#args{white-space:pre-wrap;display:block;margin-top:20px;font-size:12px;overflow-wrap:anywhere}</style></body></html>

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -15,6 +16,7 @@ import (
 var startBrowserWindowProcess = func(chromeBinaryPath string, args []string) (*exec.Cmd, error) {
 	cmd := exec.Command(chromeBinaryPath, args...)
 	cmd.Dir = filepath.Dir(chromeBinaryPath)
+	cmd.Env = browserProcessEnv(os.Environ(), runtime.GOOS, args)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}

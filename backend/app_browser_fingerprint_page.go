@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -223,6 +224,8 @@ func (a *App) runtimeBookmarksForProfileExpectedArgsAndProfile(profileId string,
 
 type fingerprintCheckPageContext struct {
 	ProfileId  string                         `json:"profileId"`
+	CoreId     string                         `json:"coreId,omitempty"`
+	ConfigKey  string                         `json:"configKey"`
 	Expected   BrowserFingerprintExpectedInfo `json:"expected"`
 	Proxy      fingerprintCheckProxyContext   `json:"proxy"`
 	UILanguage string                         `json:"uiLanguage"`
@@ -262,8 +265,19 @@ func (a *App) buildFingerprintCheckPageContextForExpectedArgs(profileId string, 
 
 func (a *App) buildFingerprintCheckPageContextForExpectedArgsAndProfile(profileId string, expectedArgs []string, profile *BrowserProfile) ([]byte, error) {
 	expected := buildBrowserFingerprintExpected(expectedArgs)
+	coreId, version, persistedIdentity := "", "", ""
+	if profile != nil {
+		coreId = profile.CoreId
+		persistedIdentity = strings.Join(profile.FingerprintArgs, "\n")
+		if core, ok := a.resolveBrowserCoreForFingerprintReport(coreId); ok {
+			coreId, version = core.CoreId, a.browserMgr.GetChromeVersion(core.CorePath)
+		}
+	}
+	configKey := fmt.Sprintf("%x", sha256.Sum256([]byte(coreId+"\n"+version+"\n"+persistedIdentity+"\n"+strings.Join(expectedArgs, "\n"))))
 	data, err := json.MarshalIndent(fingerprintCheckPageContext{
 		ProfileId:  profileId,
+		CoreId:     coreId,
+		ConfigKey:  configKey,
 		Expected:   expected,
 		Proxy:      a.buildFingerprintCheckProxyContext(profile),
 		UILanguage: fingerprintCheckPreferredUILanguage(expected),
@@ -1422,7 +1436,7 @@ function baselineStorageKey(context) {
   var expected = context && context.expected ? context.expected : {};
   var profileId = context && context.profileId ? context.profileId : 'unknown';
   var seed = expected.seed || 'no-seed';
-  return 'ant:fingerprint-check:baseline:' + profileId + ':' + seed;
+  return 'ant:fingerprint-check:baseline:v4:' + profileId + ':' + (context.coreId || 'default') + ':' + (context.configKey || seed);
 }
 function loadFingerprintBaseline(context) {
   latestBaselineCreated = {};
@@ -1795,6 +1809,7 @@ async function run() {
 }
 function maybeAutoRefresh() {
   if (!latestReport || fingerprintCheckRunning) return;
+  if (document.hidden) return;
   if (reportAgeMs(latestReport) >= FINGERPRINT_AUTO_REFRESH_MS) run();
 }
 document.getElementById('resetBaselineBtn').onclick = function () { resetFingerprintBaseline(latestContext); run(); };
@@ -1806,6 +1821,9 @@ document.getElementById('copyBtn').onclick = function () {
   navigator.clipboard.writeText(JSON.stringify(latestReport, null, 2)).catch(function () {});
 };
 setInterval(maybeAutoRefresh, FINGERPRINT_AUTO_REFRESH_CHECK_MS);
+document.addEventListener('visibilitychange', function () {
+  if (!document.hidden) maybeAutoRefresh();
+});
 updateUILanguage(null);
 loadBeforeSnapshot(latestContext);
 run();

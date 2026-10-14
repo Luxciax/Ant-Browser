@@ -1,7 +1,9 @@
 package browser
 
 import (
+	"ant-chrome/backend/internal/identity"
 	"ant-chrome/backend/internal/logger"
+	"fmt"
 	"strings"
 	"time"
 
@@ -38,6 +40,14 @@ func (m *Manager) Create(input ProfileInput) (*Profile, error) {
 	fingerprintArgs := append([]string{}, input.FingerprintArgs...)
 	if len(fingerprintArgs) == 0 && m.Config != nil {
 		fingerprintArgs = append([]string{}, m.Config.Browser.DefaultFingerprintArgs...)
+	}
+	if len(input.FingerprintArgs) == 0 && identity.Value(fingerprintArgs, "--ant-font-policy") == "" {
+		fingerprintArgs = append(fingerprintArgs, "--ant-font-policy=spoof")
+	}
+	for _, issue := range identity.ValidateArgs(fingerprintArgs, "") {
+		if issue.Level == "error" {
+			return nil, fmt.Errorf("无效指纹配置：%s", issue.Message)
+		}
 	}
 	profile := &Profile{
 		ProfileId:          profileId,

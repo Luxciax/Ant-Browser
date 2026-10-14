@@ -23,6 +23,7 @@ import { applyLocaleToFingerprintArgs, validateFingerprintArgs, withAdaptiveDefa
 import { FishConfirm, FishModal, FishTagInput } from './FishFormPrimitives'
 import { FishFingerprintEditor } from './FishFingerprintEditor'
 import { FishFingerprintCheckReport, FishFingerprintMatrixReport } from './FishFingerprintReports'
+import { identityArg, setIdentityArg } from '../../modules/browser/api/identity'
 
 type ProxySourceMode = 'pool' | 'local'
 type EditForm = BrowserProfileInput & { lastLaunchArgs?: string[] }
@@ -75,6 +76,9 @@ export function FishBrowserEditPage() {
   const [locationResolving, setLocationResolving] = useState(false)
   const [locationResult, setLocationResult] = useState<ProxyLocationResolveResult | null>(null)
   const [fingerprintMatrix, setFingerprintMatrix] = useState<BrowserFingerprintCapabilityReport | null>(null)
+  const [fingerprintMatrixLoading, setFingerprintMatrixLoading] = useState(false)
+  const [fingerprintMatrixError, setFingerprintMatrixError] = useState('')
+  const [matrixRetry, setMatrixRetry] = useState(0)
   const [matrixOpen, setMatrixOpen] = useState(false)
   const [fingerprintChecking, setFingerprintChecking] = useState(false)
   const [fingerprintPageOpening, setFingerprintPageOpening] = useState(false)
@@ -98,7 +102,8 @@ export function FishBrowserEditPage() {
         if (isCreate) {
           const resolved = resolvePoolProxySelection('', '', proxyList)
           setProxyMode('pool')
-          setFormData((current) => ({ ...current, proxyId: resolved.proxyId || DIRECT_PROXY_ID, proxyConfig: '', restoreLastSession: '', fingerprintArgs: withAdaptiveDefaultWindowSize(settings.defaultFingerprintArgs || []) }))
+          const defaultArgs = withAdaptiveDefaultWindowSize(settings.defaultFingerprintArgs || [])
+          setFormData((current) => ({ ...current, proxyId: resolved.proxyId || DIRECT_PROXY_ID, proxyConfig: '', restoreLastSession: '', fingerprintArgs: identityArg(defaultArgs, '--ant-font-policy') ? defaultArgs : setIdentityArg(defaultArgs, '--ant-font-policy', 'spoof') }))
           setLaunchArgsText(resolveDefaultLaunchArgs(settings.defaultLaunchArgs || []).join('\n'))
         } else {
           const profiles = await fetchBrowserProfiles()
@@ -123,14 +128,16 @@ export function FishBrowserEditPage() {
   useEffect(() => {
     let cancelled = false
     const loadMatrix = async () => {
+      setFingerprintMatrixLoading(true); setFingerprintMatrixError('')
       try {
         const report = await fetchBrowserProfileFingerprintMatrix(isCreate ? '' : id || '', formData.coreId, formData.fingerprintArgs)
         if (!cancelled) setFingerprintMatrix(report)
-      } catch { if (!cancelled) setFingerprintMatrix(null) }
+      } catch (error) { if (!cancelled) { setFingerprintMatrix(null); setFingerprintMatrixError(`读取内核能力失败：${String(error instanceof Error ? error.message : error)}`) } }
+      finally { if (!cancelled) setFingerprintMatrixLoading(false) }
     }
     void loadMatrix()
     return () => { cancelled = true }
-  }, [id, isCreate, formData.coreId, fingerprintKey])
+  }, [id, isCreate, formData.coreId, fingerprintKey, matrixRetry])
 
   const change = (field: keyof BrowserProfileInput, value: string | string[] | number) => {
     setIsDirty(true)
@@ -223,7 +230,7 @@ export function FishBrowserEditPage() {
 
           <section className="fish-panel">
             <div className="fish-panel-head"><div><strong>指纹配置</strong><span>保持身份、定位、设备与防泄漏策略一致。</span></div><div className="fish-panel-actions"><button className="fish-icon-btn" type="button" title="版本适配矩阵" onClick={() => setMatrixOpen(true)}><HelpCircle size={16} strokeWidth={1.8} /></button><button className="fish-btn" type="button" disabled={isCreate || fingerprintPageOpening} onClick={() => void handleOpenFingerprintPage()}>{fingerprintPageOpening ? '打开中' : '浏览器内检测'}</button><button className="fish-btn" type="button" disabled={isCreate || fingerprintChecking} onClick={() => void handleFingerprintCheck()}><ShieldCheck size={16} strokeWidth={1.8} />{fingerprintChecking ? '自测中' : '自测当前实例'}</button></div></div>
-            <div className="fish-panel-body"><FishFingerprintEditor value={formData.fingerprintArgs} onChange={(args) => change('fingerprintArgs', args)} /></div>
+            <div className="fish-panel-body"><FishFingerprintEditor value={formData.fingerprintArgs} profileId={isCreate ? '' : id || ''} coreId={formData.coreId} identityReport={fingerprintMatrix?.identity} identityLoading={fingerprintMatrixLoading} identityError={fingerprintMatrixError} onIdentityRetry={() => setMatrixRetry(current => current + 1)} onChange={(args) => change('fingerprintArgs', args)} /></div>
           </section>
 
           <section className="fish-collapsible fish-launch-collapsible">

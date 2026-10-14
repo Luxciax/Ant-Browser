@@ -31,6 +31,15 @@ func SupportedCoreArchiveDescription() string {
 	return "支持 ZIP、TAR、TAR.GZ、TAR.XZ、TAR.BZ2"
 }
 
+// macOS Wails 2.12 passes extensions to UTType without checking nil.
+// Avoid compound/wildcard extensions until that upstream dialog implementation is fixed.
+func SupportedCoreArchiveDialogPatternForOS(goos string) string {
+	if goos == "darwin" {
+		return "*.zip;*.tar;*.tgz;*.gz;*.txz;*.xz;*.tbz2;*.bz2"
+	}
+	return SupportedCoreArchivePattern()
+}
+
 func coreArchiveTempPattern(rawURL string) string {
 	lowerName := strings.ToLower(strings.TrimSpace(rawURL))
 	if parsed, err := filepathFromURLPath(lowerName); err == nil && parsed != "" {

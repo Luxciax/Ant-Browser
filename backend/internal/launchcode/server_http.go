@@ -31,6 +31,7 @@ func (s *LaunchServer) buildHandler(includeLocalhost bool) http.Handler {
 	var handler http.Handler = s.buildMux()
 	handler = s.apiAuthMiddleware(handler)
 	if includeLocalhost {
+		handler = localOriginMiddleware(handler)
 		handler = s.localhostMiddleware(handler)
 	}
 	return handler

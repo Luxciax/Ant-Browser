@@ -305,6 +305,8 @@ export function validateFingerprintArgs(rawArgs: string[]): FingerprintValidatio
       issues.push({ level: 'info', message: `${key} 保存时会转换为当前 Chrom-144 已验证的噪声开关` })
     } else if (NO_EFFECT_FINGERPRINT_ARG_KEYS.has(key)) {
       issues.push({ level: 'warning', message: `${key} 本地 Chrom-144 实测无效，保存后不会作为运行参数传递` })
+    } else if (key === '--ant-font-policy' || key === '--ant-identity-template' || key === '--ant-geolocation') {
+      // App identity metadata is persisted but stripped before launching Chrome.
     } else if (!KERNEL_SUPPORTED_ARG_KEYS.has(key)) {
       issues.push({ level: 'info', message: `${key} 未在当前指纹面板建模，会作为原始参数保留` })
     }

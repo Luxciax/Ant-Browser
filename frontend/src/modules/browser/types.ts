@@ -123,6 +123,7 @@ export interface BrowserFingerprintCapabilityRow {
 }
 
 export interface BrowserFingerprintCapabilityReport {
+	identity?: import('./api/identity').IdentityReport
   profileId: string
   coreId: string
   coreName: string

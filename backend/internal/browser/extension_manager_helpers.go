@@ -184,11 +184,11 @@ func extractExtensionIDFromURL(rawURL string) string {
 	return ""
 }
 
-func downloadChromeExtensionCRX(ctx context.Context, extensionID string, client *http.Client) ([]byte, error) {
+func downloadChromeExtensionCRX(ctx context.Context, extensionID string, client *http.Client, chromeVersions ...string) ([]byte, error) {
 	if client == nil {
 		client = &http.Client{Timeout: extensionDownloadTimeout}
 	}
-	downloadURL := BuildChromeExtensionDownloadURL(extensionID)
+	downloadURL := BuildChromeExtensionDownloadURL(extensionID, chromeVersions...)
 	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
 		data, err := downloadChromeExtensionCRXOnce(ctx, client, downloadURL)
@@ -213,13 +213,20 @@ func downloadChromeExtensionCRXOnce(ctx context.Context, client *http.Client, do
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("User-Agent", "Mozilla/5.0 AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36")
+	version := request.URL.Query().Get("prodversion")
+	if !extensionChromeVersionPattern.MatchString(version) {
+		version = "148.0.0.0"
+	}
+	request.Header.Set("User-Agent", "Mozilla/5.0 AppleWebKit/537.36 Chrome/"+version+" Safari/537.36")
 	request.Header.Set("Accept", "*/*")
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("下载插件失败: %w", err)
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusNoContent {
+		return nil, fmt.Errorf("扩展下载服务未返回安装包（HTTP 204）：扩展可能已下架，或要求更高的 Chrome 版本；当前下载版本 %s", version)
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, fmt.Errorf("下载插件失败: HTTP %d", response.StatusCode)
 	}
@@ -230,6 +237,9 @@ func downloadChromeExtensionCRXOnce(ctx context.Context, client *http.Client, do
 	}
 	if len(data) > extensionMaxPackageBytes {
 		return nil, fmt.Errorf("插件包超过限制")
+	}
+	if len(data) == 0 {
+		return nil, fmt.Errorf("扩展下载服务返回空安装包：请检查扩展是否可用及内核版本要求（Chrome %s）", version)
 	}
 	return data, nil
 }

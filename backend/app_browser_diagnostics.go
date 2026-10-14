@@ -2,6 +2,7 @@ package backend
 
 import (
 	"ant-chrome/backend/internal/diagnostics"
+	"ant-chrome/backend/internal/identity"
 	"ant-chrome/backend/internal/logger"
 	"context"
 	"fmt"
@@ -21,6 +22,20 @@ func (a *App) startBrowserDiagnosticsLocked(p *BrowserProfile) {
 	a.browserDiagnostics[p.ProfileId] = cancel
 	a.diagnosticsMu.Unlock()
 	id, runID, port := p.ProfileId, p.LastStartAt, p.DebugPort
+	identityArgs := append(append([]string(nil), p.FingerprintArgs...), p.LastLaunchArgs...)
+	deviceIdentity := identity.FromArgs(identityArgs)
+	go identity.ObserveRuntime(ctx, port, deviceIdentity, func(event string, fields map[string]any) {
+		values := []logger.Field{logger.F("profile_id", id), logger.F("run_id", runID), logger.F("event", event)}
+		for k, v := range fields {
+			values = append(values, logger.F(k, v))
+		}
+		log := logger.New("BrowserIdentity")
+		if event == "identity.target_overrides_requested" {
+			log.Info(event, values...)
+		} else {
+			log.Warn(event, values...)
+		}
+	})
 	log := logger.New("BrowserDiagnostics")
 	go diagnostics.Observe(ctx, port, func(e diagnostics.Event) {
 		fields := []logger.Field{logger.F("profile_id", id), logger.F("run_id", runID), logger.F("event", e.Name)}

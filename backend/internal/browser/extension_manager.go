@@ -65,12 +65,32 @@ func BuildChromeWebStoreSearchURL(query string) string {
 	return "https://chromewebstore.google.com/search/" + url.PathEscape(value)
 }
 
-func BuildChromeExtensionDownloadURL(extensionID string) string {
+func BuildChromeExtensionDownloadURL(extensionID string, chromeVersions ...string) string {
 	normalizedID := NormalizeExtensionID(extensionID)
 	if normalizedID == "" {
 		return ""
 	}
-	return "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=120.0.0.0&acceptformat=crx2,crx3&x=id%3D" + normalizedID + "%26installsource%3Dondemand%26uc"
+	version := "148.0.0.0"
+	if len(chromeVersions) > 0 && extensionChromeVersionPattern.MatchString(chromeVersions[0]) {
+		version = chromeVersions[0]
+	}
+	return "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=" + version + "&acceptformat=crx2,crx3&x=id%3D" + normalizedID + "%26installsource%3Dondemand%26uc"
+}
+
+var extensionChromeVersionPattern = regexp.MustCompile(`^\d+(?:\.\d+){1,3}$`)
+
+func (m *Manager) extensionDownloadChromeVersion() string {
+	// Store lookup also works with a zero-value Manager and a supplied HTTP
+	// client (without any configured profile/core storage).
+	if m.Config == nil {
+		return "148.0.0.0"
+	}
+	if core, ok := m.GetDefaultCore(); ok {
+		if version := m.GetChromeVersion(core.CorePath); extensionChromeVersionPattern.MatchString(version) {
+			return version
+		}
+	}
+	return "148.0.0.0"
 }
 
 func (m *Manager) LookupExtension(query string) (ExtensionLookupResult, error) {
@@ -89,7 +109,7 @@ func (m *Manager) LookupExtensionWithHTTPClient(query string, client *http.Clien
 		Installable: true,
 		Message:     "已识别插件 ID，可下载安装",
 	}
-	data, err := downloadChromeExtensionCRX(context.Background(), extensionID, client)
+	data, err := downloadChromeExtensionCRX(context.Background(), extensionID, client, m.extensionDownloadChromeVersion())
 	if err != nil {
 		result.Installable = false
 		result.Message = "已识别插件 ID，但暂时无法读取商店元信息: " + err.Error()
@@ -147,7 +167,7 @@ func (m *Manager) InstallExtensionFromWebStoreWithHTTPClient(ctx context.Context
 	if extensionID == "" {
 		return Extension{}, fmt.Errorf("请输入 Chrome 插件 ID 或 Chrome Web Store 链接")
 	}
-	data, err := downloadChromeExtensionCRX(ctx, extensionID, client)
+	data, err := downloadChromeExtensionCRX(ctx, extensionID, client, m.extensionDownloadChromeVersion())
 	if err != nil {
 		return Extension{}, err
 	}
