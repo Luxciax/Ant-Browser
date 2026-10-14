@@ -2,7 +2,7 @@ name: Publish Windows 1.9.3
 
 on:
   push:
-    branches: [release/1.9.3, codex/ant-stability-diagnostics]
+    branches: [release/1.9.3, codex/ant-stability-diagnostics, codex/ant-import-formats-menu]
   workflow_dispatch:
 
 permissions:
@@ -17,7 +17,7 @@ env:
 
 jobs:
   build:
-    if: github.repository == 'Luxciax/Ant-Browser' && (github.ref == 'refs/heads/release/1.9.3' || github.ref == 'refs/heads/codex/ant-stability-diagnostics')
+    if: github.repository == 'Luxciax/Ant-Browser' && (github.ref == 'refs/heads/release/1.9.3' || github.ref == 'refs/heads/codex/ant-stability-diagnostics' || github.ref == 'refs/heads/codex/ant-import-formats-menu')
     runs-on: windows-2022
     timeout-minutes: 45
     env:
