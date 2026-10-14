@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { parseProxyImportText } from '../pages/proxyPool/helpers.clash'
 import { Button, toast } from '../../../shared/components'
 import type { TableColumn } from '../../../shared/components/Table'
 import type { BrowserProxy } from '../types'
@@ -20,7 +21,6 @@ import {
   buildImportCandidatesFromClash,
   buildImportPreview,
   createExistingProxyPicker,
-  parseClashImportText,
   nextProxyID,
   normalizeRefreshIntervalM,
   resolveImportSourceID,
@@ -51,6 +51,7 @@ export function ProxyImportModal({
   const [previewList, setPreviewList] = useState<ProxyDisplayInfo[]>([])
   const [importing, setImporting] = useState(false)
   const [fetchingImportUrl, setFetchingImportUrl] = useState(false)
+  const [parsingImport, setParsingImport] = useState(false)
 
   useEffect(() => {
     if (open) return
@@ -93,6 +94,7 @@ export function ProxyImportModal({
   }
 
   const handleFetchImportURL = async () => {
+    if (fetchingImportUrl || parsingImport) return
     const targetURL = importUrl.trim()
     if (!targetURL) {
       toast.error('请输入订阅 URL')
@@ -126,13 +128,15 @@ export function ProxyImportModal({
     }
   }
 
-  const handleParseImport = () => {
+  const handleParseImport = async () => {
+    if (fetchingImportUrl || parsingImport) return
+    setParsingImport(true)
     try {
       const prefix = importNamePrefix.trim()
       let candidates
       let previewGroupName = importGroupName.trim()
       if (importMode === 'clash') {
-        candidates = buildImportCandidatesFromClash(parseClashImportText(importText), prefix)
+        candidates = buildImportCandidatesFromClash(await parseProxyImportText(importText), prefix)
       } else if (importMode === 'direct') {
         if (directImportText.trim()) {
           const parsed = buildDirectImportCandidatesFromText(directImportText)
@@ -155,6 +159,8 @@ export function ProxyImportModal({
       setPreviewModalOpen(true)
     } catch (error: any) {
       toast.error(`解析失败: ${error?.message || '未知错误'}`)
+    } finally {
+      setParsingImport(false)
     }
   }
 
@@ -285,6 +291,7 @@ export function ProxyImportModal({
       open={open}
       onClose={onClose}
       fetchingImportUrl={fetchingImportUrl}
+      parsingImport={parsingImport}
       canParseImport={canParseImport}
       importMode={importMode}
       importUrl={importUrl}
@@ -309,7 +316,7 @@ export function ProxyImportModal({
       onImportFetchProxyIdChange={setImportFetchProxyId}
       onImportResolvedUrlChange={setImportResolvedUrl}
       onFetchImportURL={handleFetchImportURL}
-      onImportTextChange={setImportText}
+      onImportTextChange={value => { setImportText(value); setImportResolvedUrl('') }}
       onImportDnsServersChange={setImportDnsServers}
       onImportNamePrefixChange={setImportNamePrefix}
       onImportGroupNameChange={setImportGroupName}

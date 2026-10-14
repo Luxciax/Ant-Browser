@@ -504,7 +504,7 @@ func buildSingBoxTUICFromClash(node map[string]interface{}) (map[string]interfac
 		congestionControl = "bbr"
 	}
 
-	return map[string]interface{}{
+	out := map[string]interface{}{
 		"type":               "tuic",
 		"tag":                "proxy-out",
 		"server":             host,
@@ -513,7 +513,17 @@ func buildSingBoxTUICFromClash(node map[string]interface{}) (map[string]interfac
 		"password":           password,
 		"congestion_control": congestionControl,
 		"tls":                tls,
-	}, nil
+	}
+	if mode := getMapString(node, "udp-relay-mode"); mode != "" {
+		out["udp_relay_mode"] = mode
+	}
+	if _, exists := node["reduce-rtt"]; exists {
+		out["zero_rtt_handshake"] = getMapBool(node, "reduce-rtt")
+	}
+	if heartbeat := getMapInt(node, "heartbeat-interval"); heartbeat > 0 {
+		out["heartbeat"] = fmt.Sprintf("%dms", heartbeat)
+	}
+	return out, nil
 }
 
 func applySingBoxTLSClientOptionsFromClash(node map[string]interface{}, tls map[string]interface{}) {

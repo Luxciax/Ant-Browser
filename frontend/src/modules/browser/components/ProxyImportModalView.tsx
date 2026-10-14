@@ -16,6 +16,7 @@ interface ProxyImportModalViewProps {
   open: boolean
   onClose: () => void
   fetchingImportUrl: boolean
+  parsingImport: boolean
   canParseImport: boolean
   importMode: ProxyImportMode
   importUrl: string
@@ -59,6 +60,7 @@ export function ProxyImportModalView({
   open,
   onClose,
   fetchingImportUrl,
+  parsingImport,
   canParseImport,
   importMode,
   importUrl,
@@ -109,23 +111,23 @@ export function ProxyImportModalView({
     <>
       <Modal
         open={open}
-        onClose={onClose}
+        onClose={() => { if (!fetchingImportUrl && !parsingImport) onClose() }}
         title="导入代理配置"
         width="600px"
         footer={
           <>
-            <Button variant="secondary" onClick={onClose} disabled={fetchingImportUrl}>取消</Button>
-            <Button onClick={onParseImport} disabled={fetchingImportUrl || !canParseImport}>解析</Button>
+            <Button variant="secondary" onClick={onClose} disabled={fetchingImportUrl || parsingImport}>取消</Button>
+            <Button onClick={onParseImport} loading={parsingImport} disabled={fetchingImportUrl || parsingImport || !canParseImport}>解析</Button>
           </>
         }
       >
-        <div className="space-y-4">
+        <fieldset disabled={fetchingImportUrl || parsingImport} className="space-y-4 min-w-0 border-0 p-0 m-0">
           <div className="grid grid-cols-3 gap-2">
             <Button
               variant={importMode === 'clash' ? undefined : 'secondary'}
               onClick={() => onImportModeChange('clash')}
             >
-              Clash 订阅 / YAML
+              节点 / 订阅
             </Button>
             <Button
               variant={importMode === 'direct' ? undefined : 'secondary'}
@@ -183,6 +185,7 @@ export function ProxyImportModalView({
                   </p>
                 )}
               </FormItem>
+              <p className="text-xs text-[var(--color-text-secondary)]">直接粘贴节点链接、Base64 订阅、Clash YAML/JSON 或 sing-box JSON；仅提取节点，不导入 sing-box 路由规则。</p>
               <Textarea
                 value={importText}
                 onChange={e => onImportTextChange(e.target.value)}
@@ -422,7 +425,7 @@ export function ProxyImportModalView({
               <p className="text-xs text-[var(--color-text-muted)] mt-1">留空则不配置 DNS，填写后将应用到本次导入的所有代理</p>
             </FormItem>
           )}
-        </div>
+        </fieldset>
       </Modal>
 
       <Modal

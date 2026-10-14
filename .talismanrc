@@ -1,4 +1,21 @@
 fileignoreconfig:
+# Reviewed import/menu false positives: schema-key lookups, keyboard events,
+# existing JSX keys, and fixed example.com/test-only fixtures; no real secrets.
+# Exact checksums expire on any change; detector and Git hook stay enabled.
+- filename: backend/app_proxy_import_formats_test.go
+  checksum: f1dd60a89484848d2ce380068d4006515343444b7e6c6b617b67fac4cf9afb0a
+- filename: frontend/src/ui-v2/fish/FishProxyPoolModals.tsx
+  checksum: 97b6d87791341607798f15b28c059180aeeead1d22a15a352f8a575b47a92017
+- filename: backend/internal/proxy/import_uri_test.go
+  checksum: 0dd1520784001a90a31f485dced5b01a8816e75da05b4b4a7622df4231a7d3ff
+- filename: frontend/src/ui-v2/fish/FishFloatingMenu.tsx
+  checksum: cbb171735259877ad58a9569bf7afbf18307ab16f61dd0570438b1f029c97bfd
+- filename: frontend/src/ui-v2/fish/FishExtensionsPage.tsx
+  checksum: fcfd78d0983f191369c38ebadd43e52720618947817bc522ba9c7b230b97c5b5
+- filename: backend/internal/proxy/import_singbox.go
+  checksum: 653cb0509d4e24aa29a150898e139726125c18c8aba86aaccc4e9779411f5eb5
+- filename: backend/internal/proxy/import_uri.go
+  checksum: 9de7372f7ff6850115123cb2fc79fa7bf99111ce0787ed46b24c39409a69f5b4
 - filename: go.sum
   checksum: 282edf631b1b2d9949fd58ed0d48c2e015712b5c75180604cb68c4054a80026e
 - filename: backend/internal/launchcode/server_mcp_test.go

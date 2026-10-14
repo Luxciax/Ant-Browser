@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 
@@ -75,7 +76,10 @@ func buildStandardProxyFromClash(node map[string]interface{}, scheme string) str
 	if host == "" || port == 0 {
 		return ""
 	}
-	address := fmt.Sprintf("%s:%d", host, port)
+	if scheme == "http" && getMapBool(node, "tls") {
+		scheme = "https"
+	}
+	address := net.JoinHostPort(host, fmt.Sprint(port))
 	if username != "" {
 		user := url.UserPassword(username, password)
 		return fmt.Sprintf("%s://%s@%s", scheme, user.String(), address)

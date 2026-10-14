@@ -1,4 +1,5 @@
 import yaml from 'js-yaml'
+import { parseProxyImportContent } from '../../api/proxies'
 import type { BrowserProxy } from '../../types'
 import type { ChainNodeProtocol, ClashProxy, ImportCandidate, ProxyDisplayInfo } from './helpers.types'
 import { BUILTIN_PROXIES } from './helpers.types'
@@ -173,6 +174,14 @@ export function parseClashImportText(raw: string): ClashProxy[] {
     throw new Error(String((lastError as { message?: string }).message || '解析失败'))
   }
   throw new Error('无效的 YAML 格式，需要包含 proxies 数组')
+}
+
+export async function parseProxyImportText(raw: string): Promise<ClashProxy[]> {
+  // Keep legacy loose-YAML syntax, but do not filter bad rows from valid input.
+  let input = raw
+  try { yaml.load(raw) } catch { input = normalizeLooseClashImportText(raw) }
+  const result = await parseProxyImportContent(input)
+  return parseClashImportText(result.content)
 }
 
 export function buildImportCandidatesFromClash(parsedProxies: ClashProxy[], prefix: string): ImportCandidate[] {
