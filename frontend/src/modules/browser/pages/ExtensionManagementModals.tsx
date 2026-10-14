@@ -24,6 +24,7 @@ export function ExtensionProfileLimitModal({ open, extension, allExtensions, onC
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [loadedExtensionId, setLoadedExtensionId] = useState<string | null>(null)
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
   const defaultExtensionIds = useMemo(
@@ -76,14 +77,20 @@ export function ExtensionProfileLimitModal({ open, extension, allExtensions, onC
   }, [profiles, groups, groupNameMap])
 
   useEffect(() => {
+    setLoadedExtensionId(null)
     if (!open || !extension) return
+    let cancelled = false
     setLoading(true)
+    setProfiles([])
+    setSettingsByProfile({})
+    setSelectedIds([])
     Promise.all([fetchBrowserProfiles(), fetchGroups()]).then(async ([profileItems, groupItems]) => {
       const profileSettings = await Promise.all(profileItems.map(async (profile) => ({
         profile,
         settings: await fetchBrowserProfileExtensionSettings(profile.profileId),
       })))
       const settingsMap: Record<string, BrowserProfileExtensionSettings> = {}
+      if (cancelled) return
       profileSettings.forEach(({ profile, settings }) => {
         settingsMap[profile.profileId] = settings
       })
@@ -96,9 +103,12 @@ export function ExtensionProfileLimitModal({ open, extension, allExtensions, onC
           return settings?.configured ? settings.extensionIds.includes(extension.extensionId) : isExtensionDefaultForUnconfiguredProfiles(extension)
         })
         .map((profile) => profile.profileId))
+      setLoadedExtensionId(extension.extensionId)
     }).catch((error: any) => {
+      if (cancelled) return
       toast.error(error?.message || '加载实例限制失败')
-    }).finally(() => setLoading(false))
+    }).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
   }, [open, extension])
 
   const toggleProfile = (profileId: string, checked: boolean) => {
@@ -120,7 +130,7 @@ export function ExtensionProfileLimitModal({ open, extension, allExtensions, onC
   }
 
   const handleSave = async () => {
-    if (!extension) return
+    if (!extension || !open || loading || saving || loadedExtensionId !== extension.extensionId) return
     setSaving(true)
     try {
       const selected = new Set(selectedIds)
@@ -155,7 +165,7 @@ export function ExtensionProfileLimitModal({ open, extension, allExtensions, onC
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>取消</Button>
-          <Button onClick={handleSave} loading={saving} disabled={loading || !extension}>保存</Button>
+          <Button onClick={handleSave} loading={saving} disabled={loading || !extension || loadedExtensionId !== extension.extensionId}>保存</Button>
         </>
       )}
     >

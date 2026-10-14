@@ -3,6 +3,7 @@ package backend
 import (
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/fsutil"
+	"ant-chrome/backend/internal/profiletxn"
 	"ant-chrome/backend/internal/snapshot"
 	"encoding/json"
 	"errors"
@@ -161,11 +162,14 @@ func (a *App) BrowserSnapshotList(profileId string) ([]SnapshotInfo, error) {
 }
 
 // BrowserSnapshotRestore 恢复快照
-func (a *App) BrowserSnapshotRestore(profileId, snapshotId string) error {
+func (a *App) BrowserSnapshotRestore(profileId, snapshotId string) (retErr error) {
 	a.maintenanceMu.Lock()
 	defer a.maintenanceMu.Unlock()
 	unlockRuntimeOp := a.lockProfileRuntimeOperation(profileId)
 	defer unlockRuntimeOp()
+	if err := a.browserMgr.CheckProfileFileTransactions(); err != nil {
+		return err
+	}
 
 	profile, err := a.getProfileForSnapshot(profileId)
 	if err != nil {
@@ -190,18 +194,45 @@ func (a *App) BrowserSnapshotRestore(profileId, snapshotId string) error {
 	if err := os.MkdirAll(parentDir, 0o755); err != nil {
 		return fmt.Errorf("创建实例数据父目录失败: %w", err)
 	}
-	stagingDir, err := os.MkdirTemp(parentDir, "."+filepath.Base(userDataDir)+".snapshot-restore-*")
+	stagingRoot, err := os.MkdirTemp(parentDir, "."+filepath.Base(userDataDir)+".snapshot-restore-*")
 	if err != nil {
 		return fmt.Errorf("创建快照恢复暂存目录失败: %w", err)
 	}
-	stagingCommitted := false
+	stagingDir := filepath.Join(stagingRoot, "profile")
+	journalOwnsStaging := false
 	defer func() {
-		if !stagingCommitted {
-			_ = os.RemoveAll(stagingDir)
+		if !journalOwnsStaging {
+			_ = os.RemoveAll(stagingRoot)
 		}
 	}()
 	if err := snapshot.UnzipToWithLimits(zipPath, stagingDir, browserSnapshotRestoreUnzipLimits); err != nil {
 		return fmt.Errorf("解压快照失败: %w", err)
+	}
+	if a.db != nil && a.db.GetConn() != nil {
+		txn, err := profiletxn.Begin(a.db.GetConn(), profiletxn.Plan{Kind: "import", StagingRoot: stagingRoot, Moves: []profiletxn.Move{{Source: stagingDir, Target: userDataDir}}}, a.profileTransactionRoots())
+		if err != nil {
+			return err
+		}
+		journalOwnsStaging = true
+		defer func() {
+			if errors.Is(retErr, profiletxn.ErrCommitUncertain) {
+				return
+			}
+			committed, resolveErr := txn.Resolve()
+			if committed && resolveErr != nil {
+				resolveErr = fmt.Errorf("快照已恢复，清理将在重启时重试: %w", resolveErr)
+			}
+			retErr = errors.Join(retErr, resolveErr)
+		}()
+		if err := txn.Apply(); err != nil {
+			return err
+		}
+		dbtx, err := a.db.GetConn().Begin()
+		if err != nil {
+			return err
+		}
+		defer dbtx.Rollback()
+		return txn.Commit(dbtx)
 	}
 
 	rollbackDir := filepath.Join(parentDir, "."+filepath.Base(userDataDir)+".snapshot-rollback-"+uuid.NewString())
@@ -224,7 +255,6 @@ func (a *App) BrowserSnapshotRestore(profileId, snapshotId string) error {
 		}
 		return commitErr
 	}
-	stagingCommitted = true
 	if hadOriginal {
 		if err := os.RemoveAll(rollbackDir); err != nil {
 			return fmt.Errorf("快照已恢复，但清理旧实例数据暂存失败: %w", err)

@@ -1,14 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { RefreshCw, Trash2 } from 'lucide-react'
+import { Download, RefreshCw, Trash2 } from 'lucide-react'
 import { Badge, Button, Card } from '../../../shared/components'
 
-interface LogEntry {
-  time: string
-  level: string
-  component: string
-  message: string
-  fields?: Record<string, any>
-}
+import { useAppLogs } from '../hooks/useAppLogs'
 
 const LEVELS = ['ALL', 'DEBUG', 'INFO', 'WARN', 'ERROR']
 
@@ -30,23 +24,9 @@ const levelColor = (level: string) => {
   }
 }
 
-async function fetchLogs(): Promise<LogEntry[]> {
-  try {
-    const bindings: any = await import('../../../wailsjs/go/main/App')
-    return (await bindings.GetAppLogs()) || []
-  } catch { return [] }
-}
-
-async function clearLogs() {
-  try {
-    const bindings: any = await import('../../../wailsjs/go/main/App')
-    await bindings.ClearAppLogs()
-  } catch { /* ignore */ }
-}
-
 export function BrowserLogsPage() {
-  const [logs, setLogs] = useState<LogEntry[]>([])
-  const [levelFilter, setLevelFilter] = useState('INFO')
+  const { logs, loading, load, clear: handleClear, error, status, exporting, exportMessage, exportDiagnostics } = useAppLogs()
+  const [levelFilter, setLevelFilter] = useState('ALL')
   const [componentFilter, setComponentFilter] = useState('ALL')
   const [methodFilter, setMethodFilter] = useState('ALL')
   const [keyword, setKeyword] = useState('')
@@ -56,7 +36,6 @@ export function BrowserLogsPage() {
   const [timeFrom, setTimeFrom] = useState('')
   const [timeTo, setTimeTo] = useState('')
   const [autoScroll, setAutoScroll] = useState(false)
-  const [loading, setLoading] = useState(false)
   const logContainerRef = useRef<HTMLDivElement>(null)
   const initialScrollDoneRef = useRef(false)
 
@@ -68,32 +47,11 @@ export function BrowserLogsPage() {
     })
   }
 
-  const load = async () => {
-    setLoading(true)
-    try {
-      const data = await fetchLogs()
-      setLogs(data)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    load()
-    const timer = setInterval(load, 3000)
-    return () => clearInterval(timer)
-  }, [])
-
   useEffect(() => {
     if (autoScroll) {
       scrollLogsToBottom('smooth')
     }
   }, [logs, autoScroll])
-
-  const handleClear = async () => {
-    await clearLogs()
-    setLogs([])
-  }
 
   const filtered = logs.filter(entry => {
     if (levelFilter !== 'ALL' && entry.level !== levelFilter) return false
@@ -127,7 +85,7 @@ export function BrowserLogsPage() {
   const components = Array.from(new Set(logs.map(entry => entry.component).filter(Boolean))).sort()
   const methods = Array.from(new Set(logs.map(entry => String(entry.fields?.method || '')).filter(Boolean))).sort()
   const resetFilters = () => {
-    setLevelFilter('INFO')
+    setLevelFilter('ALL')
     setComponentFilter('ALL')
     setMethodFilter('ALL')
     setQuickFilter('ALL')
@@ -147,6 +105,7 @@ export function BrowserLogsPage() {
             <Button variant="secondary" size="sm" onClick={load} loading={loading}>
               <RefreshCw className="w-4 h-4" />刷新
             </Button>
+            <Button variant="secondary" size="sm" onClick={exportDiagnostics} loading={exporting}><Download className="w-4 h-4" />导出诊断包</Button>
             <Button variant="secondary" size="sm" onClick={handleClear}>
               <Trash2 className="w-4 h-4" />清空
             </Button>
@@ -154,6 +113,9 @@ export function BrowserLogsPage() {
         </div>
       </Card>
 
+      {error && <p role="alert">{error}</p>}
+      {status.error && <p role="alert">日志持久化不可用：{status.error}。当前内存日志仍可查看和导出。</p>}
+      <p className="text-sm break-all">日志文件：{status.path || '未启用'}；清空只清除内存列表，不删除磁盘日志。{exportMessage}</p>
       <div className="rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-3">
         <div className="flex flex-wrap items-center gap-2">
           {LEVELS.map(l => (
@@ -179,7 +141,7 @@ export function BrowserLogsPage() {
           ].map(([value, label]) => (
             <button
               key={value}
-              onClick={() => setQuickFilter(value)}
+              onClick={() => { setQuickFilter(value); if (value === 'ERRORS') setLevelFilter('ALL') }}
               className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                 quickFilter === value
                   ? 'bg-[var(--color-text-primary)] text-white'

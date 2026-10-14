@@ -1,5 +1,42 @@
 # Changelog
 
+## 1.9.4 - 2026-10-14
+
+- 代理导入支持单条/多条节点链接、Base64 订阅、Clash YAML/JSON、sing-box JSON，以及 VMess、VLESS、Trojan、SS、HY2、TUIC、AnyTLS 等节点格式。
+- 节点导入、URL 订阅拉取和自动刷新统一解析；无法无损转换的配置明确拒绝，避免静默丢失参数。
+- 修复扩展管理三点菜单在窗口右侧被裁切的问题，增加边界避让、向上展开、限高滚动、键盘操作和主题适配。
+- 修复导入节点的 HTTPS 降级、IPv6 地址拼接及 TUIC 参数传递问题。
+
+## 1.9.2 - 2026-09-19
+
+- 修复 ScriptCat/Tampermonkey `Allow User Scripts` 重启后再次关闭的根因：正常启动、升级与 runtime 恢复不再手工重写 Chromium 自己维护的 `Secure Preferences` 扩展注册。
+- Ant Browser 只维护扩展 artifact，并继续通过 `--load-extension` 交给 Chromium 自行生成和维护 location、creation_flags、manifest、保护 MAC、last_update_time 与 user_scripts_enabled。
+- 删除基于 Chromium 内部 location/manifest 的稳态注册 matcher，避免把合法 `location=4` / `location=8` 状态误判为损坏后重写。
+- 真实 Chromium 148 A/B 验证：旧 1.9.1 风格改写会导致正常退出后 `user_scripts_enabled` 被删除；修复后的 control 保持 `chrome.userScripts` 可用。
+- 空 Profile 实机验证通过：无需预写 `Secure Preferences`，仅复制扩展 artifact + `--load-extension` 即可正常加载 ScriptCat service worker 并由 Chromium 自行注册。
+
+## 1.9.1 - 2026-09-19
+
+- 修复 ScriptCat/Tampermonkey `Allow User Scripts` 每次启动后重新关闭：Ant Browser 不再把 Chromium 已写回的 `location=8` command-line 扩展注册误判为损坏并重写 `Secure Preferences`。
+- `user_scripts_enabled` 的 runtime-ID 迁移改为写入 Windows 上真正的受保护扩展设置 `Secure Preferences`；同时兼容 fork.7/1.9.0 曾错误写入普通 `Preferences` 的旧数据。
+- 新增与真实 Chromium 148 Profile 结构一致的回归测试：`location=8`、`creation_flags=38`、无内嵌 manifest 时，启动准备不得修改扩展设置、保护 MAC 或用户脚本开关。
+
+## 1.9.0 - 2026-09-19
+
+- 修复插件首次迁移、runtime 索引恢复时用户脚本权限遗漏，以及安装失败回滚丢失目标 ID 数据的问题。
+- 修复 sing-box 异常退出后跳过同端口恢复；修正恢复期间的引用数处理。
+- 阻止运行中插件删除被拒绝后重复回滚，保护活跃 Profile；Preferences 改为原子替换。
+- 防止共享/父子 Profile 目录被另一实例的回收站清理误删，修复插件配置弹窗的过期异步请求。
+- Profile 导入和物理删除新增 SQLite 持久化事务恢复，覆盖异常退出、恢复再次中断、Windows 文件锁及关系记录一致性。
+- 新增 Windows GitHub Actions 构建发布：运行自动化检查后生成安装包、便携包和 SHA256 校验文件。
+- 升级会追加数据库 migration 18；旧版没有事务日志的残留目录仍需人工核对，真实扩展兼容与安装升级 GUI 验收尚未完成。
+
+## 1.8.1-fork.7 - 2026-09-19
+
+- Fixed ScriptCat/Chromium `Allow User Scripts` permission being lost after extension runtime-ID migration and browser restart by migrating `user_scripts_enabled` in `Default/Preferences`.
+- Preserve an explicit permission choice already stored under the current runtime ID instead of overwriting it with legacy state.
+- Retains the extension-data recovery and Xray startup hardening shipped in fork.6.
+
 ## 1.8.1-fork.6 - 2026-09-18
 
 - ScriptCat 旧数据恢复：识别旧版 `location=8` 的 `AntiBrowserExtensions` 注册，即使当前 runtime 已标记为 `installed` 也会执行兼容修复；当新 runtime 只有 Chromium 新建的空壳存储、旧 runtime 明显包含真实数据时，先完整备份再把旧 Local/Sync Extension Settings 安全迁入新 ID。

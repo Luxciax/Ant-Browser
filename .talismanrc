@@ -1,4 +1,21 @@
 fileignoreconfig:
+# Reviewed import/menu false positives: schema-key lookups, keyboard events,
+# existing JSX keys, and fixed example.com/test-only fixtures; no real secrets.
+# Exact checksums expire on any change; detector and Git hook stay enabled.
+- filename: backend/app_proxy_import_formats_test.go
+  checksum: f1dd60a89484848d2ce380068d4006515343444b7e6c6b617b67fac4cf9afb0a
+- filename: frontend/src/ui-v2/fish/FishProxyPoolModals.tsx
+  checksum: 97b6d87791341607798f15b28c059180aeeead1d22a15a352f8a575b47a92017
+- filename: backend/internal/proxy/import_uri_test.go
+  checksum: 0dd1520784001a90a31f485dced5b01a8816e75da05b4b4a7622df4231a7d3ff
+- filename: frontend/src/ui-v2/fish/FishFloatingMenu.tsx
+  checksum: cbb171735259877ad58a9569bf7afbf18307ab16f61dd0570438b1f029c97bfd
+- filename: frontend/src/ui-v2/fish/FishExtensionsPage.tsx
+  checksum: fcfd78d0983f191369c38ebadd43e52720618947817bc522ba9c7b230b97c5b5
+- filename: backend/internal/proxy/import_singbox.go
+  checksum: 653cb0509d4e24aa29a150898e139726125c18c8aba86aaccc4e9779411f5eb5
+- filename: backend/internal/proxy/import_uri.go
+  checksum: 9de7372f7ff6850115123cb2fc79fa7bf99111ce0787ed46b24c39409a69f5b4
 - filename: go.sum
   checksum: 282edf631b1b2d9949fd58ed0d48c2e015712b5c75180604cb68c4054a80026e
 - filename: backend/internal/launchcode/server_mcp_test.go
@@ -9,4 +26,63 @@ fileignoreconfig:
   checksum: 8ce245514792632f66e2db7778e9a923594269568ac4b74b9f28f7ac6bb89b39
 - filename: backend/mcp_endpoint_test.go
   checksum: efad34e7cf456cfa34b8d46c237bc7314877b21c6b417894b53febaaa85d4fd3
+# Reviewed release 1.9.0 false positives; checksums expire on any file change.
+# SQL source code, not a database dump.
+- filename: backend/internal/database/sqlite.go
+  checksum: e1ae99304ec24fe9d1289b6332e1f5ec4b367d5f8fad5d313753265dd839da5d
+# Public Git commit ID recorded as audit evidence.
+- filename: docs/audits/release-quality-audit-2026-09-19.md
+  checksum: 31b94606a88da8f851ed7da4d8fe57f7ec5b4a83490fc491456e5a4392bfaf5c
+# Node-map lookup syntax; no credentials or literal access tokens.
+- filename: backend/internal/proxy/singbox_bridge_recovery.go
+  checksum: 33236be8f09511c0ac6cf7f05c97c27d9ea329dcb402c85a1a378079dc18a1af
+# Fixed, synthetic local test identities, never service credentials.
+- filename: backend/internal/proxy/singbox_recovery_audit_test.go
+  checksum: b0ec404028b0f594e0a17505593887c6370ce0764cddaeafd6bba7c2a62abd8a
+- filename: backend/internal/browser/extension_lifecycle_audit_test.go
+  checksum: d2f241e2c13ed7290b6f0c9f5791b95d4d5777c9810d08c9af890c9c58e88aab
+# Long TSX component line with React keys; no embedded secrets.
+- filename: frontend/src/ui-v2/fish/FishExtensionModals.tsx
+  checksum: c5c7069c8e5bebb6f7e2c8efa8cb8e3af3507aca5e01e12ec559ca0c512e692c
+# Reviewed stability/diagnostics false positives only: map/bridge key variable
+# references, React state/JSX, and fixed example.com/local synthetic test data.
+# Exact file checksums expire on any edit; detectors and hooks remain enabled.
+- filename: backend/app_bridge_diagnostics.go
+  checksum: 1fccd103f8870f62c509c361ec1d652530991bbaf9e49088a4454764849b42f4
+- filename: backend/app_diagnostic_export_test.go
+  checksum: a1669589c247298d25f515cbd00e7fcd89e111232625d81381d9ebc2eabb1ff3
+- filename: backend/browser_launch_args_test.go
+  checksum: c8d5a0bb6dc7b5b07c0a7a58caf5607d540c8fe34fc0c5c1ccb1f6251770ab05
+- filename: backend/app_startup.go
+  checksum: f860a50786a3fa4733a5b2cf5323c1078027615db087bc908cad2ff45f50268f
+- filename: backend/internal/proxy/clash.go
+  checksum: c6381541ed4611495b463e4a90ae8cf90915aa72c64c808419327e7448110ca7
+- filename: backend/app_browser_diagnostics.go
+  checksum: 94986a9412bc99c94bde62b07c1dcdaa701c43a1da92b0eb0bc3ec647cac11e0
+- filename: backend/internal/proxy/xray_bridge_runtime.go
+  checksum: f78210edb5e4db50dce4664dcd22ce917b8f2661c43746d510208d70783aef90
+- filename: backend/internal/proxy/singbox_bridge_runtime.go
+  checksum: d9b2b7356c7a243491aa7bf2c2ed99401a7f2c9aec60c8e914201599549d86af
+- filename: backend/internal/proxy/mihomo_bridge.go
+  checksum: eb414ef0a0d0becd8b2c06f04bf923e2295875df39959cdb5d27725d19d56e0a
+- filename: backend/internal/proxy/xray_bridge_store.go
+  checksum: 890f9255261b294119e85a6cfc26379eaef8ca807c17d63d7e2a0b464bbed3a5
+- filename: backend/app_diagnostic_export.go
+  checksum: 1ff492660a52cd1b03a0f484f81a8ab89e0157ddcfd3175bd1edeebd5a9e49f2
+- filename: frontend/src/modules/browser/pages/BrowserEditPage.tsx
+  checksum: 9ee8bc1f53a340d7f7241a4fcf0805bac7705492de0fefa7f64285179b999039
+- filename: backend/internal/proxy/mihomo_bridge_recovery_test.go
+  checksum: 35908e1556228cdb73f0990482419abf89fdb3b394ae8ea5af678813ddfce67b
+- filename: backend/internal/diagnostics/browser_test.go
+  checksum: 6112d1adb0e8317fc61aba243ff9a4cf37ebb9fac8db8743c46fea0b8c01952c
+- filename: backend/internal/proxy/mihomo_bridge_recovery.go
+  checksum: 004db3f6632a4432e28c0c00a094d57e2d65dbb19d73bb84f6206ef842c702f0
+- filename: frontend/src/ui-v2/fish/FishFingerprintReports.tsx
+  checksum: 01bee5a8d219bc661eeb79af0088ea3b5fe8c879814d4cfae437adec22ab19bf
+- filename: backend/internal/logger/persistence_test.go
+  checksum: 06176830e9aaef9af17b52704b47a23235e6f0138fda31ff32ce80c37445d837
+- filename: frontend/src/ui-v2/fish/FishLogsPage.tsx
+  checksum: c6210cc4bf69612ba74ac24cb79894224ebe450dffdc3bfffc2b249ba379c466
+- filename: backend/internal/diagnostics/browser.go
+  checksum: 0ba39b6f04a89bf8cb24c0a24a3b63c095d7d01411fee7325960cc99e114b5e8
 version: "1.0"

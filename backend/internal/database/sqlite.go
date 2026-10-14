@@ -259,6 +259,15 @@ var migrations = []migration{
 			`UPDATE browser_extensions SET default_install = 0`,
 		},
 	},
+	{
+		version: 18,
+		desc:    "实例文件与数据库崩溃恢复事务",
+		stmts: []string{`CREATE TABLE profile_file_transactions (
+			id TEXT PRIMARY KEY,
+			plan TEXT NOT NULL,
+			committed INTEGER NOT NULL DEFAULT 0 CHECK(committed IN (0,1))
+		)`},
+	},
 	// ── 新版本在此追加，格式：
 	// {
 	//     version: 4,

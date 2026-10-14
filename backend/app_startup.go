@@ -57,6 +57,13 @@ func (a *App) startup(ctx context.Context) {
 	a.db = db
 	if err := db.Migrate(); err != nil {
 		log.Error("数据库迁移失败", logger.F("error", err))
+		runtime.LogFatal(ctx, fmt.Sprintf("数据库迁移失败: %v", err))
+		return
+	}
+	if err := a.recoverProfileFileTransactions(); err != nil {
+		log.Error("实例事务恢复失败，停止加载实例以保护现有数据", logger.F("error", err))
+		runtime.LogFatal(ctx, fmt.Sprintf("实例事务恢复失败（备份已保留）: %v", err))
+		return
 	}
 
 	a.startupInitManagers(cfg, db)
@@ -200,19 +207,12 @@ func (a *App) startupInitAutomation() {
 
 func (a *App) startupInitBridgeHooks() {
 	a.xrayMgr.OnBridgeDied = func(key string, err error) {
-		a.emitRuntimeEvent("proxy:bridge:died", map[string]interface{}{
-			"engine": "xray",
-			"key":    bridgeEventKey(key),
-			"error":  errorMessage(err),
-		})
+		a.recordBridgeFailure("xray", key, err)
 	}
 	a.singboxMgr.OnBridgeDied = func(key string, err error) {
-		a.emitRuntimeEvent("proxy:bridge:died", map[string]interface{}{
-			"engine": "singbox",
-			"key":    bridgeEventKey(key),
-			"error":  errorMessage(err),
-		})
+		a.recordBridgeFailure("sing-box", key, err)
 	}
+	a.clashMgr.OnBridgeDied = func(key string, err error) { a.recordBridgeFailure("mihomo", key, err) }
 }
 
 func bridgeEventKey(key string) string {

@@ -71,9 +71,8 @@ func (m *Manager) ApplyDefaults(profile *Profile) bool {
 				logger.F("profile_id", profile.ProfileId),
 				logger.F("missing_proxy_id", missingProxyID),
 			)
-		} else if m.bindProfileToDirectProxy(profile) {
-			changed = true
-			log.Warn("实例代理未找到，已回退到直连",
+		} else {
+			log.Error("实例代理未找到，保留绑定并禁止自动直连",
 				logger.F("profile_id", profile.ProfileId),
 				logger.F("missing_proxy_id", missingProxyID),
 			)

@@ -34,6 +34,9 @@ type MihomoNodeBridge struct {
 	LastUsedAt     time.Time
 	ExitDone       chan struct{}
 	ExitErr        error
+	Stopping       bool
+	Restarting     bool
+	RestartCount   int
 }
 
 func (m *ClashManager) EnsureNodeBridge(proxyConfig string, proxies []config.BrowserProxy, proxyId string) (string, error) {
@@ -65,6 +68,7 @@ func (m *ClashManager) ReleaseNodeBridge(key string) {
 		}
 		bridge.LastUsedAt = time.Now()
 		if bridge.RefCount <= 0 {
+			bridge.Stopping = true
 			bridge.Running = false
 			delete(m.NodeBridges, key)
 			bridgeToStop = bridge
@@ -180,7 +184,13 @@ func (m *ClashManager) ensureNodeBridgeContext(ctx context.Context, proxyConfig 
 	if pin {
 		bridge.RefCount = 1
 	}
-	m.watchMihomoNodeBridge(bridge)
+	managed := false
+	defer func() {
+		if !managed {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+	}()
 	if err := waitTCPPortReadyContext(ctx, "127.0.0.1", port, 10*time.Second); err != nil {
 		if stderrFile != nil {
 			stderrFile.Close()
@@ -206,6 +216,8 @@ func (m *ClashManager) ensureNodeBridgeContext(ctx context.Context, proxyConfig 
 		stderrFile.Close()
 	}
 	m.registerMihomoNodeBridge(key, bridge)
+	managed = true
+	m.watchMihomoNodeBridge(bridge)
 	if err := ctx.Err(); err != nil {
 		m.discardMihomoNodeBridge(key, bridge)
 		return "", "", err
@@ -234,6 +246,14 @@ func (m *ClashManager) tryReuseMihomoNodeBridgeContext(ctx context.Context, key 
 		m.NodeBridges = map[string]*MihomoNodeBridge{}
 	}
 	bridge := m.NodeBridges[key]
+	if bridge != nil && bridge.RefCount > 0 && !bridge.Stopping {
+		if pin {
+			bridge.RefCount++
+		}
+		bridge.LastUsedAt = time.Now()
+		m.mu.Unlock()
+		return fmt.Sprintf("http://127.0.0.1:%d", bridge.Port), true, nil
+	}
 	if bridge == nil || !bridge.Running || bridge.Cmd == nil || bridge.Cmd.Process == nil || bridge.Cmd.ProcessState != nil {
 		delete(m.NodeBridges, key)
 		m.mu.Unlock()
@@ -274,6 +294,7 @@ func (m *ClashManager) discardMihomoNodeBridge(key string, bridge *MihomoNodeBri
 		return
 	}
 	m.mu.Lock()
+	bridge.Stopping = true
 	bridge.Running = false
 	if current, ok := m.NodeBridges[key]; ok && current == bridge {
 		delete(m.NodeBridges, key)
@@ -357,6 +378,7 @@ func (m *ClashManager) registerMihomoNodeBridge(key string, bridge *MihomoNodeBr
 		m.NodeBridges = map[string]*MihomoNodeBridge{}
 	}
 	if old := m.NodeBridges[key]; old != nil && old.Cmd != nil && old.Cmd.Process != nil {
+		old.Stopping = true
 		old.Running = false
 		_ = old.Cmd.Process.Kill()
 	}
@@ -372,11 +394,40 @@ func (m *ClashManager) watchMihomoNodeBridge(bridge *MihomoNodeBridge) {
 		m.mu.Lock()
 		bridge.Running = false
 		bridge.ExitErr = err
-		if current := m.NodeBridges[bridge.NodeKey]; current == bridge {
+		current := m.NodeBridges[bridge.NodeKey] == bridge
+		recoverPinned := current && !bridge.Stopping && bridge.RefCount > 0 && bridge.RestartCount < 3
+		if recoverPinned {
+			bridge.Restarting = true
+		} else if current {
 			delete(m.NodeBridges, bridge.NodeKey)
 		}
+		stopping := bridge.Stopping
 		m.mu.Unlock()
 		close(bridge.ExitDone)
+		if !current || stopping {
+			return
+		}
+		log := logger.New("Mihomo")
+		log.Warn("mihomo 桥接进程退出", logger.F("key", bridge.NodeKey), logger.F("port", bridge.Port), logger.F("exit_error", err), logger.F("stderr_tail", bridgeStderrTail(bridge.Cmd, "mihomo-stderr.log")), logger.F("restart_count", bridge.RestartCount))
+		if recoverPinned {
+			if recoveryErr := m.restartMihomoNodeBridge(bridge); recoveryErr == nil {
+				return
+			} else {
+				err = recoveryErr
+			}
+		}
+		m.mu.Lock()
+		if m.NodeBridges[bridge.NodeKey] == bridge {
+			delete(m.NodeBridges, bridge.NodeKey)
+		}
+		stopping = bridge.Stopping
+		m.mu.Unlock()
+		if !stopping {
+			log.Error("mihomo 桥接恢复失败", logger.F("key", bridge.NodeKey), logger.F("port", bridge.Port), logger.F("error", err))
+			if m.OnBridgeDied != nil {
+				m.OnBridgeDied(bridge.NodeKey, fmt.Errorf("mihomo 桥接退出，恢复失败或达到恢复上限：%v", err))
+			}
+		}
 	}()
 }
 

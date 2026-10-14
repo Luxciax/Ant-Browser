@@ -139,7 +139,7 @@ func (d *SQLiteProxyDAO) Delete(proxyId string) error {
 	return nil
 }
 
-// DeleteAll 清空代理表（批量保存前使用）
+// DeleteAll 清空代理表（兼容单项维护流程）
 func (d *SQLiteProxyDAO) DeleteAll() error {
 	_, err := d.db.Exec(`DELETE FROM browser_proxies`)
 	if err != nil {

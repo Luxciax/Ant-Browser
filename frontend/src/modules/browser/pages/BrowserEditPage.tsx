@@ -836,6 +836,9 @@ export function BrowserEditPage() {
       >
         {fingerprintCheckResult ? (
           <div className="space-y-4">
+            <p role="status">基础自测：{fingerprintCheckResult.status === 'passed_basic' ? '基础项一致（不代表完整伪装认证）' : fingerprintCheckResult.status === 'mismatch' ? '发现不一致' : '未完整验证'}。{[...(fingerprintCheckResult.issues || []), ...(fingerprintCheckResult.limitations || [])].join('；')}</p>
+            <FingerprintCheckRow label="Worker 时区" expected={fingerprintCheckResult.runtime.timezone} actual={fingerprintCheckResult.runtime.worker?.timezone} />
+            <FingerprintCheckRow label="Worker CPU" expected={fingerprintCheckResult.runtime.hardwareConcurrency} actual={fingerprintCheckResult.runtime.worker?.hardwareConcurrency} />
             <div className="grid grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)_70px] gap-3 text-xs font-medium text-[var(--color-text-muted)] border-b border-[var(--color-border)] pb-2">
               <div>项目</div>
               <div>配置值</div>

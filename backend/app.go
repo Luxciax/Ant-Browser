@@ -59,6 +59,8 @@ type App struct {
 	profileRuntimeOpsMu           sync.Mutex
 	profileRuntimeOps             map[string]*sync.Mutex
 	browserProcessMonitors        map[string]*browserProcessMonitor
+	diagnosticsMu                 sync.Mutex
+	browserDiagnostics            map[string]context.CancelFunc
 	backupLocalConfigPathOverride string
 	stopServicesOnce              sync.Once
 	finalizeOnce                  sync.Once

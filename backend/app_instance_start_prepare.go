@@ -319,7 +319,7 @@ func (a *App) prepareBrowserLaunchContext(ctx context.Context, input browserStar
 		return nil, nil, nil, "", "", err
 	}
 
-	if detection, ok := detectBrowserRuntimeByActivePort(userDataDir); ok && detection.DebugReady {
+	if detection, ok := detectBrowserRuntimeByUserDataDir(userDataDir); ok && detection.DebugReady {
 		a.browserMgr.Mutex.Lock()
 		a.markProfileLastLaunchArgsLocked(profile, nil)
 		a.markProfileRunningLocked(input.ProfileID, profile, nil, detection.PID, detection.DebugPort, true, "")

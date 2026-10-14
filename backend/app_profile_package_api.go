@@ -17,6 +17,7 @@ import (
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/fsutil"
 	"ant-chrome/backend/internal/logger"
+	"ant-chrome/backend/internal/profiletxn"
 
 	"github.com/google/uuid"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -25,14 +26,14 @@ import (
 const profilePackageFormat = "ant-chrome-profile-package"
 
 type ProfilePackageManifest struct {
-	Format                string   `json:"format"`
-	Version               int      `json:"version"`
-	ExportedAt            string   `json:"exportedAt"`
-	ProfileCount          int      `json:"profileCount"`
-	ProfileNames          []string `json:"profileNames,omitempty"`
-	DatabaseVersion       int      `json:"databaseVersion,omitempty"`
-	PortableLogin         bool     `json:"portableLogin,omitempty"`
-	PortableLoginProfiles []string `json:"portableLoginProfiles,omitempty"`
+	Format                string                          `json:"format"`
+	Version               int                             `json:"version"`
+	ExportedAt            string                          `json:"exportedAt"`
+	ProfileCount          int                             `json:"profileCount"`
+	ProfileNames          []string                        `json:"profileNames,omitempty"`
+	DatabaseVersion       int                             `json:"databaseVersion,omitempty"`
+	PortableLogin         bool                            `json:"portableLogin,omitempty"`
+	PortableLoginProfiles []string                        `json:"portableLoginProfiles,omitempty"`
 	Extensions            ProfilePackageExtensionManifest `json:"extensions"`
 }
 
@@ -909,12 +910,30 @@ func (a *App) importProfilePackageFromPathWithModeAndActionsAndPassword(zipPath 
 	swaps := make([]profilePackageDirectorySwap, 0, len(contents.Profiles))
 	originalProfiles := make(map[string]*browser.Profile, len(contents.Profiles))
 	committed := false
+	var fileTransaction *profiletxn.Transaction
 	defer func() {
-		_ = os.RemoveAll(stagingRoot)
-		if committed {
-			return
+		var rollbackErr error
+		if fileTransaction != nil {
+			if errors.Is(retErr, profiletxn.ErrCommitUncertain) {
+				return
+			}
+			var databaseCommitted bool
+			databaseCommitted, rollbackErr = fileTransaction.Resolve()
+			if databaseCommitted && rollbackErr != nil && retErr == nil {
+				result.Warnings = append(result.Warnings, "导入已提交，目录清理未完成，请重启应用重试清理: "+rollbackErr.Error())
+				return
+			}
+			retErr = combineProfilePackageRollbackError(retErr, rollbackErr)
+			if databaseCommitted || rollbackErr != nil {
+				return
+			}
+		} else {
+			_ = os.RemoveAll(stagingRoot)
+			if committed {
+				return
+			}
+			rollbackErr = rollbackProfilePackageDirectorySwaps(swaps)
 		}
-		rollbackErr := rollbackProfilePackageDirectorySwaps(swaps)
 		if len(originalProfiles) > 0 {
 			a.browserMgr.Mutex.Lock()
 			for profileID, original := range originalProfiles {
@@ -1111,26 +1130,45 @@ func (a *App) importProfilePackageFromPathWithModeAndActionsAndPassword(zipPath 
 			return ProfilePackageImportResult{}, err
 		}
 	}
-	for _, item := range prepared {
-		if !item.HasUserData {
-			continue
+	if a.db != nil && a.db.GetConn() != nil {
+		plan := profiletxn.Plan{Kind: "import", StagingRoot: stagingRoot}
+		for _, item := range prepared {
+			if item.HasUserData {
+				plan.Moves = append(plan.Moves, profiletxn.Move{Source: item.StagingDir, Target: item.FinalDir})
+			}
 		}
-		swap, err := replaceProfileUserDataDirWithBackup(item.StagingDir, item.FinalDir)
+		for _, item := range preparedExtensionArtifacts {
+			plan.Moves = append(plan.Moves, profiletxn.Move{Source: item.StagingDir, Target: item.FinalDir})
+		}
+		fileTransaction, err = profiletxn.Begin(a.db.GetConn(), plan, a.profileTransactionRoots())
 		if err != nil {
 			return ProfilePackageImportResult{}, err
 		}
-		swaps = append(swaps, swap)
-	}
-	if err := applyPreparedProfilePackageExtensionArtifacts(preparedExtensionArtifacts, &swaps); err != nil {
-		return ProfilePackageImportResult{}, err
+		if err := fileTransaction.Apply(); err != nil {
+			return ProfilePackageImportResult{}, err
+		}
+	} else {
+		for _, item := range prepared {
+			if !item.HasUserData {
+				continue
+			}
+			swap, err := replaceProfileUserDataDirWithBackup(item.StagingDir, item.FinalDir)
+			if err != nil {
+				return ProfilePackageImportResult{}, err
+			}
+			swaps = append(swaps, swap)
+		}
+		if err := applyPreparedProfilePackageExtensionArtifacts(preparedExtensionArtifacts, &swaps); err != nil {
+			return ProfilePackageImportResult{}, err
+		}
 	}
 	legacyDatabaseRestore := contents.DatabaseSnapshot == nil && a.db != nil && a.db.GetConn() != nil
 	if contents.DatabaseSnapshot != nil {
-		if err := a.restoreProfilePackageDatabase(*contents.DatabaseSnapshot, prepared, &warnings); err != nil {
+		if err := a.restoreProfilePackageDatabase(*contents.DatabaseSnapshot, prepared, &warnings, fileTransaction); err != nil {
 			return ProfilePackageImportResult{}, err
 		}
 	} else if legacyDatabaseRestore {
-		if err := a.restoreLegacyProfilePackageDatabase(prepared); err != nil {
+		if err := a.restoreLegacyProfilePackageDatabase(prepared, fileTransaction); err != nil {
 			return ProfilePackageImportResult{}, err
 		}
 	}

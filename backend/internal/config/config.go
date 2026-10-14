@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	CurrentConfigVersion            = 2
+	CurrentConfigVersion            = 3
 	DefaultLaunchServerPort         = 19876
 	DefaultLaunchServerAPIKeyHeader = "X-Ant-Api-Key"
 	DefaultAutomationInstallPolicy  = "on_demand"

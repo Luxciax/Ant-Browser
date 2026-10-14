@@ -1,6 +1,8 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/config"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,8 +20,8 @@ func TestLoadConfigMigratesLegacyRestoreSetting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig returned error: %v", err)
 	}
-	if cfg.ConfigVersion != 2 {
-		t.Fatalf("config_version = %d, want 2", cfg.ConfigVersion)
+	if cfg.ConfigVersion != config.CurrentConfigVersion {
+		t.Fatalf("config_version = %d, want %d", cfg.ConfigVersion, config.CurrentConfigVersion)
 	}
 	if !cfg.Browser.RestoreLastSession {
 		t.Fatal("legacy restore_last_session=false should migrate to true")
@@ -30,7 +32,7 @@ func TestLoadConfigMigratesLegacyRestoreSetting(t *testing.T) {
 		t.Fatalf("read migrated config: %v", err)
 	}
 	text := string(data)
-	if !strings.Contains(text, "config_version: 2") {
+	if !strings.Contains(text, fmt.Sprintf("config_version: %d", config.CurrentConfigVersion)) {
 		t.Fatalf("migrated config missing config_version: %s", text)
 	}
 	if !strings.Contains(text, "restore_last_session: true") {

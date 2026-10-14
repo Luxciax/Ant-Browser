@@ -9,6 +9,14 @@ export interface ClashImportURLResult {
   suggestedGroup?: string
 }
 
+export async function parseProxyImportContent(content: string): Promise<{ content: string; proxyCount: number }> {
+  const bindings = await getBindings()
+  if (bindings?.BrowserProxyParseImport) return bindings.BrowserProxyParseImport(content) as Promise<{ content: string; proxyCount: number }>
+  const app = getGoApp()
+  if (app?.BrowserProxyParseImport) return app.BrowserProxyParseImport(content)
+  throw new Error('节点解析需要新版桌面后端，请更新应用')
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -79,7 +87,7 @@ export async function fetchClashImportFromURL(targetURL: string, proxyId = ''): 
     )
   }
 
-  throw new Error('当前环境不支持 URL 导入 Clash 配置')
+  throw new Error('当前环境不支持 URL 导入订阅')
 }
 
 export async function saveBrowserProxies(proxies: BrowserProxy[]): Promise<boolean> {

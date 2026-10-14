@@ -9,38 +9,42 @@ import (
 )
 
 type BrowserFingerprintCheckResult struct {
-	ProfileId string                         `json:"profileId"`
-	Runtime   BrowserFingerprintRuntimeInfo  `json:"runtime"`
-	Expected  BrowserFingerprintExpectedInfo `json:"expected"`
+	ProfileId   string                         `json:"profileId"`
+	Status      string                         `json:"status"`
+	Issues      []string                       `json:"issues"`
+	Limitations []string                       `json:"limitations"`
+	Runtime     BrowserFingerprintRuntimeInfo  `json:"runtime"`
+	Expected    BrowserFingerprintExpectedInfo `json:"expected"`
 }
 
 type BrowserFingerprintRuntimeInfo struct {
-	Language            string   `json:"language"`
-	Languages           []string `json:"languages"`
-	Timezone            string   `json:"timezone"`
-	HardwareConcurrency int      `json:"hardwareConcurrency"`
-	DeviceMemory        float64  `json:"deviceMemory"`
-	MaxTouchPoints      int      `json:"maxTouchPoints"`
-	DoNotTrack          string   `json:"doNotTrack"`
-	MediaDeviceCount    int      `json:"mediaDeviceCount"`
-	Platform            string   `json:"platform"`
-	UserAgent           string   `json:"userAgent"`
-	UserAgentData       string   `json:"userAgentData"`
-	Webdriver           bool     `json:"webdriver"`
-	ScreenWidth         int      `json:"screenWidth"`
-	ScreenHeight        int      `json:"screenHeight"`
-	ColorDepth          int      `json:"colorDepth"`
-	InnerWidth          int      `json:"innerWidth"`
-	InnerHeight         int      `json:"innerHeight"`
-	OuterWidth          int      `json:"outerWidth"`
-	OuterHeight         int      `json:"outerHeight"`
-	DevicePixelRatio    float64  `json:"devicePixelRatio"`
-	WebGLVendor         string   `json:"webglVendor"`
-	WebGLRenderer       string   `json:"webglRenderer"`
-	CanvasHash          string   `json:"canvasHash"`
-	AudioHash           string   `json:"audioHash"`
-	ClientRectsHash     string   `json:"clientRectsHash"`
-	Plugins             []string `json:"plugins"`
+	Worker              *BrowserFingerprintWorkerInfo `json:"worker,omitempty"`
+	Language            string                        `json:"language"`
+	Languages           []string                      `json:"languages"`
+	Timezone            string                        `json:"timezone"`
+	HardwareConcurrency int                           `json:"hardwareConcurrency"`
+	DeviceMemory        float64                       `json:"deviceMemory"`
+	MaxTouchPoints      int                           `json:"maxTouchPoints"`
+	DoNotTrack          string                        `json:"doNotTrack"`
+	MediaDeviceCount    int                           `json:"mediaDeviceCount"`
+	Platform            string                        `json:"platform"`
+	UserAgent           string                        `json:"userAgent"`
+	UserAgentData       string                        `json:"userAgentData"`
+	Webdriver           bool                          `json:"webdriver"`
+	ScreenWidth         int                           `json:"screenWidth"`
+	ScreenHeight        int                           `json:"screenHeight"`
+	ColorDepth          int                           `json:"colorDepth"`
+	InnerWidth          int                           `json:"innerWidth"`
+	InnerHeight         int                           `json:"innerHeight"`
+	OuterWidth          int                           `json:"outerWidth"`
+	OuterHeight         int                           `json:"outerHeight"`
+	DevicePixelRatio    float64                       `json:"devicePixelRatio"`
+	WebGLVendor         string                        `json:"webglVendor"`
+	WebGLRenderer       string                        `json:"webglRenderer"`
+	CanvasHash          string                        `json:"canvasHash"`
+	AudioHash           string                        `json:"audioHash"`
+	ClientRectsHash     string                        `json:"clientRectsHash"`
+	Plugins             []string                      `json:"plugins"`
 }
 
 type BrowserFingerprintExpectedInfo struct {
@@ -90,10 +94,14 @@ func (a *App) BrowserProfileFingerprintCheck(profileId string) (*BrowserFingerpr
 	if err != nil {
 		return nil, err
 	}
+	expected := buildBrowserFingerprintExpected(a.fingerprintCheckExpectedArgsFromProfile(profile))
+	status, issues := assessFingerprintRuntime(runtimeInfo, expected)
+	logger.New("Fingerprint").Info("基础指纹自测完成", logger.F("profile_id", profile.ProfileId), logger.F("status", status), logger.F("issues", issues))
 	return &BrowserFingerprintCheckResult{
 		ProfileId: profile.ProfileId,
-		Runtime:   runtimeInfo,
-		Expected:  buildBrowserFingerprintExpected(a.fingerprintCheckExpectedArgsFromProfile(profile)),
+		Status:    status, Issues: issues, Limitations: []string{"仅验证基础配置及页面/Worker 一致性，不代表反检测认证", "Canvas/Audio/WebRTC、字体、跨平台完整性仍需专项实测"},
+		Runtime:  runtimeInfo,
+		Expected: expected,
 	}, nil
 }
 
@@ -243,9 +251,24 @@ func evaluateBrowserFingerprintRuntime(debugPort int) (BrowserFingerprintRuntime
       return 0;
     }
   }
+  async function workerInfo() {
+    return new Promise(function(resolve) {
+      var worker, url, timer;
+      function finish(value) { clearTimeout(timer); if(worker) worker.terminate(); if(url) URL.revokeObjectURL(url); resolve(value); }
+      try {
+        url = URL.createObjectURL(new Blob(["postMessage({language:navigator.language,languages:Array.from(navigator.languages),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,hardwareConcurrency:navigator.hardwareConcurrency,platform:navigator.platform,userAgent:navigator.userAgent})"], {type:'text/javascript'}));
+        worker = new Worker(url);
+        worker.onmessage = function(e) { finish(e.data); };
+        worker.onerror = function() { finish({error:'Worker blocked or failed'}); };
+        timer = setTimeout(function() { finish({error:'Worker timeout'}); }, 1000);
+      } catch(e) { finish({error:'Worker unavailable or restricted by CSP'}); }
+    });
+  }
+  var worker = await workerInfo();
   var gl = document.createElement('canvas').getContext('webgl') || document.createElement('canvas').getContext('experimental-webgl');
   var debug = gl && gl.getExtension('WEBGL_debug_renderer_info');
   return JSON.stringify({
+    worker: worker,
     language: navigator.language || '',
     languages: Array.prototype.slice.call(navigator.languages || []),
     timezone: (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone || '',

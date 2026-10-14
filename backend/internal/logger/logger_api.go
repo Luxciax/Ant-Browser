@@ -104,23 +104,18 @@ func (l *Logger) log(level Level, msg string, fields ...Field) {
 
 // writeEntry 写入日志条目到所有写入器
 func (l *Logger) writeEntry(entry *LogEntry) {
+	entry = redactLogEntry(entry)
 	l.mu.RLock()
 	writers := l.writers
 	fileWriter := l.fileWriter
-	consoleWriter := l.consoleWriter
 	fileWriteFailed := l.fileWriteFailed
 	l.mu.RUnlock()
 
-	// 如果文件写入已失败，只写入控制台
-	if fileWriteFailed {
-		if consoleWriter != nil {
-			_ = consoleWriter.Write(entry)
-		}
-		return
-	}
-
 	// 写入所有写入器
 	for _, writer := range writers {
+		if fileWriteFailed && writer == fileWriter {
+			continue
+		}
 		if err := writer.Write(entry); err != nil {
 			// 如果是文件写入器失败，标记并回退到控制台
 			if writer == fileWriter {
@@ -129,6 +124,29 @@ func (l *Logger) writeEntry(entry *LogEntry) {
 		}
 	}
 }
+
+// PersistenceStatus exposes asynchronous errors to the log page/exporter.
+func PersistenceStatus() (string, string) {
+	globalMu.RLock()
+	defer globalMu.RUnlock()
+	if globalLogger == nil {
+		return "", "日志未初始化"
+	}
+	if globalLogger.fileWriter == nil {
+		if globalLogger.fileWriteFailed {
+			return globalLogger.configuredFilePath, fmt.Sprintf("文件日志初始化失败: %v", globalLogger.fileInitError)
+		}
+		return "", "文件日志已关闭"
+	}
+	w := globalLogger.fileWriter
+	if err := w.Error(); err != nil {
+		return w.GetFilePath(), err.Error()
+	}
+	return w.GetFilePath(), ""
+}
+
+func RedactText(text string) string { return redactLogText(text) }
+func RedactValue(value any) any     { return redactLogValue("", value, 0) }
 
 // handleFileWriteError 处理文件写入错误
 func (l *Logger) handleFileWriteError(entry *LogEntry, err error) {

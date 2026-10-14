@@ -6,6 +6,15 @@ import (
 	"testing"
 )
 
+func TestApplyDefaultsDoesNotDowngradeMissingProxyToDirect(t *testing.T) {
+	mgr := NewManager(config.DefaultConfig(), t.TempDir())
+	p := &Profile{ProfileId: "protected", ProxyId: "missing-node", ProxyBindSourceID: "subscription", ProxyBindName: "fixed-exit"}
+	mgr.ApplyDefaults(p)
+	if p.ProxyId != "missing-node" || p.ProxyConfig != "" || p.ProxyBindSourceID != "subscription" {
+		t.Fatalf("lost protected proxy binding: %#v", p)
+	}
+}
+
 func TestApplyDefaultsReportsNonProxyChanges(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Browser.DefaultFingerprintArgs = []string{"--fingerprint=123"}

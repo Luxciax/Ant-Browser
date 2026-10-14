@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -146,7 +145,7 @@ func fetchClashSubscriptionWithUserAgent(ctx context.Context, client *http.Clien
 	}
 	req = req.WithContext(ctx)
 	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "application/yaml,text/yaml,text/plain,*/*")
+	req.Header.Set("Accept", "application/yaml,text/yaml,application/json,text/plain,*/*")
 	req.Header.Set("Cache-Control", "no-cache")
 
 	resp, err := client.Do(req)
@@ -175,7 +174,10 @@ func fetchClashSubscriptionWithUserAgent(ctx context.Context, client *http.Clien
 }
 
 func normalizeClashSubscriptionContent(body []byte) (string, interface{}, error) {
-	baseText := strings.TrimSpace(strings.ReplaceAll(string(body), "\r\n", "\n"))
+	if len(body) > maxClashSubscriptionBytes {
+		return "", nil, fmt.Errorf("导入内容过大（超过 8MB）")
+	}
+	baseText := strings.TrimSpace(strings.TrimPrefix(strings.ReplaceAll(string(body), "\r\n", "\n"), "\uFEFF"))
 	if baseText == "" {
 		return "", nil, fmt.Errorf("订阅内容为空")
 	}
@@ -194,155 +196,19 @@ func normalizeClashSubscriptionContent(body []byte) (string, interface{}, error)
 		tryTexts = append(tryTexts, decoded)
 	}
 
+	var lastErr error
 	for _, text := range tryTexts {
-		payload, ok := parseClashPayload(text)
-		if !ok {
-			continue
+		content, payload, err := normalizeProxyImportText(text)
+		if err == nil {
+			return content, payload, nil
 		}
-		if clashProxyCount(payload) > 0 {
-			return text, payload, nil
-		}
+		lastErr = err
 	}
-
-	for _, text := range tryTexts {
-		converted, ok := convertProxyURIListToClashYAML(text)
-		if !ok {
-			continue
-		}
-		payload, parsed := parseClashPayload(converted)
-		if parsed && clashProxyCount(payload) > 0 {
-			return converted, payload, nil
-		}
-	}
-
-	return "", nil, fmt.Errorf("URL 内容不是有效 Clash YAML 或 URI 订阅（需包含 proxies 或支持的代理 URI）")
-}
-
-func convertProxyURIListToClashYAML(text string) (string, bool) {
-	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	proxies := make([]map[string]interface{}, 0)
-	for index, line := range lines {
-		raw := strings.TrimSpace(line)
-		if raw == "" {
-			continue
-		}
-		node, ok := proxyURIToClashNode(raw, index)
-		if ok {
-			proxies = append(proxies, node)
-		}
-	}
-	if len(proxies) == 0 {
-		return "", false
-	}
-	payload := map[string]interface{}{"proxies": proxies}
-	data, err := yaml.Marshal(payload)
-	if err != nil {
-		return "", false
-	}
-	return strings.TrimSpace(string(data)), true
-}
-
-func proxyURIToClashNode(raw string, index int) (map[string]interface{}, bool) {
-	u, err := url.Parse(raw)
-	if err != nil || strings.TrimSpace(u.Scheme) == "" || strings.TrimSpace(u.Hostname()) == "" {
-		return nil, false
-	}
-	scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
-	port := 0
-	if portText := strings.TrimSpace(u.Port()); portText != "" {
-		if parsedPort, err := strconv.Atoi(portText); err == nil {
-			port = parsedPort
-		}
-	}
-	if port == 0 {
-		return nil, false
-	}
-	name := proxyURIName(u, index)
-	switch scheme {
-	case "anytls":
-		password := u.User.Username()
-		if password == "" {
-			return nil, false
-		}
-		node := map[string]interface{}{
-			"name":     name,
-			"type":     "anytls",
-			"server":   u.Hostname(),
-			"port":     port,
-			"password": password,
-		}
-		q := u.Query()
-		if sni := firstNonEmptyQueryParam(q, "sni", "peer", "servername"); sni != "" {
-			node["sni"] = sni
-		}
-		if uriBoolParam(q, "insecure", "allowInsecure", "skip-cert-verify") {
-			node["skip-cert-verify"] = true
-		}
-		if fp := firstNonEmptyQueryParam(q, "client-fingerprint", "fingerprint", "fp"); fp != "" {
-			node["client-fingerprint"] = fp
-		}
-		return node, true
-	case "trojan":
-		password := u.User.Username()
-		if password == "" {
-			return nil, false
-		}
-		node := map[string]interface{}{
-			"name":     name,
-			"type":     "trojan",
-			"server":   u.Hostname(),
-			"port":     port,
-			"password": password,
-		}
-		q := u.Query()
-		if sni := firstNonEmptyQueryParam(q, "sni", "peer", "servername"); sni != "" {
-			node["sni"] = sni
-		}
-		if network := firstNonEmptyQueryParam(q, "type", "network"); network != "" {
-			node["network"] = network
-		}
-		if uriBoolParam(q, "insecure", "allowInsecure", "skip-cert-verify") {
-			node["skip-cert-verify"] = true
-		}
-		return node, true
-	default:
-		return nil, false
-	}
-}
-
-func proxyURIName(u *url.URL, index int) string {
-	if u.Fragment != "" {
-		if name, err := url.QueryUnescape(u.Fragment); err == nil && strings.TrimSpace(name) != "" {
-			return strings.TrimSpace(name)
-		}
-		if strings.TrimSpace(u.Fragment) != "" {
-			return strings.TrimSpace(u.Fragment)
-		}
-	}
-	return fmt.Sprintf("导入代理 %d", index+1)
-}
-
-func firstNonEmptyQueryParam(q url.Values, keys ...string) string {
-	for _, key := range keys {
-		if value := strings.TrimSpace(q.Get(key)); value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
-func uriBoolParam(q url.Values, keys ...string) bool {
-	for _, key := range keys {
-		value := strings.ToLower(strings.TrimSpace(q.Get(key)))
-		if value == "1" || value == "true" || value == "yes" {
-			return true
-		}
-	}
-	return false
+	return "", nil, lastErr
 }
 
 func decodeBase64Text(raw string) (string, bool) {
-	candidate := strings.TrimSpace(raw)
+	candidate := strings.Join(strings.Fields(raw), "")
 	if candidate == "" {
 		return "", false
 	}

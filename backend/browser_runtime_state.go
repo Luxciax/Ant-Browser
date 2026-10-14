@@ -72,6 +72,7 @@ func (a *App) markProfileStartingLocked(profile *BrowserProfile) {
 	if profile == nil {
 		return
 	}
+	profile.LastStartAt = time.Now().Format(time.RFC3339Nano)
 	profile.RuntimeState = browser.RuntimeStarting
 	profile.Running = false
 	profile.DebugReady = false
@@ -92,6 +93,7 @@ func (a *App) markProfileFailedLocked(profileId string, profile *BrowserProfile,
 	if profile == nil {
 		return
 	}
+	a.stopBrowserDiagnostics(profileId)
 	delete(a.browserProcessMonitors, profileId)
 	a.stopProfileWindowMarker(profileId)
 	profile.WindowMarkerCode = ""
@@ -173,7 +175,9 @@ func (a *App) markProfileRunningLocked(profileId string, profile *BrowserProfile
 	profile.DebugPort = debugPort
 	profile.DebugReady = debugReady
 	profile.Pid = pid
-	profile.LastStartAt = time.Now().Format(time.RFC3339)
+	if cmd == nil || profile.LastStartAt == "" {
+		profile.LastStartAt = time.Now().Format(time.RFC3339Nano)
+	}
 	profile.RuntimeWarning = runtimeWarning
 	profile.LastError = ""
 	if cmd != nil {
@@ -187,6 +191,9 @@ func (a *App) markProfileRunningLocked(profileId string, profile *BrowserProfile
 		monitor := newDetachedBrowserProcessMonitor()
 		a.setBrowserProcessMonitorLocked(profileId, monitor)
 		go a.waitDetachedBrowser(profileId, debugPort, monitor)
+	}
+	if debugReady {
+		a.startBrowserDiagnosticsLocked(profile)
 	}
 }
 
@@ -233,6 +240,7 @@ func (a *App) markProfileDebugReadyLocked(profile *BrowserProfile, debugPort int
 	profile.DebugReady = true
 	profile.RuntimeWarning = ""
 	profile.LastError = ""
+	a.startBrowserDiagnosticsLocked(profile)
 }
 
 func (a *App) setProfileDebugReady(profileId string, debugPort int) (*BrowserProfile, bool) {

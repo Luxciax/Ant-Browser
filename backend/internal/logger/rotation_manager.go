@@ -159,23 +159,11 @@ func (m *RotationManager) cleanupOldFiles() error {
 		return files[i].ModTime.After(files[j].ModTime)
 	})
 
-	// 删除超出数量限制的文件
-	if len(files) > m.config.MaxBackups {
-		for _, f := range files[m.config.MaxBackups:] {
-			if err := os.Remove(f.Path); err != nil {
-				return fmt.Errorf("failed to remove old file %s: %w", f.Path, err)
-			}
-		}
-	}
-
-	// 删除超出时间限制的文件
-	if m.config.MaxAge > 0 {
-		cutoff := time.Now().AddDate(0, 0, -m.config.MaxAge)
-		for _, f := range files {
-			if f.ModTime.Before(cutoff) {
-				if err := os.Remove(f.Path); err != nil {
-					return fmt.Errorf("failed to remove old file %s: %w", f.Path, err)
-				}
+	cutoff := time.Now().AddDate(0, 0, -m.config.MaxAge)
+	for i, f := range files {
+		if i >= m.config.MaxBackups || (m.config.MaxAge > 0 && f.ModTime.Before(cutoff)) {
+			if err := os.Remove(f.Path); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("failed to remove rotated log: %w", err)
 			}
 		}
 	}

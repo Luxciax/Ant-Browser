@@ -1,4 +1,4 @@
-config_version: 2
+config_version: 3
 database:
     type: sqlite
     sqlite:
@@ -15,15 +15,15 @@ runtime:
     gc_percent: 100
 logging:
     level: info
-    file_enabled: false
+  file_enabled: true
     file_path: data/logs/app.log
-    format: text
+  format: json
     buffer_size: 4
     async_queue_size: 1000
     flush_interval_ms: 1000
     rotation:
-        enabled: false
-        max_size_mb: 100
+    enabled: true
+    max_size_mb: 20
         max_age: 7
         max_backups: 5
         time_interval: daily

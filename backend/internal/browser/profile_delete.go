@@ -2,6 +2,7 @@ package browser
 
 import (
 	"ant-chrome/backend/internal/logger"
+	"ant-chrome/backend/internal/profiletxn"
 	"errors"
 	"fmt"
 	"os"
@@ -18,6 +19,8 @@ type profileDeletionStagedPath struct {
 }
 
 type profileDeletionTransaction struct {
+	fileTransaction          *profiletxn.Transaction
+	sqliteDAO                *SQLiteProfileDAO
 	manager                  *Manager
 	profile                  *Profile
 	launchCode               string
@@ -196,7 +199,10 @@ func (m *Manager) PermanentlyDelete(profileId string) error {
 		})
 		return err
 	}
-	if err := m.ProfileDAO.Delete(profileId); err != nil {
+	if err := deleteTx.deleteRecord(); err != nil {
+		if errors.Is(err, profiletxn.ErrCommitUncertain) {
+			return err
+		}
 		rollbackErr := deleteTx.rollback()
 		combinedErr := errors.Join(err, rollbackErr)
 		m.writeProfileDeleteAudit(log, profileDeleteAuditEntry{
@@ -271,7 +277,10 @@ func (m *Manager) cleanupExpiredTrashLocked(log *logger.Logger) error {
 			})
 			continue
 		}
-		if err := m.ProfileDAO.Delete(profile.ProfileId); err != nil {
+		if err := deleteTx.deleteRecord(); err != nil {
+			if errors.Is(err, profiletxn.ErrCommitUncertain) {
+				return errors.Join(append(cleanupErrors, err)...)
+			}
 			rollbackErr := deleteTx.rollback()
 			combinedErr := errors.Join(err, rollbackErr)
 			cleanupErrors = append(cleanupErrors, fmt.Errorf("删除过期实例 %s 失败: %w", profile.ProfileId, combinedErr))
@@ -314,7 +323,33 @@ func (m *Manager) prepareProfileDeletionTransactionLocked(log *logger.Logger, pr
 	if profile == nil {
 		return &profileDeletionTransaction{manager: m}, nil
 	}
+	if err := m.checkProfileDirectoryOwnershipLocked(profile.ProfileId, m.ResolveUserDataDir(profile)); err != nil {
+		return nil, err
+	}
 	tx := &profileDeletionTransaction{manager: m, profile: profile}
+	if dao, ok := m.ProfileDAO.(*SQLiteProfileDAO); ok {
+		paths, err := m.profileDeletionManagedPaths(profile)
+		if err != nil {
+			return nil, err
+		}
+		root, err := m.managedUserDataRoot()
+		if err != nil {
+			return nil, err
+		}
+		plan := profiletxn.Plan{Kind: "delete"}
+		for _, path := range paths {
+			plan.Moves = append(plan.Moves, profiletxn.Move{Target: path})
+		}
+		tx.sqliteDAO = dao
+		tx.fileTransaction, err = profiletxn.Begin(dao.db, plan, []string{root, m.ResolveRelativePath("data")})
+		if err != nil {
+			return nil, err
+		}
+		if err := tx.fileTransaction.Apply(); err != nil {
+			return nil, errors.Join(err, tx.rollback())
+		}
+		return tx, nil
+	}
 
 	if m.CodeProvider != nil {
 		if code, ok := m.CodeProvider.LookupCode(profile.ProfileId); ok {
@@ -440,6 +475,10 @@ func (tx *profileDeletionTransaction) rollback() error {
 	if tx == nil || tx.manager == nil || tx.profile == nil {
 		return nil
 	}
+	if tx.fileTransaction != nil {
+		_, err := tx.fileTransaction.Resolve()
+		return err
+	}
 	m := tx.manager
 	rollbackErrors := make([]error, 0)
 	if m.ExtensionDAO != nil {
@@ -494,11 +533,37 @@ func (tx *profileDeletionTransaction) commit(log *logger.Logger) {
 	if tx == nil {
 		return
 	}
+	if tx.fileTransaction != nil {
+		if provider, ok := tx.manager.CodeProvider.(interface{ ForgetCode(string) }); ok {
+			provider.ForgetCode(tx.profile.ProfileId)
+		}
+		if _, err := tx.fileTransaction.Resolve(); err != nil && log != nil {
+			log.Error("实例删除已提交，暂存清理将在重启时重试", logger.F("error", err))
+		}
+		return
+	}
 	for _, entry := range tx.stagedPaths {
 		if err := os.RemoveAll(entry.staged); err != nil && log != nil {
 			log.Error("清理实例删除暂存目录失败", logger.F("dir", entry.staged), logger.F("error", err))
 		}
 	}
+}
+
+func (tx *profileDeletionTransaction) deleteRecord() error {
+	if tx.fileTransaction == nil {
+		return tx.manager.ProfileDAO.Delete(tx.profile.ProfileId)
+	}
+	dbtx, err := tx.sqliteDAO.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer dbtx.Rollback()
+	for _, table := range []string{"browser_profile_extension_runtime", "browser_profile_extensions", "browser_profile_extension_settings", "launch_codes", "browser_profiles"} {
+		if _, err := dbtx.Exec("DELETE FROM "+table+" WHERE profile_id = ?", tx.profile.ProfileId); err != nil {
+			return err
+		}
+	}
+	return tx.fileTransaction.Commit(dbtx)
 }
 
 func (m *Manager) deleteProfileFingerprintCheckDir(profileId string) error {

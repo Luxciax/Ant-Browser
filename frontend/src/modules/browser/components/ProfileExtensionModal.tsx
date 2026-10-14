@@ -19,23 +19,34 @@ export function ProfileExtensionModal({ open, profile, onClose }: ProfileExtensi
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [loadedProfileId, setLoadedProfileId] = useState<string | null>(null)
+  const profileId = profile?.profileId
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
 
   useEffect(() => {
-    if (!open || !profile) return
+    setLoadedProfileId(null)
+    if (!open || !profileId) return
+    let cancelled = false
     setLoading(true)
+    setExtensions([])
+    setConfigured(false)
+    setSelectedIds([])
     Promise.all([
       fetchBrowserExtensions(),
-      fetchBrowserProfileExtensionSettings(profile.profileId),
+      fetchBrowserProfileExtensionSettings(profileId),
     ]).then(([extensionItems, settings]) => {
+      if (cancelled) return
       setExtensions(extensionItems)
       setConfigured(settings.configured)
       setSelectedIds(settings.extensionIds)
+      setLoadedProfileId(profileId)
     }).catch((error: any) => {
+      if (cancelled) return
       toast.error(error?.message || '加载实例插件配置失败')
-    }).finally(() => setLoading(false))
-  }, [open, profile])
+    }).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [open, profileId])
 
   const toggleExtension = (extensionId: string, checked: boolean) => {
     setSelectedIds((current) => {
@@ -45,7 +56,7 @@ export function ProfileExtensionModal({ open, profile, onClose }: ProfileExtensi
   }
 
   const handleSave = async () => {
-    if (!profile) return
+    if (!profile || !open || loading || saving || loadedProfileId !== profile.profileId) return
     setSaving(true)
     try {
       await saveBrowserProfileExtensionSettings(profile.profileId, selectedIds, configured)
@@ -67,7 +78,7 @@ export function ProfileExtensionModal({ open, profile, onClose }: ProfileExtensi
       footer={(
         <>
           <Button variant="secondary" onClick={onClose}>取消</Button>
-          <Button onClick={handleSave} loading={saving} disabled={loading}>保存</Button>
+          <Button onClick={handleSave} loading={saving} disabled={loading || loadedProfileId !== profileId}>保存</Button>
         </>
       )}
     >

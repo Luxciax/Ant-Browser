@@ -14,11 +14,33 @@ Unicode True
 !define PRODUCT_EXE     "ant-chrome.exe"
 !define PRODUCT_ICON    "AntBrowser.ico"
 !define UNINSTALL_KEY   "Software\Microsoft\Windows\CurrentVersion\Uninstall\AntBrowser"
+!define FORK7_UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Ant ChromeAnt Browser"
 !define INSTALL_DIR     "$PROGRAMFILES64\Ant Browser"
 !define POWERSHELL_EXE  "$SYSDIR\WindowsPowerShell\v1.0\powershell.exe"
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+
+Function .onInit
+  ; Prefer the canonical installer identity. fork.7 was accidentally built with
+  ; Wails' default 64-bit uninstall identity, so use it only as a fallback.
+  SetRegView 32
+  ReadRegStr $0 HKLM "${UNINSTALL_KEY}" "InstallLocation"
+  ${If} "$0" != ""
+    StrCpy $INSTDIR "$0"
+    Return
+  ${EndIf}
+
+  SetRegView 64
+  ReadRegStr $0 HKLM "${UNINSTALL_KEY}" "InstallLocation"
+  ${If} "$0" == ""
+    ReadRegStr $0 HKLM "${FORK7_UNINSTALL_KEY}" "InstallLocation"
+  ${EndIf}
+  ${If} "$0" != ""
+    StrCpy $INSTDIR "$0"
+  ${EndIf}
+  SetRegView 32
+FunctionEnd
 
 !macro WriteCloseProcessScript HANDLE
   FileWrite ${HANDLE} "param([string]$$InstallDir, [string]$$ExcludePath)$\r$\n"

@@ -25,15 +25,24 @@ func (m *SingBoxManager) restartBridgeOnSamePort(log *logger.Logger, key string,
 	if bridge == nil {
 		return fmt.Errorf("sing-box 桥接不存在")
 	}
+	unlockLaunch := m.lockLaunchForKey(key)
+	defer unlockLaunch()
 	m.mu.Lock()
 	current := m.Bridges[key]
-	if current != bridge || bridge.Stopping || bridge.Restarting {
+	// watchBridge owns this transition and already set Restarting. Rejecting
+	// that flag here would skip every recovery of a pinned bridge.
+	if current != bridge || bridge.Stopping {
 		m.mu.Unlock()
 		return errSingBoxBridgeRestartNotNeeded
 	}
 	if len(bridge.Outbounds) == 0 && len(bridge.Outbound) == 0 {
 		m.mu.Unlock()
 		return fmt.Errorf("sing-box 桥接缺少重启上下文")
+	}
+	if bridge.RefCount <= 0 {
+		delete(m.Bridges, key)
+		m.mu.Unlock()
+		return errSingBoxBridgeRestartNotNeeded
 	}
 	bridge.Restarting = true
 	m.mu.Unlock()
@@ -59,15 +68,19 @@ func (m *SingBoxManager) restartBridgeOnSamePort(log *logger.Logger, key string,
 		return err
 	}
 	restarted.RestartCount = bridge.RestartCount + 1
-	restarted.RefCount = refCount
 	restarted.LastUsedAt = time.Now()
 	m.mu.Lock()
-	if current := m.Bridges[key]; current != bridge {
+	if current := m.Bridges[key]; current != bridge || bridge.Stopping || bridge.RefCount <= 0 {
+		if current == bridge {
+			delete(m.Bridges, key)
+		}
 		m.mu.Unlock()
 		restarted.Stopping = true
 		m.stopBridgeProcess(restarted)
 		return errSingBoxBridgeRestartNotNeeded
 	}
+	// Profiles may have stopped while the process was being launched.
+	restarted.RefCount = bridge.RefCount
 	m.Bridges[key] = restarted
 	m.mu.Unlock()
 	log.Info("sing-box 桥接已同端口恢复",

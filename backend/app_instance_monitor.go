@@ -89,7 +89,7 @@ func (a *App) waitBrowserProcess(profileId string, monitor *browserProcessMonito
 	a.closeProfilePageSession(profileId)
 
 	if wasRunning && err != nil {
-		log.Error("浏览器进程异常退出", logger.F("profile_id", profileId), logger.F("profile_name", profileName), logger.F("error", err))
+		log.Error("浏览器进程异常退出", logger.F("profile_id", profileId), logger.F("profile_name", profileName), logger.F("run_id", monitor.runID), logger.F("error", err), logger.F("stderr_tail", monitor.Result().StderrTail))
 		a.emitRuntimeEvent("browser:instance:crashed", map[string]interface{}{
 			"profileId":    profileId,
 			"profileName":  profileName,

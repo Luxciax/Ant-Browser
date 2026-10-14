@@ -67,6 +67,20 @@ func (m *XrayManager) restartPinnedBridge(log *logger.Logger, key string, bridge
 	if restarted == nil {
 		return fmt.Errorf("xray 桥接恢复异常: 未返回新进程")
 	}
+	// Stop/release can win while launch is waiting for readiness.
+	m.mu.Lock()
+	unused := m.Bridges[key] != restarted || restarted.RefCount <= 0
+	if unused {
+		restarted.Stopping = true
+		if m.Bridges[key] == restarted {
+			delete(m.Bridges, key)
+		}
+	}
+	m.mu.Unlock()
+	if unused {
+		m.stopBridgeProcess(restarted)
+		return errXrayBridgeRestartNotNeeded
+	}
 	restarted.LastUsedAt = time.Now()
 	log.Info("xray 桥接已同端口恢复",
 		logger.F("key", key),

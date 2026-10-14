@@ -5,6 +5,13 @@ import (
 	"testing"
 )
 
+func TestManagedProxyPolicyRejectsBypassArguments(t *testing.T) {
+	got, _ := sanitizeManagedLaunchArgs([]string{"--no-proxy-server", "--proxy-auto-detect", "--proxy-bypass-list=*", "--proxy-bypass-list", "*.example.com", "--disable-gpu"})
+	if !reflect.DeepEqual(got, []string{"--disable-gpu"}) {
+		t.Fatalf("proxy bypass survived: %#v", got)
+	}
+}
+
 func TestSanitizeManagedLaunchArgsRejectsDangerousFlags(t *testing.T) {
 	input := []string{
 		"--proxy-pac-url=http://127.0.0.1/proxy.pac",

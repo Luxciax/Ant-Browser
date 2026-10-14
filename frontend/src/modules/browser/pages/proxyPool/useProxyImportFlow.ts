@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { parseProxyImportText } from './helpers.clash'
 import { toast } from '../../../../shared/components'
 import type { BrowserProxy } from '../../types'
 import { fetchClashImportFromURL } from '../../api'
@@ -16,7 +17,6 @@ import {
   detectProxyNodeProtocol,
   nextProxyID,
   parseChainImportJSON,
-  parseClashImportText,
   parseDirectImportText,
   resolveImportSourceID,
   type ChainImportForm,
@@ -65,6 +65,7 @@ export function useProxyImportFlow({
   const [removedPreviewProxyNames, setRemovedPreviewProxyNames] = useState<string[]>([])
   const [importing, setImporting] = useState(false)
   const [fetchingImportUrl, setFetchingImportUrl] = useState(false)
+  const [parsingImport, setParsingImport] = useState(false)
 
   const handleRemovePreviewProxy = (proxyId: string) => {
     const target = previewList.find(item => item.proxyId === proxyId)
@@ -163,6 +164,7 @@ export function useProxyImportFlow({
   }
 
   const handleFetchImportURL = async () => {
+    if (fetchingImportUrl || parsingImport) return
     const targetURL = importUrl.trim()
     if (!targetURL) {
       toast.error('请输入订阅 URL')
@@ -194,13 +196,15 @@ export function useProxyImportFlow({
     }
   }
 
-  const handleParseImport = () => {
+  const handleParseImport = async () => {
+    if (fetchingImportUrl || parsingImport) return
+    setParsingImport(true)
     try {
       const prefix = importNamePrefix.trim()
       let candidates
       let previewGroupName = importGroupName.trim()
       if (importMode === 'clash') {
-        candidates = buildImportCandidatesFromClash(parseClashImportText(importText), prefix)
+        candidates = buildImportCandidatesFromClash(await parseProxyImportText(importText), prefix)
       } else if (importMode === 'direct') {
         if (directImportText.trim()) {
           const parsed = buildDirectImportCandidatesFromText(directImportText)
@@ -223,6 +227,8 @@ export function useProxyImportFlow({
       setPreviewModalOpen(true)
     } catch (error: any) {
       toast.error(`解析失败: ${error?.message || '未知错误'}`)
+    } finally {
+      setParsingImport(false)
     }
   }
 
@@ -304,7 +310,7 @@ export function useProxyImportFlow({
     importModalOpen, setImportModalOpen, importMode, importUrl, importFetchProxyId, importResolvedUrl, importText,
     importDnsServers, importNamePrefix, importGroupName, chainImportText, directImportText,
     chainImportForm, directImportForm, previewModalOpen, setPreviewModalOpen, previewList, removedPreviewProxyNames,
-    importing, fetchingImportUrl, canParseImport, setImportText, setImportDnsServers,
+    importing, fetchingImportUrl, parsingImport, canParseImport, setImportText: (value: string) => { setImportText(value); setImportResolvedUrl('') }, setImportDnsServers,
     setImportNamePrefix, setImportGroupName, setImportFetchProxyId, setChainImportText, setDirectImportText,
     setChainImportForm, setDirectImportForm, handleRemovePreviewProxy, updateChainImportHop,
     handleImportModeChange, handleFillChainTemplate, handleFillDirectTemplate, handleCopyChainTemplate,

@@ -159,6 +159,19 @@ func (s *LaunchCodeService) Remove(profileId string) error {
 	return nil
 }
 
+// ForgetCode updates the cache after a caller has atomically deleted the code
+// together with its profile in SQLite. It must not issue a second DB mutation.
+func (s *LaunchCodeService) ForgetCode(profileId string) {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if code, ok := s.profileToCode[profileId]; ok {
+		delete(s.codeToProfile, code)
+		delete(s.profileToCode, profileId)
+	}
+}
+
 // LoadAll 启动时从数据库加载所有映射到内存
 func (s *LaunchCodeService) LoadAll() error {
 	s.opMu.Lock()

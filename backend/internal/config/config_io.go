@@ -19,6 +19,7 @@ func Load(configPath string) (*Config, error) {
 	}
 
 	config := Config{}
+	config.Logging = DefaultConfig().Logging
 	config.Browser.RestoreLastSession = DefaultConfig().Browser.RestoreLastSession
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("解析配置文件失败: %w", err)
@@ -41,6 +42,13 @@ func MigrateLegacyConfig(config *Config) bool {
 	}
 	if config.ConfigVersion == 0 {
 		config.Browser.RestoreLastSession = true
+	}
+	// Migrate the historical bundled console-only defaults once. Version 3
+	// preserves subsequent explicit opt-outs and custom logging destinations.
+	if config.ConfigVersion < 3 && !config.Logging.FileEnabled && (config.Logging.FilePath == "data/logs/app.log" || isLegacyDefaultLogPath(config.Logging.FilePath)) && config.Logging.Format == "text" && !config.Logging.Rotation.Enabled {
+		config.Logging.FileEnabled = true
+		config.Logging.Format = "json"
+		config.Logging.Rotation = DefaultConfig().Logging.Rotation
 	}
 	config.ConfigVersion = CurrentConfigVersion
 	return true

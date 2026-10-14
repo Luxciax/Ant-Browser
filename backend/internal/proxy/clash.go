@@ -12,12 +12,13 @@ import (
 
 // ClashManager Clash 进程管理器
 type ClashManager struct {
-	Config      *config.Config
-	AppRoot     string // 应用根目录，所有相对路径基于此解析
-	Processes   map[string]*exec.Cmd
-	NodeBridges map[string]*MihomoNodeBridge
-	mu          sync.Mutex
-	launchLocks map[string]*bridgeLaunchLock
+	Config       *config.Config
+	AppRoot      string // 应用根目录，所有相对路径基于此解析
+	Processes    map[string]*exec.Cmd
+	NodeBridges  map[string]*MihomoNodeBridge
+	mu           sync.Mutex
+	launchLocks  map[string]*bridgeLaunchLock
+	OnBridgeDied func(key string, err error)
 }
 
 // NewClashManager 创建 Clash 管理器
@@ -139,6 +140,7 @@ func (m *ClashManager) StopAll() {
 	bridges := make([]*MihomoNodeBridge, 0, len(m.NodeBridges))
 	for key, bridge := range m.NodeBridges {
 		if bridge != nil {
+			bridge.Stopping = true
 			bridge.Running = false
 			bridges = append(bridges, bridge)
 		}

@@ -299,7 +299,9 @@ function Build-WindowsBinary {
 
     $previousGoProxy = $env:GOPROXY
     try {
-        $env:GOPROXY = "https://goproxy.cn,direct"
+        if ([string]::IsNullOrWhiteSpace($env:GOPROXY)) {
+            $env:GOPROXY = "https://goproxy.cn,direct"
+        }
         Push-Location (Join-Path $repoRoot "frontend")
         try {
             Write-Host "[Windows] 预检前端依赖..."

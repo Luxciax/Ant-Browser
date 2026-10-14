@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/logger"
 	"bufio"
 	"fmt"
 	"io"
@@ -33,6 +34,8 @@ type browserProcessMonitor struct {
 	mu        sync.Mutex
 	result    browserProcessExitResult
 	debugPort int
+	profileID string
+	runID     string
 }
 
 func newBrowserProcessMonitor(cmd *exec.Cmd) (*browserProcessMonitor, error) {
@@ -128,6 +131,12 @@ func (m *browserProcessMonitor) captureStderr() {
 	for scanner.Scan() {
 		line := scanner.Text()
 		m.stderrTail.Append(line)
+		if strings.Contains(line, "ERROR:") || strings.Contains(line, "FATAL:") || strings.Contains(line, "crash") {
+			m.mu.Lock()
+			id, run := m.profileID, m.runID
+			m.mu.Unlock()
+			logger.New("Chromium").Warn("内核 stderr 异常", logger.F("profile_id", id), logger.F("run_id", run), logger.F("pid", m.cmd.Process.Pid), logger.F("stderr", line))
+		}
 		if port, ok := parseBrowserDebugPortFromStderrLine(line); ok {
 			m.SetDebugPort(port)
 		}

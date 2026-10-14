@@ -18,6 +18,7 @@ var browserLaunchArgPolicy = LaunchArgPolicy{
 		"--remote-debugging-address",
 		"--proxy-server",
 		"--proxy-pac-url",
+		"--proxy-bypass-list",
 		"--load-extension",
 		"--disable-extensions-except",
 		"--renderer-cmd-prefix",
@@ -32,6 +33,8 @@ var browserLaunchArgPolicy = LaunchArgPolicy{
 		"--disable-sandbox",
 		"--single-process",
 		"--restore-last-session",
+		"--no-proxy-server",
+		"--proxy-auto-detect",
 	},
 	AllowedInternal: []string{
 		"--user-data-dir",

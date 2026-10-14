@@ -328,6 +328,9 @@ export function GetAppConfig():Promise<Record<string, any>>;
 
 export function GetAppLogs():Promise<Array<logger.MemoryLogEntry>>;
 
+export function GetAppLogStatus():Promise<Record<string,string>>;
+export function ExportBrowserDiagnostics():Promise<Record<string,any>>;
+
 export function GetAutomationState():Promise<Record<string, any>>;
 
 export function GetBackupFileInfo(arg1:string):Promise<Record<string, any>>;
@@ -405,3 +408,4 @@ export function UpdateGroup(arg1:string,arg2:browser.GroupInput):Promise<browser
 export function ValidateProxyConfig(arg1:string,arg2:string):Promise<backend.ProxyValidationResult>;
 
 export function WaitInstanceDebugReady(arg1:string,arg2:number,arg3:time.Duration):Promise<browser.Profile>;
+export function BrowserProxyParseImport(arg1:string):Promise<Record<string, any>>;
