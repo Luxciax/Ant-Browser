@@ -251,12 +251,16 @@ func backupProfileIDsFromInput(input map[string]string) ([]string, error) {
 func backupProfileExportOptionsFromInput(input map[string]string) (ProfilePackageExportOptions, error) {
 	options := ProfilePackageExportOptions{
 		PortableLogin:     backupDestinationFlag(input, "portableLogin"),
+		ProtectArchive:    backupDestinationFlag(input, "protectArchive"),
 		MigrationPassword: input["migrationPassword"],
 	}
 	if options.PortableLogin && len(strings.TrimSpace(options.MigrationPassword)) < 8 {
 		return ProfilePackageExportOptions{}, fmt.Errorf("登录态迁移密码至少需要 8 个字符")
 	}
 	if !options.PortableLogin {
+		if options.ProtectArchive {
+			return ProfilePackageExportOptions{}, fmt.Errorf("整包加密需要启用登录态迁移并设置迁移密码")
+		}
 		options.MigrationPassword = ""
 	}
 	return options, nil

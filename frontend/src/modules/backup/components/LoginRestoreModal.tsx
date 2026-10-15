@@ -36,7 +36,7 @@ export function LoginRestoreModal({ request, onClose, onRestored }: Props) {
     <Button loading={busy} onClick={() => void restore()}>解密并恢复备份</Button>
   </>}>
     <div className="space-y-3 text-sm">
-      <p>此全量备份包含 {request?.portableLoginCount || 0} 个实例的加密登录态。密码验证前不会修改本机数据。</p>
+      <p>{request?.encryptedArchive ? '此全量备份已整包加密，包含网站存储与登录态。' : `此全量备份包含 ${request?.portableLoginCount || 0} 个实例的加密登录态。`}密码和完整性验证前不会修改本机数据。</p>
       <p className="text-[var(--color-text-secondary)]">恢复会停止运行中的实例并合并备份数据。密码不会保存；错误密码可重试。网站撤销的会话、硬件绑定凭据仍需重新登录。</p>
       <label className="block">
         <span className="mb-1 block">迁移密码</span>

@@ -8,10 +8,17 @@ import (
 )
 
 func (a *App) backupExportPackageToPath(savePath string) (map[string]interface{}, error) {
-	return a.backupExportPackageToPathWithOptions(savePath, ProfilePackageExportOptions{})
+	options, err := a.automaticBackupLoginOptions()
+	if err != nil {
+		return nil, err
+	}
+	return a.backupExportPackageToPathWithOptions(savePath, options)
 }
 
 func (a *App) backupExportPackageToPathWithOptions(savePath string, options ProfilePackageExportOptions) (map[string]interface{}, error) {
+	if options.ProtectArchive && (!options.PortableLogin || len(strings.TrimSpace(options.MigrationPassword)) < 8) {
+		return nil, fmt.Errorf("整包加密需要有效的登录态迁移密码")
+	}
 	if strings.TrimSpace(savePath) == `` {
 		return nil, fmt.Errorf(`backup export path is empty`)
 	}
@@ -45,7 +52,11 @@ func (a *App) backupExportPackageToPathWithOptions(savePath string, options Prof
 	manifest := backup.BuildManifest(scope, a.appName(), a.appVersion(), time.Now())
 	a.backupEmitExportProgress(`preparing`, 15, `writing backup package`)
 
-	includedEntries, skippedEntries, fileCount, err := backupWritePackageZip(savePath, scope, manifest, a.backupEmitExportProgressMeta)
+	var encryptionPassword []string
+	if options.ProtectArchive {
+		encryptionPassword = []string{strings.TrimSpace(options.MigrationPassword)}
+	}
+	includedEntries, skippedEntries, fileCount, err := backupWritePackageZip(savePath, scope, manifest, a.backupEmitExportProgressMeta, encryptionPassword...)
 	if err != nil {
 		a.backupEmitExportProgress(`error`, 100, fmt.Sprintf(`backup export failed: %v`, err))
 		return nil, err
@@ -60,6 +71,7 @@ func (a *App) backupExportPackageToPathWithOptions(savePath string, options Prof
 		`message`:            `backup export complete`,
 		`portableLoginCount`: portableCount,
 		`warnings`:           warnings,
+		`encryptedArchive`:   options.ProtectArchive,
 	}, nil
 }
 

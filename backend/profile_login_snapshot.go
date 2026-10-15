@@ -37,10 +37,12 @@ type portableCookie struct {
 }
 
 type portableLoginState struct {
-	Version    int              `json:"version"`
-	CapturedAt time.Time        `json:"capturedAt"`
-	Cookies    []portableCookie `json:"cookies"`
-	Tabs       []string         `json:"tabs,omitempty"`
+	Version        int                   `json:"version"`
+	CapturedAt     time.Time             `json:"capturedAt"`
+	Cookies        []portableCookie      `json:"cookies"`
+	Tabs           []string              `json:"tabs,omitempty"`
+	Pages          []portablePageSession `json:"pages,omitempty"`
+	SkippedStorage int                   `json:"skippedStorage,omitempty"`
 }
 
 func capturePortableLoginState(port int) (portableLoginState, error) {
@@ -78,6 +80,7 @@ func capturePortableLoginState(port int) (portableLoginState, error) {
 		}
 	}
 	state := portableLoginState{Version: 2, CapturedAt: time.Now().UTC(), Cookies: cookies}
+	storageDeadline := time.Now().Add(5 * time.Second)
 	if body, listErr := cdpGetEndpointBody(port, "/json/list"); listErr == nil {
 		var targets []cdpTarget
 		if json.Unmarshal(body, &targets) == nil {
@@ -85,9 +88,20 @@ func capturePortableLoginState(port int) (portableLoginState, error) {
 				parsed, parseErr := url.Parse(target.URL)
 				if target.Type == "page" && parseErr == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" {
 					state.Tabs = append(state.Tabs, target.URL)
+					if time.Now().Before(storageDeadline) {
+						page, skipped := capturePageSession(target)
+						state.Pages = append(state.Pages, page)
+						state.SkippedStorage += skipped
+					} else {
+						state.SkippedStorage++
+					}
 				}
 			}
+		} else {
+			state.SkippedStorage++
 		}
+	} else {
+		state.SkippedStorage++
 	}
 	return state, validatePortableLoginState(state)
 }
@@ -98,6 +112,26 @@ func validatePortableLoginState(state portableLoginState) error {
 	}
 	if len(state.Tabs) > 10000 {
 		return fmt.Errorf("登录态标签页数量无效")
+	}
+	if len(state.Pages) > 10000 || state.SkippedStorage < 0 {
+		return fmt.Errorf("会话存储快照数量无效")
+	}
+	storageBytes := 0
+	for _, page := range state.Pages {
+		if webOrigin(page.URL) == "" || len(page.Storage) > 1000 {
+			return fmt.Errorf("会话存储页面无效")
+		}
+		for _, storage := range page.Storage {
+			if webOrigin(storage.Origin) != storage.Origin || len(storage.Entries) > 100000 {
+				return fmt.Errorf("会话存储来源或数量无效")
+			}
+			for _, entry := range storage.Entries {
+				storageBytes += len(entry[0]) + len(entry[1])
+			}
+		}
+	}
+	if storageBytes > 16<<20 {
+		return fmt.Errorf("会话存储快照超过 16 MiB 限制")
 	}
 	for _, tab := range state.Tabs {
 		parsed, err := url.Parse(tab)
@@ -136,6 +170,9 @@ func writeLocalLoginState(dir, name string, state portableLoginState) error {
 		return fmt.Errorf("登录态快照本机加密失败")
 	}
 	defer zeroSensitiveBytes(protected)
+	if len(protected) > loginStateMaxBytes {
+		return fmt.Errorf("加密后的登录态快照超过 32 MiB 限制，未覆盖原快照")
+	}
 	return fsutil.AtomicWriteFile(filepath.Join(dir, name), protected, 0600)
 }
 
@@ -183,7 +220,7 @@ func snapshotLoginForBackup(port int, dir, profileID string) error {
 		log.Warn("登录态快照失败", logger.F("event", "login.snapshot_failed"), logger.F("profile_id", profileID), logger.F("reason", err.Error()))
 		return err
 	}
-	log.Info("登录态快照已加密", logger.F("event", "login.snapshot_saved"), logger.F("profile_id", profileID), logger.F("cookie_count", len(state.Cookies)), logger.F("captured_at", state.CapturedAt))
+	log.Info("登录态快照已加密", logger.F("event", "login.snapshot_saved"), logger.F("profile_id", profileID), logger.F("cookie_count", len(state.Cookies)), logger.F("page_count", len(state.Pages)), logger.F("storage_skipped", state.SkippedStorage), logger.F("captured_at", state.CapturedAt))
 	return nil
 }
 
@@ -259,4 +296,19 @@ func prepareSameDeviceLogin(dir string) (bool, error) {
 		return false, err
 	}
 	return true, writeLocalLoginState(dir, loginRestoreFile, state)
+}
+
+func loginSnapshotCoverageWarnings(dir, profileName string) []string {
+	state, err := readLocalLoginState(dir, loginSnapshotFile)
+	if err != nil {
+		return nil
+	}
+	var warnings []string
+	if time.Since(state.CapturedAt) > 2*time.Minute {
+		warnings = append(warnings, fmt.Sprintf("实例「%s」登录态快照已超过两分钟；建议重新打开并从列表停止后再备份", profileName))
+	}
+	if state.SkippedStorage > 0 {
+		warnings = append(warnings, fmt.Sprintf("实例「%s」有 %d 个页面/框架的会话存储未覆盖，未保证全部登录数据完整", profileName, state.SkippedStorage))
+	}
+	return warnings
 }

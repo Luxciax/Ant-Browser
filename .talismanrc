@@ -124,13 +124,13 @@ fileignoreconfig:
 # parameters, Cookie/Local State schema fields and explicit synthetic fixtures.
 # No live account data or credentials; exact checksums, hook stays enabled.
 - filename: backend/app_backup_destination.go
-  checksum: 94a323159e677d4bb183dd95f8bd22beec58de25ea6c90d58279eb9433432d1c
+  checksum: 55e5a1555c343ac00daa3f5619c0bc35a78aa599c8279577b3302253891711ec
 - filename: backend/app_backup_export_path.go
-  checksum: fc0550a395d3510184b64578ca40cd445176b0937da690b5afa026ec35372237
+  checksum: e9d5494d0dbdff244fd0cc4472fcb157c22eed2c4578029e0bf440551d1777c0
 - filename: backend/app_backup_import_flow.go
   checksum: 554faa98ed88a02d506eabbde259224293b5093ea6f27640e0b8ea2f251fc199
 - filename: backend/app_backup_login.go
-  checksum: 1cead8fbab34c6a39dd239b3f7a22bcc4568002483ade256309491e603f95639
+  checksum: e46d21cb4374d982227f7b6e54297c60ea98618f0ba413c5a67095074e2bdd0a
 - filename: backend/app_backup_remote.go
   checksum: f5d6af8489c9f1e5459cbcd29fb72700e11df36cd37489d4769212430e49b592
 - filename: backend/app_backup_runtime.go
@@ -138,13 +138,32 @@ fileignoreconfig:
 - filename: backend/profile_login_package_windows_test.go
   checksum: 8b4cb2b5f81acef320dcc78afdde5d053dfd4b4ff7aa0bf976626cf6a69fe5a0
 - filename: frontend/src/modules/backup/api.ts
-  checksum: 7cb97121715133f22aa1d43e3237258f7f889877c044fcc276fbe1e0370576aa
+  checksum: 6401e5d86f16b22cc32ce8e29f8a88df1f28c3f5e635b05814bb7e7ac6260f3c
 - filename: frontend/src/modules/backup/components/LoginRestoreModal.tsx
   checksum: 499a0ff5eae87730087767857633d176efc551401e26546738f664aabeabe22d
 - filename: frontend/scripts/login-migration-fixture.html
-  checksum: 3c96ef15e1715d8ccb5fa4bc83f0424856561902f13fff2232d02743b9b6a26d
+  checksum: 7d59fb8eff2300879c92a91dd2a2923694f36464ef6f1dbe9557ae573073a216
 - filename: backend/profile_login_snapshot.go
   checksum: 34cc0e406792164587c4d670803e823e4af339b9954f83c6ef31bcacc6dfb7d0
 - filename: backend/profile_login_native_test.go
-  checksum: e7bd86b30255bd88a87f982d550c5c8729967fdef3ab4f409c66db862c5fbe15
+  checksum: 59b578ddcddc9ee2fe9af41e1f5089905d3648ed09671a2bef9105b296889b9e
+# Reviewed session-continuity source only: backup filenames, password variable
+# declarations and explicit synthetic test literals, not saved credentials.
+# Exact file checksums expire on edits; all detectors and hooks remain enabled.
+- filename: backend/app_backup_archive_write.go
+  checksum: 68528d4f4ffd683fb123d70e9f2c15bab5ff5b5c594be8fb152186fd020a26b6
+- filename: backend/app_backup_entry.go
+  checksum: f2a41b6f8d2614d2e2866b29080f5e24d12e454ba503ab6d24d81ee90f26c445
+- filename: backend/app_backup_package_info.go
+  checksum: f0b572050748a7aa6dcfa18b0c0e785ff843dfa44e7a90772a1a759813f13e13
+- filename: backend/backup_archive_crypto.go
+  checksum: 092406aed2332dd146ab3394dbbecab49129b779285194d9d7958b30fb940ff7
+- filename: backend/backup_archive_crypto_test.go
+  checksum: 8ac4e4e117499824d0b7c77eb204cf2ef3d4bd41fb85c0f0d56254b784043d6d
+- filename: backend/backup_login_protection.go
+  checksum: 03f03b128bf5c5be356e411fab9b70ce4d4c3331d852f142ca143500090e9a5b
+- filename: backend/backup_login_protection_windows_test.go
+  checksum: 3df2135eb12c543a5896fd76d6b246fbbb692f1473b45991967388fb2ca2132b
+- filename: frontend/src/modules/backup/components/ScheduledBackupModal.tsx
+  checksum: 4a19ad880070535f19742c17a1ca83490a63c146abefa4be646adac9c435d42c
 version: "1.0"

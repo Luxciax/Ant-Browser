@@ -59,6 +59,7 @@ func (a *App) backupAddLoginState(scope *backup.Scope, password string) (int, []
 			return 0, nil, cleanup, fmt.Errorf("实例「%s」登录态迁移准备失败：%w", profile.ProfileName, err)
 		}
 		bundle.Profiles = append(bundle.Profiles, fullLoginRecord{profile.ProfileId, archiveDir, *envelope})
+		warnings = append(warnings, loginSnapshotCoverageWarnings(dir, profile.ProfileName)...)
 		if state, stateErr := readLocalLoginState(dir, loginSnapshotFile); stateErr == nil {
 			warnings = append(warnings, fmt.Sprintf("实例「%s」快照 %s，%d 条 Cookie；网站可能仍要求验证", profile.ProfileName, state.CapturedAt.Local().Format("2006-01-02 15:04:05"), len(state.Cookies)))
 		}
@@ -160,11 +161,32 @@ func (a *App) BackupRestoreWithLoginPassword(zipPath, password string) (map[stri
 	if err != nil {
 		return nil, err
 	}
-	if format != backup.PackageFormat {
+	if format != backup.PackageFormat && format != encryptedBackupFormat {
 		return nil, fmt.Errorf("此接口仅支持全量备份")
 	}
 	if len(strings.TrimSpace(password)) < 8 {
 		return nil, fmt.Errorf("请输入导出时的迁移密码（至少 8 个字符）")
+	}
+	if format == encryptedBackupFormat {
+		staging, err := os.MkdirTemp("", "ant-decrypted-backup-*")
+		if err != nil {
+			return nil, err
+		}
+		defer os.RemoveAll(staging)
+		plain := filepath.Join(staging, "backup.zip")
+		if err := decryptFullBackupArchive(zipPath, plain, strings.TrimSpace(password)); err != nil {
+			return nil, err
+		}
+		innerFormat, err := detectBackupPackageFormat(plain)
+		if err != nil || innerFormat != backup.PackageFormat {
+			return nil, fmt.Errorf("加密载荷不是有效的全量备份")
+		}
+		result, err := a.backupImportFromPathWithPasswordLocked(plain, password)
+		if err == nil {
+			result["zipPath"] = zipPath
+			result["encryptedArchive"] = true
+		}
+		return result, err
 	}
 	return a.backupImportFromPathWithPasswordLocked(zipPath, password)
 }

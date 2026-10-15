@@ -36,6 +36,7 @@ export interface BackupActionResult {
   renamedCount?: number
   requiresProfileImportConfirmation?: boolean
   requiresLoginPassword?: boolean
+  encryptedArchive?: boolean
   profileImportPreview?: BrowserProfilePackageImportPreview
   warnings?: string[]
   packageType?: 'full' | 'profile' | string
@@ -103,6 +104,7 @@ export async function createBackupPackage(
   if (profileOptions?.portableLogin) {
       payload.portableLogin = 'true'
       payload.migrationPassword = profileOptions.migrationPassword
+      payload.protectArchive = String(profileIds.length === 0 && profileOptions.protectArchive === true)
   }
   return (await bindings.BackupCreatePackage(payload)) || {}
 }
@@ -119,6 +121,20 @@ export async function restoreBackupWithLoginPassword(zipPath: string, password: 
   const app = getGoApp()
   if (!app?.BackupRestoreWithLoginPassword) throw new Error('请连接支持登录态迁移的新版桌面后端')
   return await app.BackupRestoreWithLoginPassword(zipPath, password)
+}
+
+export interface BackupLoginProtection { enabled: boolean; configured: boolean; supported: boolean; needsRepair?: boolean }
+
+export async function fetchBackupLoginProtection(): Promise<BackupLoginProtection> {
+  const app = getGoApp()
+  if (!app?.BackupLoginProtectionSettings) throw new Error('请连接支持定时登录态保护的新版桌面后端')
+  return await app.BackupLoginProtectionSettings()
+}
+
+export async function saveBackupLoginProtection(enabled: boolean, password: string): Promise<BackupLoginProtection> {
+  const app = getGoApp()
+  if (!app?.BackupSaveLoginProtection) throw new Error('请连接支持定时登录态保护的新版桌面后端')
+  return await app.BackupSaveLoginProtection(enabled, password)
 }
 
 export async function importSystemConfig(): Promise<BackupActionResult> {

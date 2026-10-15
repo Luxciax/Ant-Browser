@@ -105,10 +105,10 @@ func TestLoginMigrationUIConfiguredKernel(t *testing.T) {
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
-	for _, mode := range []string{"export", "restore"} {
+	for _, mode := range []string{"export", "restore", "schedule"} {
 		url := uiURL
-		if mode == "restore" {
-			url += "?restore"
+		if mode != "export" {
+			url += "?" + mode
 		}
 		if _, err := cdpCall(port, "Page.navigate", map[string]any{"url": url}); err != nil {
 			t.Fatal(err)
@@ -119,10 +119,15 @@ func TestLoginMigrationUIConfiguredKernel(t *testing.T) {
 			wait(`document.querySelectorAll('input[type=password]').length===2`)
 			eval(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='导出').click();true`)
 			wait(`document.body.innerText.includes('迁移密码至少需要')`)
-		} else {
+		} else if mode == "restore" {
 			eval(`var input=document.querySelector('input[type=password]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'synthetic-wrong-password');input.dispatchEvent(new Event('input',{bubbles:true}));true`)
 			eval(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='解密并恢复备份').click();true`)
 			wait(`document.querySelector('[role=alert]')?.textContent.includes('迁移密码不正确')===true`)
+		} else {
+			eval(`document.querySelector('input[type=checkbox]').click();true`)
+			wait(`document.querySelectorAll('input[type=password]').length===2`)
+			eval(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='保存设置').click();true`)
+			wait(`document.querySelector('[role=alert]')?.textContent.includes('至少 8 个字符')===true`)
 		}
 		for _, width := range []int{1440, 800} {
 			if _, err := cdpCall(port, "Emulation.setDeviceMetricsOverride", map[string]any{"width": width, "height": 900, "deviceScaleFactor": 1, "mobile": false}); err != nil {
@@ -155,6 +160,11 @@ func TestLoginMigrationUIConfiguredKernel(t *testing.T) {
 			eval(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='解密并恢复备份').click();true`)
 			wait(`document.querySelector('#done')?.textContent==='true'`)
 			wait(`document.querySelector('input[type=password]')?.value==='' || !document.querySelector('input[type=password]')`)
+		} else if mode == "schedule" {
+			eval(`Array.from(document.querySelectorAll('input[type=password]')).forEach(input=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'synthetic-scheduled-password');input.dispatchEvent(new Event('input',{bubbles:true}))});true`)
+			eval(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='保存设置').click();true`)
+			wait(`window.protectionSaved===true&&document.querySelector('#done')?.textContent==='true'`)
+			wait(`Array.from(document.querySelectorAll('input[type=password]')).every(input=>input.value==='')`)
 		}
 	}
 }

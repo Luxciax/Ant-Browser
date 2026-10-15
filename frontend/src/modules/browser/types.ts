@@ -148,6 +148,7 @@ export interface BrowserProfilePackageExportResult {
 
 export interface BrowserProfilePackageExportOptions {
   portableLogin: boolean
+  protectArchive?: boolean
   migrationPassword: string
 }
 

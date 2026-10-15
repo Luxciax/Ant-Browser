@@ -163,6 +163,8 @@ func (a *App) backupRestorePackageFromPathLocked(zipPath string) (map[string]int
 	}
 
 	switch packageFormat {
+	case encryptedBackupFormat:
+		return map[string]interface{}{"requiresLoginPassword": true, "encryptedArchive": true, "zipPath": zipPath, "message": "此全量备份已整包加密，请输入迁移密码；尚未修改本机数据"}, nil
 	case backup.PackageFormat:
 		return a.backupImportFromPathLocked(zipPath)
 	case profilePackageFormat:

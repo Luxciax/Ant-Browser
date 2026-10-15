@@ -6,6 +6,7 @@ import (
 	"archive/zip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -13,7 +14,7 @@ import (
 	"time"
 )
 
-func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.Manifest, emitProgress func(phase string, progress int, message string, meta *backupProgressMeta)) (int, int, int, error) {
+func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.Manifest, emitProgress func(phase string, progress int, message string, meta *backupProgressMeta), encryptionPassword ...string) (int, int, int, error) {
 	emit := func(phase string, progress int, message string, meta *backupProgressMeta) {
 		if emitProgress != nil {
 			emitProgress(phase, progress, message, meta)
@@ -30,7 +31,18 @@ func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.M
 	}
 	tmpPath := f.Name()
 	defer os.Remove(tmpPath)
-	w := zip.NewWriter(f)
+	defer f.Close()
+	var sink io.Writer = f
+	var encrypted *encryptedBackupStream
+	if len(encryptionPassword) > 0 {
+		encrypted, err = newEncryptedBackupStream(f, encryptionPassword[0])
+		if err != nil {
+			return 0, 0, 0, err
+		}
+		defer zeroSensitiveBytes(encrypted.buffer)
+		sink = encrypted
+	}
+	w := zip.NewWriter(sink)
 
 	includedEntries := 0
 	skippedEntries := 0
@@ -124,6 +136,9 @@ func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.M
 	}()
 
 	closeErr := w.Close()
+	if writeErr == nil && closeErr == nil && encrypted != nil {
+		closeErr = encrypted.Finish()
+	}
 	syncErr := f.Sync()
 	fileCloseErr := f.Close()
 	if writeErr != nil {
@@ -150,6 +165,9 @@ func backupWritePackageZip(zipPath string, scope backup.Scope, manifest backup.M
 		emit("error", 100, err.Error(), nil)
 		_ = os.Remove(tmpPath)
 		return 0, 0, 0, fmt.Errorf("写入导出文件失败: %w", err)
+	}
+	if encrypted != nil {
+		manifest.Entries = nil // Keep filenames and per-profile inventory inside ciphertext.
 	}
 	if _, err := backupWriteMetadata(zipPath, manifest, includedEntries, skippedEntries); err != nil {
 		emit("warning", 100, fmt.Sprintf("备份文件已生成，但元数据文件写入失败：%v", err), nil)

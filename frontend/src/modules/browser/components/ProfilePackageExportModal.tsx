@@ -36,7 +36,7 @@ export function ProfilePackageExportModal({
   const confirm = () => {
     if (busy) return
     if (portableLogin) {
-      if (migrationPassword.length < 8) {
+      if (migrationPassword.trim().length < 8) {
         setError('迁移密码至少需要 8 个字符')
         return
       }
@@ -47,6 +47,7 @@ export function ProfilePackageExportModal({
     }
     onConfirm({
       portableLogin,
+      protectArchive: fullBackup && portableLogin,
       migrationPassword: portableLogin ? migrationPassword : '',
     })
   }
@@ -90,7 +91,7 @@ export function ProfilePackageExportModal({
         {portableLogin && (
           <div className="space-y-3 rounded-lg border border-[var(--color-border-default)] p-3">
             <div className="text-xs leading-5 text-[var(--color-warning)]">
-              换电脑或重装系统后恢复，必须输入同一个迁移密码。Ant Browser 不保存密码。网站会话过期、设备绑定或风控验证仍可能要求重新登录；备份包内其他数据不因勾选此项而整体加密。
+              换电脑或重装系统后恢复，必须输入同一个迁移密码。本次密码不保存。网站过期或设备绑定仍可能要求重新登录。{fullBackup ? '此全量备份将整包加密，包括网站存储、Service Workers 和扩展数据。' : '实例包只加密登录态载荷，其他文件未整体加密；敏感数据请使用全量加密备份。'}
             </div>
             <label className="block">
               <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">迁移密码</span>

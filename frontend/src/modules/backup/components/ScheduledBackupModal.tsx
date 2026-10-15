@@ -8,6 +8,7 @@ import {
   saveScheduledBackupSettings,
 } from '../schedule/api'
 import type { ScheduledBackupDraft, ScheduledBackupSettings } from '../schedule/api'
+import { fetchBackupLoginProtection, saveBackupLoginProtection, type BackupLoginProtection } from '../api'
 
 interface ScheduledBackupModalProps {
   open: boolean
@@ -65,11 +66,17 @@ export function ScheduledBackupModal({ open, onClose, refreshToken = 0, onReques
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [protection, setProtection] = useState<BackupLoginProtection>({ enabled: false, configured: false, supported: false })
+  const [protectLogin, setProtectLogin] = useState(false)
+  const [migrationPassword, setMigrationPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const wasOpenRef = useRef(false)
 
   useEffect(() => {
     if (!open) {
       wasOpenRef.current = false
+      setMigrationPassword('')
+      setConfirmPassword('')
       return
     }
     const preserveDraft = wasOpenRef.current
@@ -78,10 +85,12 @@ export function ScheduledBackupModal({ open, onClose, refreshToken = 0, onReques
     setLoading(true)
     setError('')
     setErrors({})
-    void fetchScheduledBackupSettings()
-      .then(next => {
+    void Promise.all([fetchScheduledBackupSettings(), fetchBackupLoginProtection()])
+      .then(([next, loginProtection]) => {
         if (!active) return
         setSettings(next)
+        setProtection(loginProtection)
+        if (!preserveDraft) setProtectLogin(loginProtection.enabled)
         if (!preserveDraft) {
           setDraft({
             enabled: next.enabled,
@@ -121,10 +130,23 @@ export function ScheduledBackupModal({ open, onClose, refreshToken = 0, onReques
       setError('请先配置 OpenList Token')
       return
     }
+    if (protectLogin && ((!protection.configured && !migrationPassword) || (migrationPassword && migrationPassword.trim().length < 8))) {
+      setError('请设置至少 8 个字符的迁移密码，并在换设备前自行妥善保存')
+      return
+    }
+    if (migrationPassword !== confirmPassword) { setError('两次迁移密码不一致'); return }
 
     setSaving(true)
     setError('')
     try {
+      // Save protection first: a later schedule-save failure must never cause
+      // the newly enabled schedule to upload an unprotected backup.
+      if (protection.supported && (protectLogin !== protection.enabled || migrationPassword)) {
+        const loginProtection = await saveBackupLoginProtection(protectLogin, migrationPassword)
+        setProtection(loginProtection)
+        setMigrationPassword('')
+        setConfirmPassword('')
+      }
       const next = await saveScheduledBackupSettings(draft)
       setSettings(next)
       toast.success(draft.enabled ? `已设置每日 ${next.dailyTime} 自动备份` : '已关闭定时备份')
@@ -210,6 +232,28 @@ export function ScheduledBackupModal({ open, onClose, refreshToken = 0, onReques
                 <span className="text-sm text-[var(--color-text-muted)]">暂无成功备份</span>
               )}
             </div>
+          </FormItem>
+
+          <FormItem label="定时备份登录态保护">
+            {protection.needsRepair && <p role="alert" className="mb-2 text-sm text-[var(--color-error)]">本机密码保护记录需要修复。请重新输入迁移密码，或明确关闭保护；修复前自动备份会失败，不会明文降级。</p>}
+            <label className="flex items-start gap-3 text-sm">
+              <input type="checkbox" checked={protectLogin} disabled={saving || !protection.supported} onChange={event => { setProtectLogin(event.target.checked); setError('') }} className="mt-1" />
+              <span>包含可迁移登录态并加密整个全量备份</span>
+            </label>
+            <p className="mt-2 text-xs leading-5 text-[var(--color-text-secondary)]">
+              {protection.supported ? '主动开启后，迁移密码以 Windows 加密保护保存在本机，定时备份无需重复输入；不会放入备份或返回前端。关闭此选项只停用自动保护，保留本机已加密密码。' : '此功能需 Windows 系统及新版后端支持。'}换设备或重装系统后仍需原迁移密码，忘记后无法解密旧备份。
+            </p>
+            {protectLogin && <div className="mt-3 space-y-3">
+              <label className="block text-sm">
+                <span className="mb-1 block">{protection.configured ? '更换迁移密码（留空保留）' : '迁移密码'}</span>
+                <Input type="password" autoComplete="new-password" value={migrationPassword} disabled={saving} onChange={event => setMigrationPassword(event.target.value)} />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block">确认迁移密码</span>
+                <Input type="password" autoComplete="new-password" value={confirmPassword} disabled={saving} onChange={event => setConfirmPassword(event.target.value)} />
+              </label>
+              <p className="text-xs text-[var(--color-text-secondary)]">修改密码仅影响之后生成的备份；旧备份仍需旧密码。</p>
+            </div>}
           </FormItem>
 
 

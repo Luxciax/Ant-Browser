@@ -44,6 +44,7 @@ type ProfilePackageExtensionManifest struct {
 
 type ProfilePackageExportOptions struct {
 	PortableLogin     bool   `json:"portableLogin"`
+	ProtectArchive    bool   `json:"protectArchive"`
 	MigrationPassword string `json:"migrationPassword"`
 }
 
@@ -429,6 +430,9 @@ func (a *App) writeProfilePackage(zipPath string, profiles []browser.Profile) (i
 }
 
 func (a *App) writeProfilePackageWithOptions(zipPath string, profiles []browser.Profile, options ProfilePackageExportOptions) (int, int, []string, error) {
+	if options.ProtectArchive {
+		return 0, 0, nil, fmt.Errorf("实例包暂不支持整包加密，请使用全量加密备份；未生成未加密替代包")
+	}
 	if !options.PortableLogin {
 		count, err := a.writeProfilePackage(zipPath, profiles)
 		return count, 0, nil, err
@@ -452,6 +456,7 @@ func (a *App) writeProfilePackageWithOptions(zipPath string, profiles []browser.
 			warnings = append(warnings, fmt.Sprintf("实例「%s」登录态快照时间 %s（%d 条 Cookie）；网站存储随完整目录备份，网站会话有效性由网站决定", profile.ProfileName, state.CapturedAt.Local().Format("2006-01-02 15:04:05"), len(state.Cookies)))
 		}
 		portableEnvelopes[profile.ProfileId] = *envelope
+		warnings = append(warnings, loginSnapshotCoverageWarnings(userDataDir, profile.ProfileName)...)
 		portableProfiles = append(portableProfiles, profile.ProfileId)
 	}
 

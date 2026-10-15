@@ -84,10 +84,6 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 					log.Error("登录态恢复失败，未打开启动页", logger.F("event", "login.restore_failed"), logger.F("profile_id", input.ProfileID), logger.F("reason", restoreErr.Error()))
 					break
 				}
-				if err := os.Remove(filepath.Join(plan.userDataDir, loginRestoreFile)); err != nil {
-					lastStartErr = fmt.Errorf("登录态已写入但恢复标记清除失败，已停止启动以避免重复覆盖登录：%w", err)
-					break
-				}
 				log.Info("迁移 Cookie 已写入并回读核验，网站登录有效性待网站验证", logger.F("event", "login.cookies_restored"), logger.F("profile_id", input.ProfileID), logger.F("restored_count", count), logger.F("snapshot_at", plan.loginRestore.CapturedAt))
 			}
 			if err := syncConfiguredBrowserWindowSize(stableDebugPort, plan.args); err != nil {
@@ -106,7 +102,13 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 			}
 			if len(plan.deferredStartTargets) > 0 {
 				deferredPlan := deferredStartTargetsPlan{targets: plan.deferredStartTargets, newTabs: plan.deferredStartNewTabs}
-				if err := openDeferredStartTargets(stableDebugPort, deferredPlan); err != nil {
+				var openErr error
+				if plan.loginRestore != nil {
+					openErr = openLoginRestoreTargets(ctx, stableDebugPort, *plan.loginRestore, plan.deferredStartTargets)
+				} else {
+					openErr = openDeferredStartTargets(stableDebugPort, deferredPlan)
+				}
+				if err := openErr; err != nil {
 					warning := deferredStartTargetsWarning(plan.deferredStartTargets, err)
 					if plan.extensionWarning != "" {
 						warning = plan.extensionWarning + "；" + warning
@@ -122,6 +124,15 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 						logger.F("error", err.Error()),
 						logger.F("warning", warning),
 					)
+				} else if plan.loginRestore != nil {
+					if err := os.Remove(filepath.Join(plan.userDataDir, loginRestoreFile)); err != nil {
+						a.browserMgr.Mutex.Lock()
+						profile.RuntimeWarning = "登录态已写入，但一次性恢复标记未能清除；下次启动前请检查日志"
+						a.browserMgr.Mutex.Unlock()
+						log.Warn("恢复标记清除失败", logger.F("event", "login.restore_marker_failed"), logger.F("profile_id", input.ProfileID))
+					} else {
+						log.Info("登录态恢复启动页已就绪", logger.F("event", "login.restore_completed"), logger.F("profile_id", input.ProfileID), logger.F("page_count", len(plan.deferredStartTargets)), logger.F("storage_skipped", plan.loginRestore.SkippedStorage))
+					}
 				}
 			}
 

@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const backupPackageInfoEntryLimit = 16 * 1024 * 1024
@@ -52,6 +54,21 @@ func inspectBackupPackage(zipPath string) (backupPackageInspection, error) {
 	}
 	format := backupPackageJSONFieldString(header, `format`)
 	switch format {
+	case encryptedBackupFormat:
+		var encrypted encryptedBackupHeader
+		if err := decodeBackupPackageEntry(manifestFile, &encrypted); err != nil {
+			return backupPackageInspection{}, fmt.Errorf("加密备份头无效")
+		}
+		if encrypted.Version != 1 || encrypted.ChunkSize != backupCryptoChunkSize || len(reader.File) != 2 || findBackupPackageEntry(reader.File, "payload.bin") == nil {
+			return backupPackageInspection{}, fmt.Errorf("加密备份容器结构无效")
+		}
+		// Public inspection exposes no profile names or plaintext file inventory.
+		info, err := os.Stat(zipPath)
+		if err != nil {
+			return backupPackageInspection{}, err
+		}
+		manifest := backup.Manifest{Format: backup.PackageFormat, ManifestVersion: backup.ManifestVersion, CreatedAt: info.ModTime().UTC().Format(time.RFC3339)}
+		return backupPackageInspection{info: backupPackageInfo{PackageType: "full"}, fullManifest: &manifest, includedEntries: 1, fileCount: 1}, nil
 	case backup.PackageFormat:
 		var manifest backup.Manifest
 		if err := decodeBackupPackageEntry(manifestFile, &manifest); err != nil {
