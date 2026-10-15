@@ -163,7 +163,7 @@ fileignoreconfig:
 - filename: backend/backup_login_protection.go
   checksum: 03f03b128bf5c5be356e411fab9b70ce4d4c3331d852f142ca143500090e9a5b
 - filename: backend/backup_login_protection_windows_test.go
-  checksum: 3df2135eb12c543a5896fd76d6b246fbbb692f1473b45991967388fb2ca2132b
+  checksum: 594f7b5bfcb4526822fe90fe9f4999686aa703d59942be292a93e271fe489e80
 - filename: frontend/src/modules/backup/components/ScheduledBackupModal.tsx
   checksum: 4a19ad880070535f19742c17a1ca83490a63c146abefa4be646adac9c435d42c
 version: "1.0"

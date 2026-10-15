@@ -85,6 +85,20 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 					break
 				}
 				log.Info("迁移 Cookie 已写入并回读核验，网站登录有效性待网站验证", logger.F("event", "login.cookies_restored"), logger.F("profile_id", input.ProfileID), logger.F("restored_count", count), logger.F("snapshot_at", plan.loginRestore.CapturedAt))
+				// Finish the one-time restore before publishing a running instance.
+				// Otherwise a failed page restore could leave an active session with
+				// a pending marker that overwrites newer cookies on the next start.
+				if err := openLoginRestoreTargets(ctx, stableDebugPort, *plan.loginRestore, plan.deferredStartTargets); err != nil {
+					lastStartErr = fmt.Errorf("登录态页面恢复未完成，已停止本次启动并保留重试标记：%w", err)
+					log.Error("登录态页面恢复失败", logger.F("event", "login.restore_failed"), logger.F("profile_id", input.ProfileID), logger.F("reason", err.Error()))
+					break
+				}
+				if err := os.Remove(filepath.Join(plan.userDataDir, loginRestoreFile)); err != nil {
+					lastStartErr = fmt.Errorf("登录态已写入但恢复标记清除失败，已停止启动以避免重复覆盖登录：%w", err)
+					log.Error("恢复标记清除失败", logger.F("event", "login.restore_marker_failed"), logger.F("profile_id", input.ProfileID))
+					break
+				}
+				log.Info("登录态恢复启动页已就绪", logger.F("event", "login.restore_completed"), logger.F("profile_id", input.ProfileID), logger.F("page_count", len(plan.deferredStartTargets)), logger.F("storage_skipped", plan.loginRestore.SkippedStorage))
 			}
 			if err := syncConfiguredBrowserWindowSize(stableDebugPort, plan.args); err != nil {
 				log.Warn("窗口尺寸校正失败", logger.F("profile_id", input.ProfileID), logger.F("error", err.Error()))
@@ -100,15 +114,9 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 				a.bindProfileProxyBridge(input.ProfileID, plan.acquiredProxyBridge)
 				plan.releaseProxyBridge = false
 			}
-			if len(plan.deferredStartTargets) > 0 {
+			if len(plan.deferredStartTargets) > 0 && plan.loginRestore == nil {
 				deferredPlan := deferredStartTargetsPlan{targets: plan.deferredStartTargets, newTabs: plan.deferredStartNewTabs}
-				var openErr error
-				if plan.loginRestore != nil {
-					openErr = openLoginRestoreTargets(ctx, stableDebugPort, *plan.loginRestore, plan.deferredStartTargets)
-				} else {
-					openErr = openDeferredStartTargets(stableDebugPort, deferredPlan)
-				}
-				if err := openErr; err != nil {
+				if err := openDeferredStartTargets(stableDebugPort, deferredPlan); err != nil {
 					warning := deferredStartTargetsWarning(plan.deferredStartTargets, err)
 					if plan.extensionWarning != "" {
 						warning = plan.extensionWarning + "；" + warning
@@ -124,15 +132,6 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 						logger.F("error", err.Error()),
 						logger.F("warning", warning),
 					)
-				} else if plan.loginRestore != nil {
-					if err := os.Remove(filepath.Join(plan.userDataDir, loginRestoreFile)); err != nil {
-						a.browserMgr.Mutex.Lock()
-						profile.RuntimeWarning = "登录态已写入，但一次性恢复标记未能清除；下次启动前请检查日志"
-						a.browserMgr.Mutex.Unlock()
-						log.Warn("恢复标记清除失败", logger.F("event", "login.restore_marker_failed"), logger.F("profile_id", input.ProfileID))
-					} else {
-						log.Info("登录态恢复启动页已就绪", logger.F("event", "login.restore_completed"), logger.F("profile_id", input.ProfileID), logger.F("page_count", len(plan.deferredStartTargets)), logger.F("storage_skipped", plan.loginRestore.SkippedStorage))
-					}
 				}
 			}
 

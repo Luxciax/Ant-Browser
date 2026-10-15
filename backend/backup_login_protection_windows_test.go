@@ -6,11 +6,16 @@ import (
 	"ant-chrome/backend/internal/browser"
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAutomaticBackupLoginProtection(t *testing.T) {
@@ -75,6 +80,46 @@ func TestAutomaticBackupLoginProtection(t *testing.T) {
 	}
 	if _, err := app.BackupSaveLoginProtection(true, "synthetic-replacement-password"); err != nil {
 		t.Fatal("explicit replacement cannot repair record")
+	}
+}
+
+func TestLoginRestoreStartupFailureConfiguredKernel(t *testing.T) {
+	kernel := os.Getenv("ANT_IDENTITY_TEST_CHROME")
+	if kernel == "" {
+		t.Skip("set ANT_IDENTITY_TEST_CHROME to the explicitly configured kernel")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "synthetic fixture") }))
+	url := server.URL
+	server.Close() // Deliberately unavailable loopback destination, no real site.
+	app := newLoginBackupApp(t)
+	dir := t.TempDir()
+	state := portableLoginState{Version: 2, CapturedAt: time.Now().UTC(), Tabs: []string{url}, Pages: []portablePageSession{{URL: url, Storage: []portableSessionStorage{{Origin: url, Entries: [][2]string{{"synthetic_auth", "synthetic_retry"}}}}}}}
+	if err := writeLocalLoginState(dir, loginRestoreFile, state); err != nil {
+		t.Fatal(err)
+	}
+	port, err := nextAvailablePort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := &BrowserProfile{ProfileId: "synthetic-startup-failure", ProfileName: "Synthetic startup failure"}
+	app.markProfileStartingLocked(profile)
+	plan := &browserStartPlan{profile: profile, chromeBinaryPath: kernel, userDataDir: dir, assignedDebugPort: port,
+		maxStartAttempts: 1, startReadyTimeout: 8 * time.Second, startStableWindow: 100 * time.Millisecond, totalReadyTimeout: 8 * time.Second,
+		loginRestore: &state, deferredStartTargets: []string{url}, args: []string{"--headless=new", "--no-first-run", "--no-default-browser-check", "--disable-background-networking", "--no-startup-window", "--user-data-dir=" + dir, fmt.Sprintf("--remote-debugging-port=%d", port)}}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	_, err = app.startBrowserProfileWithPlan(ctx, browserStartInput{ProfileID: profile.ProfileId}, plan)
+	if err == nil || !strings.Contains(err.Error(), "登录态页面恢复未完成") {
+		t.Fatalf("unexpected start result: %v", err)
+	}
+	if profile.Running || profile.DebugReady || len(app.browserMgr.BrowserProcesses) != 0 {
+		t.Fatal("failed restore published a running instance")
+	}
+	if _, err := os.Stat(filepath.Join(dir, loginRestoreFile)); err != nil {
+		t.Fatal("failed restore consumed retry marker")
+	}
+	if _, err := cdpGetEndpointBody(port, "/json/version"); err == nil {
+		t.Fatal("failed restore left the spawned browser running")
 	}
 }
 
