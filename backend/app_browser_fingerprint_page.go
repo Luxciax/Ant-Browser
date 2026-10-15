@@ -380,7 +380,7 @@ func (a *App) fingerprintCheckProfileExpectedArgs(profileId string) ([]string, e
 }
 
 func (a *App) buildFingerprintCheckExpectedArgs(profileId string, coreId string, fingerprintArgs []string, launchArgs []string) []string {
-	fingerprintLaunchArgs := a.buildBrowserFingerprintCapabilityReport(profileId, coreId, fingerprintArgs).LaunchArgs
+	fingerprintLaunchArgs := a.buildBrowserFingerprintCapabilityReportWithIdentity(profileId, coreId, fingerprintArgs, false).LaunchArgs
 	sanitizedLaunchArgs, _ := sanitizeManagedLaunchArgs(launchArgs)
 	return combineFingerprintExpectedArgs(fingerprintLaunchArgs, sanitizedLaunchArgs)
 }

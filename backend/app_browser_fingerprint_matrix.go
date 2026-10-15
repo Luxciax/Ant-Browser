@@ -120,6 +120,13 @@ func (a *App) BrowserProfileFingerprintMatrix(profileId string, coreId string, f
 }
 
 func (a *App) buildBrowserFingerprintCapabilityReport(profileId string, coreId string, fingerprintArgs []string) BrowserFingerprintCapabilityReport {
+	return a.buildBrowserFingerprintCapabilityReportWithIdentity(profileId, coreId, fingerprintArgs, true)
+}
+
+// Launch-argument consumers can run while the profile manager mutex is held.
+// Duplicate-profile reporting is diagnostic only and must not re-enter that
+// mutex during start preparation or fingerprint-page generation.
+func (a *App) buildBrowserFingerprintCapabilityReportWithIdentity(profileId string, coreId string, fingerprintArgs []string, includeIdentity bool) BrowserFingerprintCapabilityReport {
 	profileId = strings.TrimSpace(profileId)
 	coreId = strings.TrimSpace(coreId)
 	if coreId == "" && profileId != "" && a != nil && a.browserMgr != nil {
@@ -140,7 +147,10 @@ func (a *App) buildBrowserFingerprintCapabilityReport(profileId string, coreId s
 	}
 
 	plan := buildBrowserFingerprintLaunchPlan(profileId, fingerprintArgs, chromeVersion)
-	identityReport := a.browserIdentityReport(profileId, normalizeBrowserLanguageArgs(fingerprintArgs), chromeVersion)
+	identityReport := BrowserIdentityReport{}
+	if includeIdentity {
+		identityReport = a.browserIdentityReport(profileId, normalizeBrowserLanguageArgs(fingerprintArgs), chromeVersion)
+	}
 	report := BrowserFingerprintCapabilityReport{
 		ProfileId:     profileId,
 		ChromeVersion: chromeVersion,

@@ -73,7 +73,19 @@ func (w *MemoryWriter) RunEntries(profile, run string) ([]MemoryLogEntry, int) {
 		return []MemoryLogEntry{}, 0
 	}
 	rows := append(append([]MemoryLogEntry{}, buf.entries...), buf.important...)
-	return MergeEntries(rows), buf.dropped
+	merged := MergeEntries(rows)
+	// Protected fault evidence must remain immediately visible even when the
+	// clock resolution on a busy Windows runner makes ordering ambiguous.
+	important := make(map[string]bool, len(buf.important))
+	for _, row := range buf.important {
+		important[fmt.Sprint(row.Fields["event_id"])] = true
+	}
+	sort.SliceStable(merged, func(i, j int) bool {
+		iImportant := important[fmt.Sprint(merged[i].Fields["event_id"])]
+		jImportant := important[fmt.Sprint(merged[j].Fields["event_id"])]
+		return iImportant && !jImportant
+	})
+	return merged, buf.dropped
 }
 
 // MergeEntries keeps event identity and ordering through async writes/rotation.

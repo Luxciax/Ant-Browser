@@ -24,10 +24,22 @@ type ProcessLog struct {
 // between writes, so an early Close in a legacy launcher cannot break its child.
 func NewProcessLog(base string) (*ProcessLog, error) {
 	ext := filepath.Ext(base)
-	path := strings.TrimSuffix(base, ext) + "-" + time.Now().UTC().Format("20060102T150405.000000000") + ext
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if err != nil {
-		return nil, err
+	prefix := strings.TrimSuffix(base, ext) + "-" + time.Now().UTC().Format("20060102T150405.000000000")
+	var path string
+	var f *os.File
+	for attempt := 0; ; attempt++ {
+		path = prefix + ext
+		if attempt > 0 {
+			path = fmt.Sprintf("%s-%d%s", prefix, attempt, ext)
+		}
+		var err error
+		f, err = os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err == nil {
+			break
+		}
+		if !os.IsExist(err) {
+			return nil, err
+		}
 	}
 	f.Close()
 	files, _ := filepath.Glob(strings.TrimSuffix(base, ext) + "-*" + ext)
