@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -38,6 +39,7 @@ type browserStartPlan struct {
 	startStableWindow    time.Duration
 	maxStartAttempts     int
 	totalReadyTimeout    time.Duration
+	loginRestore         *portableLoginState
 }
 
 func newBrowserStartInput(profileID string, extraLaunchArgs []string, startURLs []string, skipDefaultStartURLs bool, preferVisibleWindow bool, forceDirectProxy bool, proxyID string, proxyConfig string) browserStartInput {
@@ -174,6 +176,32 @@ func (a *App) prepareBrowserStartPlan(ctx context.Context, input browserStartInp
 		restoreLastSession,
 		browserLightStartEnabled(a.config),
 	)
+	var loginRestore *portableLoginState
+	if _, statErr := os.Stat(filepath.Join(userDataDir, loginRestoreFile)); statErr == nil {
+		state, restoreErr := readLocalLoginState(userDataDir, loginRestoreFile)
+		if restoreErr != nil {
+			if releaseProxyBridge {
+				a.releaseProxyBridgeRef(acquiredProxyBridge)
+			}
+			return nil, fmt.Errorf("登录态恢复准备失败，未打开网站：%w", restoreErr)
+		}
+		loginRestore = &state
+		deferredStartTargets = resolveConfiguredStartTargets(startURLs, defaultStartURLs, input.SkipDefaultStartURLs)
+		if restoreLastSession && len(input.StartURLs) == 0 && len(state.Tabs) > 0 {
+			deferredStartTargets = state.Tabs
+		}
+		if len(deferredStartTargets) == 0 {
+			deferredStartTargets = []string{"about:blank"}
+		}
+		deferredStartNewTabs = true
+		launchTargets = nil
+		restoreLastSession = false
+	} else if !os.IsNotExist(statErr) {
+		if releaseProxyBridge {
+			a.releaseProxyBridgeRef(acquiredProxyBridge)
+		}
+		return nil, fmt.Errorf("读取待恢复登录态失败：%w", statErr)
+	}
 
 	assignedDebugPort, err := nextAvailablePort()
 	if err != nil {
@@ -205,6 +233,9 @@ func (a *App) prepareBrowserStartPlan(ctx context.Context, input browserStartInp
 	}
 	extensionWarning := joinBrowserStartExtensionWarnings(extensionWarnings)
 	instanceArgs := buildBrowserLaunchArgs(userDataDir, assignedDebugPort, effectiveProxy, extensionDirs, fingerprintLaunchArgs, sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs, launchTargets, restoreLastSession)
+	if loginRestore != nil {
+		instanceArgs = append(instanceArgs, "--no-startup-window")
+	}
 
 	return &browserStartPlan{
 		profile:              profile,
@@ -222,6 +253,7 @@ func (a *App) prepareBrowserStartPlan(ctx context.Context, input browserStartInp
 		startStableWindow:    startStableWindow,
 		maxStartAttempts:     maxStartAttempts,
 		totalReadyTimeout:    totalReadyTimeout,
+		loginRestore:         loginRestore,
 	}, nil
 }
 

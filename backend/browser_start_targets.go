@@ -127,7 +127,8 @@ func cdpBrowserCallResult(debugPort int, method string, params map[string]any) (
 	}
 
 	var cdpResp cdpResponse
-	if err := conn.ReadJSON(&cdpResp); err != nil {
+	cdpResp, err = readCDPResponseForID(conn, msg.Id)
+	if err != nil {
 		return nil, fmt.Errorf("浏览器级 CDP 响应读取失败: %w", err)
 	}
 	if cdpResp.Error != nil {

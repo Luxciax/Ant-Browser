@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>登录态迁移界面验证</title></head>
+<body><div id="root"></div><script type="module">
+import React, { useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { ProfilePackageExportModal } from '/src/modules/browser/components/ProfilePackageExportModal.tsx';
+import { LoginRestoreModal } from '/src/modules/backup/components/LoginRestoreModal.tsx';
+import '/src/ui-v2/fish/fish.css';
+import '/src/index.css';
+// Synthetic UI bindings only. Real crypto/CDP/file routing is tested by Go.
+window.go={main:{App:{BackupRestoreWithLoginPassword:async(_path,password)=>{if(password!=='synthetic-correct-password')throw new Error('迁移密码不正确；未修改本机数据');return {partial:false};}}}};
+function Fixture(){
+ const restore=new URLSearchParams(location.search).has('restore');
+ const [open,setOpen]=useState(true);
+ const [done,setDone]=useState(false);
+ return React.createElement('main',{className:'fish-ui',style:{padding:24}},
+  React.createElement('h1',null,'登录态迁移 UI 验证（模拟绑定）'),
+  React.createElement('output',{id:'done'},String(done)),
+  restore?React.createElement(LoginRestoreModal,{request:open?{zipPath:'synthetic-backup.zip',portableLoginCount:3}:null,onClose:()=>setOpen(false),onRestored:()=>setDone(true)}):
+  React.createElement(ProfilePackageExportModal,{open,profileCount:0,fullBackup:true,onClose:()=>setOpen(false),onConfirm:()=>{setDone(true);setOpen(false)}}));
+}
+createRoot(document.getElementById('root')).render(React.createElement(Fixture));
+</script></body></html>

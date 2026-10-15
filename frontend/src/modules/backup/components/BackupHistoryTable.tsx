@@ -24,6 +24,8 @@ import {
 import type { S3BackupFile, S3Connection } from '../channels/s3/api'
 import { normalizeBackupPackageInfo, type BackupPackageInfo } from '../packageInfo'
 import { ProfilePackageConflictModal } from './ProfilePackageConflictModal'
+import { LoginRestoreModal } from './LoginRestoreModal'
+import type { BackupActionResult } from '../api'
 import { importBrowserProfilePackageWithOptions } from '../../browser/api/profiles'
 import type { BrowserProfilePackageImportAction, BrowserProfilePackageImportPreview } from '../../browser/types'
 
@@ -282,6 +284,7 @@ export function BackupHistoryTable({
   const [profileImportPreview, setProfileImportPreview] = useState<BrowserProfilePackageImportPreview | null>(null)
   const [profileImportItem, setProfileImportItem] = useState<BackupHistoryItem | null>(null)
   const [profileImportBusy, setProfileImportBusy] = useState(false)
+  const [loginRestoreRequest, setLoginRestoreRequest] = useState<BackupActionResult | null>(null)
   const [openingLocationId, setOpeningLocationId] = useState('')
   const [error, setError] = useState('')
   const [localDirectory, setLocalDirectory] = useState('')
@@ -294,8 +297,8 @@ export function BackupHistoryTable({
   const localItemsRef = useRef<BackupHistoryItem[]>([])
 
   useEffect(() => {
-    onBusyChange?.(busy === 'restore-merge' || busy === 'download' || pendingRestoreItem !== null || restoreConfirming || profileImportPreview !== null || profileImportBusy)
-  }, [busy, onBusyChange, pendingRestoreItem, profileImportBusy, profileImportPreview, restoreConfirming])
+    onBusyChange?.(busy === 'restore-merge' || busy === 'download' || pendingRestoreItem !== null || restoreConfirming || profileImportPreview !== null || profileImportBusy || loginRestoreRequest !== null)
+  }, [busy, onBusyChange, pendingRestoreItem, profileImportBusy, profileImportPreview, restoreConfirming, loginRestoreRequest])
 
   const mergeHistoryItems = (
     openListFiles: OpenListBackupFile[],
@@ -748,6 +751,7 @@ export function BackupHistoryTable({
       }
 
       result = await restoreLocalSystemConfig(restorePath)
+      if (result.requiresLoginPassword) { setLoginRestoreRequest(result); return }
       if (result.requiresProfileImportConfirmation && result.profileImportPreview) {
         setProfileImportItem(item)
         setProfileImportPreview(result.profileImportPreview)
@@ -757,6 +761,8 @@ export function BackupHistoryTable({
         showProfileImportResult(item, result)
       } else if (result.partial || Number(result.componentFailed || 0) > 0) {
         toast.warning('备份已恢复，但有部分模块失败，请查看导入结果')
+      } else if (result.warnings?.length) {
+        toast.warning(`备份已恢复；${result.warnings[0]}`)
       } else {
         toast.success(`已从${sourceLabel(item.source)}合并恢复`)
       }
@@ -1041,6 +1047,7 @@ export function BackupHistoryTable({
         )}
         confirmText="开始恢复"
       />
+      <LoginRestoreModal request={loginRestoreRequest} onClose={() => setLoginRestoreRequest(null)} onRestored={() => { void loadLocalHistory(localDirectory) }} />
       <ProfilePackageConflictModal
         preview={profileImportPreview}
         busy={profileImportBusy}

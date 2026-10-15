@@ -5,6 +5,7 @@ import type { BrowserProfilePackageExportOptions } from '../types'
 interface ProfilePackageExportModalProps {
   open: boolean
   profileCount: number
+  fullBackup?: boolean
   busy?: boolean
   onClose: () => void
   onConfirm: (options: BrowserProfilePackageExportOptions) => void
@@ -13,6 +14,7 @@ interface ProfilePackageExportModalProps {
 export function ProfilePackageExportModal({
   open,
   profileCount,
+  fullBackup = false,
   busy = false,
   onClose,
   onConfirm,
@@ -53,7 +55,7 @@ export function ProfilePackageExportModal({
     <Modal
       open={open}
       onClose={busy ? () => undefined : onClose}
-      title="导出实例"
+      title={fullBackup ? '全量备份与登录态' : '导出实例'}
       width="560px"
       footer={(
         <>
@@ -64,7 +66,7 @@ export function ProfilePackageExportModal({
     >
       <div className="space-y-4 text-sm">
         <div className="text-[var(--color-text-secondary)]">
-          将导出 {profileCount} 个实例的配置和完整用户数据。
+          {fullBackup ? '将备份应用配置、全部实例及完整用户数据。' : `将导出 ${profileCount} 个实例的配置和完整用户数据。`}
         </div>
         <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-muted)] p-3">
           <input
@@ -80,7 +82,7 @@ export function ProfilePackageExportModal({
           <span>
             <strong className="block font-medium text-[var(--color-text-primary)]">可迁移登录态（跨电脑）</strong>
             <span className="mt-1 block text-xs leading-5 text-[var(--color-text-secondary)]">
-              迁移 Windows 传统 DPAPI 加密的 Cookie 和已保存登录信息，不写入明文。App-Bound 加密及其他系统暂不支持，后端会明确拒绝，需在目标机器重新登录。
+              Windows 支持密码加密的 Cookie 快照迁移，包括原浏览器可读取的 App-Bound Cookie；其他系统暂不支持。请先在新版中打开实例，再从实例列表点击“停止”，生成最新快照后导出。网站存储随目录备份；已保存密码、通行密钥不保证跨设备可用。
             </span>
           </span>
         </label>
@@ -88,7 +90,7 @@ export function ProfilePackageExportModal({
         {portableLogin && (
           <div className="space-y-3 rounded-lg border border-[var(--color-border-default)] p-3">
             <div className="text-xs leading-5 text-[var(--color-warning)]">
-              目标电脑导入时必须输入同一个迁移密码。Ant Browser 不会保存这个密码，忘记后无法恢复跨电脑登录态。
+              换电脑或重装系统后恢复，必须输入同一个迁移密码。Ant Browser 不保存密码。网站会话过期、设备绑定或风控验证仍可能要求重新登录；备份包内其他数据不因勾选此项而整体加密。
             </div>
             <label className="block">
               <span className="mb-1 block text-xs text-[var(--color-text-secondary)]">迁移密码</span>

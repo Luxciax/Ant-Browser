@@ -22,6 +22,7 @@ func (a *App) startBrowserDiagnosticsLocked(p *BrowserProfile) {
 	a.browserDiagnostics[p.ProfileId] = cancel
 	a.diagnosticsMu.Unlock()
 	id, runID, port := p.ProfileId, p.LastStartAt, p.DebugPort
+	go a.observeLoginSnapshots(ctx, port, a.browserMgr.ResolveUserDataDir(p), id)
 	identityArgs := append(append([]string(nil), p.FingerprintArgs...), p.LastLaunchArgs...)
 	deviceIdentity := identity.FromArgs(identityArgs)
 	go identity.ObserveRuntime(ctx, port, deviceIdentity, func(event string, fields map[string]any) {

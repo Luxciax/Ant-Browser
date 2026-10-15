@@ -140,7 +140,7 @@ export function ProfilePackageConflictModal({
             <div className="rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-muted)] p-3">
               <div className="text-sm font-medium text-[var(--color-text-primary)]">恢复跨电脑登录态</div>
               <div className="mt-1 text-xs text-[var(--color-text-secondary)]">
-                此包包含 {preview.portableLoginCount || 0} 个实例的加密登录态迁移数据。密码仅用于解开浏览器主密钥，不会保存到配置或数据库。
+                此包包含 {preview.portableLoginCount || 0} 个实例的加密登录态迁移数据。密码用于解密 Cookie 快照或兼容旧版主密钥，不会保存。首次启动前恢复 Cookie，网站仍可能要求验证。
               </div>
               <input
                 type="password"

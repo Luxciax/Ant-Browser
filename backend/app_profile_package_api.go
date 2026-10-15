@@ -448,6 +448,9 @@ func (a *App) writeProfilePackageWithOptions(zipPath string, profiles []browser.
 		if err != nil {
 			return 0, 0, warnings, fmt.Errorf("准备实例登录态迁移数据失败 [%s]: %w", profile.ProfileName, err)
 		}
+		if state, stateErr := readLocalLoginState(userDataDir, loginSnapshotFile); stateErr == nil {
+			warnings = append(warnings, fmt.Sprintf("实例「%s」登录态快照时间 %s（%d 条 Cookie）；网站存储随完整目录备份，网站会话有效性由网站决定", profile.ProfileName, state.CapturedAt.Local().Format("2006-01-02 15:04:05"), len(state.Cookies)))
+		}
 		portableEnvelopes[profile.ProfileId] = *envelope
 		portableProfiles = append(portableProfiles, profile.ProfileId)
 	}
@@ -1077,12 +1080,16 @@ func (a *App) importProfilePackageFromPathWithModeAndActionsAndPassword(zipPath 
 			if !hasUserData {
 				warnings = append(warnings, fmt.Sprintf("实例「%s」包含登录态迁移数据，但没有用户数据目录，已跳过登录态恢复", profile.ProfileName))
 			} else if strings.TrimSpace(migrationPassword) == "" {
-				warnings = append(warnings, fmt.Sprintf("实例「%s」包含可迁移登录态，但未提供迁移密码；跨电脑登录状态可能不可用", profile.ProfileName))
+				return ProfilePackageImportResult{}, fmt.Errorf("该实例包包含加密登录态，必须提供迁移密码；未修改目标实例")
 			} else if err := restoreProfilePortableLoginEnvelope(stagingDir, migrationPassword, envelope); err != nil {
 				if err == errPortableLoginBadPassword {
 					return ProfilePackageImportResult{}, fmt.Errorf("登录态迁移密码不正确")
 				}
 				return ProfilePackageImportResult{}, fmt.Errorf("恢复实例登录态失败 [%s]: %w", profile.ProfileName, err)
+			}
+		} else if hasUserData {
+			if _, err := prepareSameDeviceLogin(stagingDir); err != nil {
+				warnings = append(warnings, fmt.Sprintf("实例「%s」无法恢复本机登录态快照；跨设备请使用密码加密迁移包", profile.ProfileName))
 			}
 		}
 		replacedProfileID := ""
@@ -1481,8 +1488,11 @@ func readProfilePackagePortableLoginEnvelope(files []*zip.File, profileID string
 			return profilePortableLoginEnvelope{}, false, err
 		}
 		defer reader.Close()
+		if file.UncompressedSize64 > 64<<20 {
+			return profilePortableLoginEnvelope{}, false, fmt.Errorf("登录态迁移组件过大")
+		}
 		var envelope profilePortableLoginEnvelope
-		if err := json.NewDecoder(reader).Decode(&envelope); err != nil {
+		if err := json.NewDecoder(io.LimitReader(reader, 64<<20)).Decode(&envelope); err != nil {
 			return profilePortableLoginEnvelope{}, false, fmt.Errorf("解析登录态迁移数据失败: %w", err)
 		}
 		return envelope, true, nil

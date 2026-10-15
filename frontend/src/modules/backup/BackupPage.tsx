@@ -19,6 +19,8 @@ import type { BackupTypeSelection } from './components/BackupTypeModal'
 import { BackupScopeModal } from './components/BackupScopeModal'
 import { BackupHistoryTable } from './components/BackupHistoryTable'
 import { ProfilePackageConflictModal } from './components/ProfilePackageConflictModal'
+import { LoginRestoreModal } from './components/LoginRestoreModal'
+import type { BackupActionResult } from './api'
 import { ProfilePackageExportModal } from '../browser/components/ProfilePackageExportModal'
 import { fetchOpenListSettings } from './channels/openlist/api'
 import type { OpenListConnection } from './channels/openlist/api'
@@ -82,6 +84,7 @@ export function BackupPage() {
   const [actionLoading, setActionLoading] = useState<BackupActionLoading>('none')
   const [profileImportPreview, setProfileImportPreview] = useState<BrowserProfilePackageImportPreview | null>(null)
   const [profileImportBusy, setProfileImportBusy] = useState(false)
+  const [loginRestoreRequest, setLoginRestoreRequest] = useState<BackupActionResult | null>(null)
   const [exportProgress, setExportProgress] = useState<BackupExportProgress | null>(null)
   const [importProgress, setImportProgress] = useState<BackupExportProgress | null>(null)
   const [exportLogs, setExportLogs] = useState<BackupExportLogItem[]>([])
@@ -265,12 +268,8 @@ export function BackupPage() {
     const profileIds = pendingProfileIds
     setPendingBackupTypes(null)
     setPendingProfileIds([])
-    if (profileIds.length > 0) {
-      setPendingProfileBackupRequest({ destinations, profileIds: [...profileIds] })
-      setProfileExportModalOpen(true)
-      return
-    }
-    void handleBackup(destinations, profileIds)
+    setPendingProfileBackupRequest({ destinations, profileIds: [...profileIds] })
+    setProfileExportModalOpen(true)
   }, [
     backupScopeModalOpen,
     channelConfigModalOpen,
@@ -315,12 +314,8 @@ export function BackupPage() {
     setPendingBackupTypes(null)
     setPendingProfileIds([])
     setBackupTypeModalOpen(false)
-    if (profileIds.length > 0) {
-      setPendingProfileBackupRequest({ destinations, profileIds: [...profileIds] })
-      setProfileExportModalOpen(true)
-      return
-    }
-    void handleBackup(destinations, profileIds)
+    setPendingProfileBackupRequest({ destinations, profileIds: [...profileIds] })
+    setProfileExportModalOpen(true)
   }
 
   const handleImportSystem = async () => {
@@ -341,6 +336,12 @@ export function BackupPage() {
         setImportModalOpen(false)
         setImportProgress(null)
         setProfileImportPreview(res.profileImportPreview)
+        return
+      }
+      if (res.requiresLoginPassword) {
+        setImportModalOpen(false)
+        setImportProgress(null)
+        setLoginRestoreRequest(res)
         return
       }
       const imported = res.imported ?? 0
@@ -377,7 +378,8 @@ export function BackupPage() {
           toast.warning(`导入完成（部分成功）：异常模块 ${componentFailed}${moduleHint}`)
         }
       } else {
-        toast.success(`导入完成：导入 ${imported}，跳过 ${skipped}，冲突 ${conflicts}`)
+        if (warnings.length > 0) toast.warning(`导入完成；${warnings[0]}`)
+        else toast.success(`导入完成：导入 ${imported}，跳过 ${skipped}，冲突 ${conflicts}`)
       }
       if (res.zipPath) {
         setHistoryRefreshToken(previous => previous + 1)
@@ -572,6 +574,7 @@ export function BackupPage() {
       <ProfilePackageExportModal
         open={profileExportModalOpen}
         profileCount={pendingProfileBackupRequest?.profileIds.length || 0}
+        fullBackup={pendingProfileBackupRequest?.profileIds.length === 0}
         busy={actionLoading === 'export'}
         onClose={() => {
           if (actionLoading === 'export') return
@@ -586,6 +589,8 @@ export function BackupPage() {
           void handleBackup(request.destinations, request.profileIds, options)
         }}
       />
+
+      <LoginRestoreModal request={loginRestoreRequest} onClose={() => setLoginRestoreRequest(null)} onRestored={() => setHistoryRefreshToken(previous => previous + 1)} />
 
       <BackupChannelConfigModal
         open={channelConfigModalOpen}

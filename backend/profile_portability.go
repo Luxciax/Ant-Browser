@@ -32,12 +32,13 @@ const (
 var (
 	errPortableLoginKeyMissing   = errors.New("browser os_crypt encrypted_key is missing")
 	errPortableLoginUnsupported  = errors.New("当前仅支持 Windows 传统 DPAPI 登录态迁移；此平台请使用普通数据导出，并在目标机器重新登录")
-	errPortableLoginAppBound     = errors.New("此环境包含 App-Bound 加密主密钥，当前无法保证跨机器登录态迁移；请使用普通数据导出并重新登录，不要禁用浏览器加密")
-	errPortableLoginBadPassword  = errors.New("portable login-state password is invalid")
+	errPortableLoginAppBound     = errors.New("此环境包含 App-Bound 加密且没有可读取的登录态快照；请在原设备使用新版打开实例并正常停止，再勾选可迁移登录态导出；不要禁用浏览器加密")
+	errPortableLoginBadPassword  = errors.New("迁移密码不正确，或登录态迁移数据被篡改")
 	errPortableLoginInvalidState = errors.New("browser Local State is invalid")
 )
 
 type profilePortableLoginEnvelope struct {
+	PayloadType string `json:"payloadType,omitempty"`
 	Version     int    `json:"version"`
 	KDF         string `json:"kdf"`
 	MemoryKiB   uint32 `json:"memoryKiB"`
@@ -55,6 +56,18 @@ func createProfilePortableLoginEnvelope(userDataDir string, password string) (*p
 	}
 	if runtime.GOOS != "windows" {
 		return nil, errPortableLoginUnsupported
+	}
+	if state, snapshotErr := readLocalLoginState(userDataDir, loginSnapshotFile); snapshotErr == nil {
+		key, _ := readAndUnprotectProfileOSCryptKey(userDataDir)
+		defer zeroSensitiveBytes(key)
+		data, err := json.Marshal(portableLoginPayload{State: state, LegacyKey: key})
+		if err != nil {
+			return nil, fmt.Errorf("登录态迁移数据编码失败")
+		}
+		defer zeroSensitiveBytes(data)
+		return sealPortableLoginData(data, password, 2)
+	} else if !os.IsNotExist(snapshotErr) {
+		return nil, snapshotErr
 	}
 
 	key, err := readAndUnprotectProfileOSCryptKey(userDataDir)
@@ -77,6 +90,50 @@ func restoreProfilePortableLoginEnvelope(userDataDir string, password string, en
 		return err
 	}
 	defer zeroSensitiveBytes(key)
+	if envelope.PayloadType == "cookies-v2" {
+		var payload portableLoginPayload
+		if json.Unmarshal(key, &payload) != nil {
+			return fmt.Errorf("登录态迁移数据格式无效")
+		}
+		defer zeroSensitiveBytes(payload.LegacyKey)
+		if len(payload.LegacyKey) != 0 && len(payload.LegacyKey) != 32 {
+			return fmt.Errorf("登录态兼容主密钥长度无效")
+		}
+		if err := validatePortableLoginState(payload.State); err != nil {
+			return err
+		}
+		if err := writeLocalLoginState(userDataDir, loginRestoreFile, payload.State); err != nil {
+			return err
+		}
+		if err := writeLocalLoginState(userDataDir, loginSnapshotFile, payload.State); err != nil {
+			return err
+		}
+		if len(payload.LegacyKey) > 0 {
+			return installPortableLegacyKey(userDataDir, payload.LegacyKey, false)
+		}
+		fresh := make([]byte, 32)
+		if _, err := rand.Read(fresh); err != nil {
+			return err
+		}
+		defer zeroSensitiveBytes(fresh)
+		// Re-establish target-device encryption; never disable OS encryption.
+		return installPortableLegacyKey(userDataDir, fresh, true)
+	}
+	if envelope.PayloadType != "" {
+		return fmt.Errorf("不支持的登录态迁移数据类型")
+	}
+	if len(key) != 32 {
+		return fmt.Errorf("浏览器主密钥长度无效")
+	}
+	return installPortableLegacyKey(userDataDir, key, false)
+}
+
+type portableLoginPayload struct {
+	State     portableLoginState `json:"state"`
+	LegacyKey []byte             `json:"legacyKey,omitempty"`
+}
+
+func installPortableLegacyKey(userDataDir string, key []byte, resetAppBound bool) error {
 
 	protected, err := protectProfileOSCryptKey(key)
 	if err != nil {
@@ -89,10 +146,14 @@ func restoreProfilePortableLoginEnvelope(userDataDir string, password string, en
 	encoded = append(encoded, protected...)
 	defer zeroSensitiveBytes(encoded)
 
-	return rewriteProfileLocalStateEncryptedKey(userDataDir, base64.StdEncoding.EncodeToString(encoded))
+	return rewriteProfileLocalStateEncryptedKeyWithReset(userDataDir, base64.StdEncoding.EncodeToString(encoded), resetAppBound)
 }
 
 func sealPortableLoginKey(key []byte, password string) (*profilePortableLoginEnvelope, error) {
+	return sealPortableLoginData(key, password, portableLoginEnvelopeVersion)
+}
+
+func sealPortableLoginData(key []byte, password string, version int) (*profilePortableLoginEnvelope, error) {
 	if len(key) == 0 {
 		return nil, fmt.Errorf("portable login-state key is empty")
 	}
@@ -117,10 +178,17 @@ func sealPortableLoginKey(key []byte, password string) (*profilePortableLoginEnv
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, fmt.Errorf("generate portable-login nonce: %w", err)
 	}
-	ciphertext := gcm.Seal(nil, nonce, key, nil)
+	var aad []byte
+	payloadType := ""
+	if version == 2 {
+		aad = []byte("ant-browser/portable-login/cookies-v2")
+		payloadType = "cookies-v2"
+	}
+	ciphertext := gcm.Seal(nil, nonce, key, aad)
 
 	return &profilePortableLoginEnvelope{
-		Version:     portableLoginEnvelopeVersion,
+		Version:     version,
+		PayloadType: payloadType,
 		KDF:         portableLoginKDF,
 		MemoryKiB:   portableLoginMemoryKiB,
 		Iterations:  portableLoginIterations,
@@ -132,8 +200,17 @@ func sealPortableLoginKey(key []byte, password string) (*profilePortableLoginEnv
 }
 
 func openPortableLoginKey(envelope profilePortableLoginEnvelope, password string) ([]byte, error) {
-	if envelope.Version != portableLoginEnvelopeVersion || envelope.KDF != portableLoginKDF {
+	if envelope.Version != 1 && envelope.Version != 2 || envelope.KDF != portableLoginKDF {
 		return nil, fmt.Errorf("unsupported portable login-state envelope")
+	}
+	var aad []byte
+	if envelope.Version == 2 {
+		if envelope.PayloadType != "cookies-v2" {
+			return nil, fmt.Errorf("登录态迁移类型与版本不匹配")
+		}
+		aad = []byte("ant-browser/portable-login/cookies-v2")
+	} else if envelope.PayloadType != "" {
+		return nil, fmt.Errorf("登录态迁移类型与版本不匹配")
 	}
 	if envelope.MemoryKiB < 8*1024 || envelope.MemoryKiB > 256*1024 || envelope.Iterations < 1 || envelope.Iterations > 10 || envelope.Parallelism < 1 || envelope.Parallelism > 16 {
 		return nil, fmt.Errorf("portable login-state KDF parameters are outside supported limits")
@@ -166,7 +243,7 @@ func openPortableLoginKey(envelope profilePortableLoginEnvelope, password string
 		return nil, fmt.Errorf("portable login-state envelope is malformed")
 	}
 
-	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, aad)
 	if err != nil {
 		return nil, errPortableLoginBadPassword
 	}
@@ -206,6 +283,10 @@ func readAndUnprotectProfileOSCryptKey(userDataDir string) ([]byte, error) {
 }
 
 func rewriteProfileLocalStateEncryptedKey(userDataDir string, encryptedKey string) error {
+	return rewriteProfileLocalStateEncryptedKeyWithReset(userDataDir, encryptedKey, false)
+}
+
+func rewriteProfileLocalStateEncryptedKeyWithReset(userDataDir string, encryptedKey string, resetAppBound bool) error {
 	path := filepath.Join(userDataDir, localStateFileName)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -221,6 +302,9 @@ func rewriteProfileLocalStateEncryptedKey(userDataDir string, encryptedKey strin
 		state["os_crypt"] = osCrypt
 	}
 	osCrypt["encrypted_key"] = encryptedKey
+	if resetAppBound {
+		delete(osCrypt, "app_bound_encrypted_key")
+	}
 
 	updated, err := json.Marshal(state)
 	if err != nil {

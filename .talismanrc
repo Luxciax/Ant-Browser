@@ -111,7 +111,7 @@ fileignoreconfig:
 - filename: frontend/src/modules/browser/utils/fingerprintSerializer.ts
   checksum: 7758d9a49d0970ca9c122c270778aa8c477039af44834f54fad5a170e18257f8
 - filename: backend/profile_portability.go
-  checksum: 5b1deb3bbcb0b3bd9b9221eb49bd5dba2f32dbb604941428d0446919b4bbe2d4
+  checksum: b98a73ccbc243432a52b376343dce839eb0b184cb5536eeb7df8a8b018a381b5
 - filename: frontend/scripts/identity-fixture.html
   checksum: 7ab8b326bfe9a4b8b9cfac98da982d18a2bfd43372341a7820903e15ac621e89
 - filename: backend/identity_consistency_test.go
@@ -120,4 +120,31 @@ fileignoreconfig:
   checksum: 7b7d56e0290844c7fadc84489cbc2dff5c03a3d82eecd85eae0d13dd9df5c8ca
 - filename: backend/internal/identity/identity.go
   checksum: 96ec1cfe4023a08818f852b2a2b995460326c12e5465f563f3ad25f338520470
+# Reviewed login migration false positives: backup source filenames, password
+# parameters, Cookie/Local State schema fields and explicit synthetic fixtures.
+# No live account data or credentials; exact checksums, hook stays enabled.
+- filename: backend/app_backup_destination.go
+  checksum: 94a323159e677d4bb183dd95f8bd22beec58de25ea6c90d58279eb9433432d1c
+- filename: backend/app_backup_export_path.go
+  checksum: fc0550a395d3510184b64578ca40cd445176b0937da690b5afa026ec35372237
+- filename: backend/app_backup_import_flow.go
+  checksum: 554faa98ed88a02d506eabbde259224293b5093ea6f27640e0b8ea2f251fc199
+- filename: backend/app_backup_login.go
+  checksum: 1cead8fbab34c6a39dd239b3f7a22bcc4568002483ade256309491e603f95639
+- filename: backend/app_backup_remote.go
+  checksum: f5d6af8489c9f1e5459cbcd29fb72700e11df36cd37489d4769212430e49b592
+- filename: backend/app_backup_runtime.go
+  checksum: 644eed33f2f326c2eb44ba5edbdf3db80509ae0f2b37d0d4580a01798d413794
+- filename: backend/profile_login_package_windows_test.go
+  checksum: 8b4cb2b5f81acef320dcc78afdde5d053dfd4b4ff7aa0bf976626cf6a69fe5a0
+- filename: frontend/src/modules/backup/api.ts
+  checksum: 7cb97121715133f22aa1d43e3237258f7f889877c044fcc276fbe1e0370576aa
+- filename: frontend/src/modules/backup/components/LoginRestoreModal.tsx
+  checksum: 499a0ff5eae87730087767857633d176efc551401e26546738f664aabeabe22d
+- filename: frontend/scripts/login-migration-fixture.html
+  checksum: 3c96ef15e1715d8ccb5fa4bc83f0424856561902f13fff2232d02743b9b6a26d
+- filename: backend/profile_login_snapshot.go
+  checksum: 34cc0e406792164587c4d670803e823e4af339b9954f83c6ef31bcacc6dfb7d0
+- filename: backend/profile_login_native_test.go
+  checksum: e7bd86b30255bd88a87f982d550c5c8729967fdef3ab4f409c66db862c5fbe15
 version: "1.0"

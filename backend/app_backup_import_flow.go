@@ -7,12 +7,27 @@ import (
 )
 
 func (a *App) backupImportFromPathLocked(zipPath string) (map[string]interface{}, error) {
+	return a.backupImportFromPathWithPasswordLocked(zipPath, "")
+}
+
+func (a *App) backupImportFromPathWithPasswordLocked(zipPath, password string) (map[string]interface{}, error) {
 	a.backupEmitImportProgress("preparing", 10, "正在解压并校验备份包...")
 	extractRoot, manifest, err := backupExtractAndValidate(zipPath)
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(extractRoot)
+	portableCount, err := prepareFullBackupLogin(extractRoot, password)
+	if err != nil {
+		return nil, fmt.Errorf("准备登录态恢复失败：%w", err)
+	}
+	if portableCount > 0 && password == "" {
+		return map[string]interface{}{"requiresLoginPassword": true, "zipPath": zipPath, "portableLoginCount": portableCount, "message": "此全量备份包含加密登录态，请输入迁移密码；尚未修改本机数据"}, nil
+	}
+	var loginWarnings []string
+	if portableCount == 0 {
+		loginWarnings = prepareFullBackupSameDeviceLogin(extractRoot)
+	}
 	if err := a.backupStopRuntimeForMaintenance(); err != nil {
 		return nil, fmt.Errorf("停止运行时失败，已中止备份导入: %w", err)
 	}
@@ -83,16 +98,18 @@ func (a *App) backupImportFromPathLocked(zipPath string) (map[string]interface{}
 	a.backupEmitImportProgress("done", 100, message)
 
 	return map[string]interface{}{
-		"cancelled":        false,
-		"zipPath":          zipPath,
-		"imported":         stats.Imported,
-		"skipped":          stats.Skipped,
-		"conflicts":        stats.Conflicts,
-		"partial":          partial,
-		"componentTotal":   totalComponents,
-		"componentSuccess": successCount,
-		"componentFailed":  failedCount,
-		"failedComponents": issueTracker.FailedComponents(),
-		"message":          message,
+		"cancelled":          false,
+		"zipPath":            zipPath,
+		"imported":           stats.Imported,
+		"skipped":            stats.Skipped,
+		"conflicts":          stats.Conflicts,
+		"partial":            partial,
+		"componentTotal":     totalComponents,
+		"componentSuccess":   successCount,
+		"componentFailed":    failedCount,
+		"failedComponents":   issueTracker.FailedComponents(),
+		"message":            message,
+		"portableLoginCount": portableCount,
+		"warnings":           loginWarnings,
 	}, nil
 }

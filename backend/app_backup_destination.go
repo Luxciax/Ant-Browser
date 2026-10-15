@@ -34,13 +34,10 @@ func (a *App) BackupCreatePackage(input map[string]string) (map[string]interface
 		a.backupEmitExportProgress("error", 100, fmt.Sprintf("备份失败: %v", err))
 		return nil, err
 	}
-	profileExportOptions := ProfilePackageExportOptions{}
-	if len(profileIDs) > 0 {
-		profileExportOptions, err = backupProfileExportOptionsFromInput(input)
-		if err != nil {
-			a.backupEmitExportProgress("error", 100, fmt.Sprintf("备份失败: %v", err))
-			return nil, err
-		}
+	profileExportOptions, err := backupProfileExportOptionsFromInput(input)
+	if err != nil {
+		a.backupEmitExportProgress("error", 100, fmt.Sprintf("备份失败: %v", err))
+		return nil, err
 	}
 	profileNames := []string(nil)
 	if len(profileIDs) > 0 {
@@ -106,7 +103,7 @@ func (a *App) BackupCreatePackage(input map[string]string) (map[string]interface
 	if len(profileIDs) > 0 {
 		result, err = a.backupExportProfilePackageToPathWithOptions(packagePath, profileIDs, profileExportOptions)
 	} else {
-		result, err = a.backupExportPackageToPath(packagePath)
+		result, err = a.backupExportPackageToPathWithOptions(packagePath, profileExportOptions)
 	}
 	if err != nil {
 		return nil, err

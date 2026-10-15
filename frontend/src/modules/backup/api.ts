@@ -1,5 +1,6 @@
 import type { BackupChannelSelection } from './channels'
 import type { BackupPackageInfo } from './packageInfo'
+import { getGoApp } from '../browser/api/runtime'
 import type { BrowserProfilePackageExportOptions, BrowserProfilePackageImportPreview } from '../browser/types'
 
 export interface BackupActionResult {
@@ -34,6 +35,7 @@ export interface BackupActionResult {
   overwrittenCount?: number
   renamedCount?: number
   requiresProfileImportConfirmation?: boolean
+  requiresLoginPassword?: boolean
   profileImportPreview?: BrowserProfilePackageImportPreview
   warnings?: string[]
   packageType?: 'full' | 'profile' | string
@@ -97,10 +99,10 @@ export async function createBackupPackage(
   }
   if (profileIds.length > 0) {
     payload.profileIds = JSON.stringify(profileIds)
-    if (profileOptions?.portableLogin) {
+  }
+  if (profileOptions?.portableLogin) {
       payload.portableLogin = 'true'
       payload.migrationPassword = profileOptions.migrationPassword
-    }
   }
   return (await bindings.BackupCreatePackage(payload)) || {}
 }
@@ -111,6 +113,12 @@ export async function exportSystemConfig(): Promise<BackupActionResult> {
     return { cancelled: false, message: '当前环境不支持后端导出接口' }
   }
   return (await bindings.BackupExportPackage()) || {}
+}
+
+export async function restoreBackupWithLoginPassword(zipPath: string, password: string): Promise<BackupActionResult> {
+  const app = getGoApp()
+  if (!app?.BackupRestoreWithLoginPassword) throw new Error('请连接支持登录态迁移的新版桌面后端')
+  return await app.BackupRestoreWithLoginPassword(zipPath, password)
 }
 
 export async function importSystemConfig(): Promise<BackupActionResult> {

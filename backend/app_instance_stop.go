@@ -4,6 +4,7 @@ import (
 	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/logger"
 	"fmt"
+	"runtime"
 	"time"
 )
 
@@ -65,6 +66,9 @@ func (a *App) browserInstanceStopWithRuntimeLock(profileId string) (*BrowserProf
 	a.emitBrowserInstanceUpdated(stoppingSnapshot)
 
 	stopRun := profile.LastStartAt
+	if runtime.GOOS == "windows" && debugPort > 0 {
+		_ = snapshotLoginForBackup(debugPort, userDataDir, profileId)
+	}
 	closedByCDP := tryCloseBrowserViaCDP(debugPort, 5*time.Second)
 	if closedByCDP && waitBrowserRuntimeStopped(pid, debugPort, 5*time.Second) {
 		a.browserMgr.Mutex.Lock()

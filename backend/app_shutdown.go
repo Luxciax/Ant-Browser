@@ -133,8 +133,10 @@ func (a *App) stopTrackedBrowserProcesses() {
 	}
 
 	type shutdownTarget struct {
-		cmd       *exec.Cmd
-		debugPort int
+		cmd         *exec.Cmd
+		debugPort   int
+		profileID   string
+		userDataDir string
 	}
 
 	a.browserMgr.Mutex.Lock()
@@ -142,10 +144,14 @@ func (a *App) stopTrackedBrowserProcesses() {
 	seen := make(map[string]struct{}, len(a.browserMgr.BrowserProcesses))
 	for profileID, cmd := range a.browserMgr.BrowserProcesses {
 		debugPort := 0
+		userDataDir := ""
 		if profile := a.browserMgr.Profiles[profileID]; profile != nil {
 			debugPort = profile.DebugPort
+			if profile.DebugReady {
+				userDataDir = a.browserMgr.ResolveUserDataDir(profile)
+			}
 		}
-		targets = append(targets, shutdownTarget{cmd: cmd, debugPort: debugPort})
+		targets = append(targets, shutdownTarget{cmd: cmd, debugPort: debugPort, profileID: profileID, userDataDir: userDataDir})
 		seen[profileID] = struct{}{}
 	}
 	for profileID, profile := range a.browserMgr.Profiles {
@@ -155,11 +161,21 @@ func (a *App) stopTrackedBrowserProcesses() {
 		if _, ok := seen[profileID]; ok {
 			continue
 		}
-		targets = append(targets, shutdownTarget{debugPort: profile.DebugPort})
+		userDataDir := ""
+		if profile.DebugReady {
+			userDataDir = a.browserMgr.ResolveUserDataDir(profile)
+		}
+		targets = append(targets, shutdownTarget{debugPort: profile.DebugPort, profileID: profileID, userDataDir: userDataDir})
 	}
 	a.browserMgr.Mutex.Unlock()
 
 	for _, target := range targets {
+		if goruntime.GOOS == "windows" && target.debugPort > 0 && target.userDataDir != "" {
+			unlock := a.lockProfileRuntimeOperation(target.profileID)
+			a.stopBrowserDiagnostics(target.profileID)
+			_ = snapshotLoginForBackup(target.debugPort, target.userDataDir, target.profileID)
+			unlock()
+		}
 		if target.debugPort > 0 && tryCloseBrowserViaCDP(target.debugPort, 5*time.Second) {
 			continue
 		}

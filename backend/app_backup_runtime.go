@@ -4,6 +4,7 @@ import (
 	"ant-chrome/backend/internal/browser"
 	"errors"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -41,6 +42,8 @@ func (a *App) backupStopRuntimeForMaintenance() error {
 	type runtimeProfile struct {
 		debugPort   int
 		userDataDir string
+		profileID   string
+		debugReady  bool
 	}
 
 	profiles := make([]runtimeProfile, 0)
@@ -65,10 +68,11 @@ func (a *App) backupStopRuntimeForMaintenance() error {
 			if cmd == nil && (profile == nil || (!profile.Running && profile.Pid <= 0 && profile.DebugPort <= 0)) {
 				continue
 			}
-			item := runtimeProfile{}
+			item := runtimeProfile{profileID: profileID}
 			if profile != nil {
 				item.debugPort = profile.DebugPort
 				item.userDataDir = a.browserMgr.ResolveUserDataDir(profile)
+				item.debugReady = profile.DebugReady
 			}
 			profiles = append(profiles, item)
 			if cmd != nil && cmd.Process != nil {
@@ -83,6 +87,12 @@ func (a *App) backupStopRuntimeForMaintenance() error {
 
 	for _, profile := range profiles {
 		if profile.debugPort > 0 {
+			if runtime.GOOS == "windows" && profile.debugReady {
+				unlock := a.lockProfileRuntimeOperation(profile.profileID)
+				a.stopBrowserDiagnostics(profile.profileID)
+				_ = snapshotLoginForBackup(profile.debugPort, profile.userDataDir, profile.profileID)
+				unlock()
+			}
 			_ = backupTryCloseBrowserViaCDP(profile.debugPort, 5*time.Second)
 		}
 	}

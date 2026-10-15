@@ -8,6 +8,10 @@ import (
 )
 
 func (a *App) backupExportPackageToPath(savePath string) (map[string]interface{}, error) {
+	return a.backupExportPackageToPathWithOptions(savePath, ProfilePackageExportOptions{})
+}
+
+func (a *App) backupExportPackageToPathWithOptions(savePath string, options ProfilePackageExportOptions) (map[string]interface{}, error) {
 	if strings.TrimSpace(savePath) == `` {
 		return nil, fmt.Errorf(`backup export path is empty`)
 	}
@@ -28,6 +32,16 @@ func (a *App) backupExportPackageToPath(savePath string) (map[string]interface{}
 		a.backupEmitExportProgress(`error`, 100, fmt.Sprintf(`backup export failed: %v`, err))
 		return nil, err
 	}
+	portableCount := 0
+	var warnings []string
+	if options.PortableLogin {
+		var cleanup func()
+		portableCount, warnings, cleanup, err = a.backupAddLoginState(&scope, options.MigrationPassword)
+		defer cleanup()
+		if err != nil {
+			return nil, err
+		}
+	}
 	manifest := backup.BuildManifest(scope, a.appName(), a.appVersion(), time.Now())
 	a.backupEmitExportProgress(`preparing`, 15, `writing backup package`)
 
@@ -38,12 +52,14 @@ func (a *App) backupExportPackageToPath(savePath string) (map[string]interface{}
 	}
 
 	return map[string]interface{}{
-		`cancelled`:       false,
-		`zipPath`:         savePath,
-		`includedEntries`: includedEntries,
-		`skippedEntries`:  skippedEntries,
-		`fileCount`:       fileCount,
-		`message`:         `backup export complete`,
+		`cancelled`:          false,
+		`zipPath`:            savePath,
+		`includedEntries`:    includedEntries,
+		`skippedEntries`:     skippedEntries,
+		`fileCount`:          fileCount,
+		`message`:            `backup export complete`,
+		`portableLoginCount`: portableCount,
+		`warnings`:           warnings,
 	}, nil
 }
 
@@ -74,14 +90,14 @@ func (a *App) backupExportProfilePackageToPathWithOptions(savePath string, profi
 	}
 	a.backupEmitExportProgress(`done`, 100, `实例备份完成`)
 	return map[string]interface{}{
-		`cancelled`:    false,
-		`zipPath`:      savePath,
-		`profileCount`: len(profiles),
-		`profileNames`: profilePackageProfileNames(profiles),
-		`fileCount`:    fileCount,
-		`packageType`:  `profile`,
+		`cancelled`:          false,
+		`zipPath`:            savePath,
+		`profileCount`:       len(profiles),
+		`profileNames`:       profilePackageProfileNames(profiles),
+		`fileCount`:          fileCount,
+		`packageType`:        `profile`,
 		`portableLoginCount`: portableLoginCount,
 		`warnings`:           warnings,
-		`message`:      `实例备份完成`,
+		`message`:            `实例备份完成`,
 	}, nil
 }

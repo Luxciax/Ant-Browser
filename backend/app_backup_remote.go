@@ -418,6 +418,9 @@ func (a *App) backupRestoreRemoteLocked(client channels.Client, label string, ti
 		a.backupEmitImportProgress(`error`, 100, fmt.Sprintf(`restore remote backup failed: %v`, err))
 		return nil, err
 	}
+	if result["requiresLoginPassword"] == true || result["requiresProfileImportConfirmation"] == true {
+		return nil, fmt.Errorf("此备份需要交互确认或迁移密码，尚未修改本机数据；请通过备份历史下载到本地后恢复")
+	}
 	result[`remoteName`] = fileName
 	return result, nil
 }

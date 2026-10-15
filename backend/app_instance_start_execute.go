@@ -77,6 +77,19 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 	for attempt := 1; attempt <= plan.maxStartAttempts; attempt++ {
 		stableDebugPort, readyErr := waitBrowserDebugPortStableContext(ctx, plan.assignedDebugPort, plan.userDataDir, plan.startReadyTimeout, plan.startStableWindow, monitor)
 		if readyErr == nil {
+			if plan.loginRestore != nil {
+				count, restoreErr := restorePortableCookies(stableDebugPort, *plan.loginRestore)
+				if restoreErr != nil {
+					lastStartErr = restoreErr
+					log.Error("登录态恢复失败，未打开启动页", logger.F("event", "login.restore_failed"), logger.F("profile_id", input.ProfileID), logger.F("reason", restoreErr.Error()))
+					break
+				}
+				if err := os.Remove(filepath.Join(plan.userDataDir, loginRestoreFile)); err != nil {
+					lastStartErr = fmt.Errorf("登录态已写入但恢复标记清除失败，已停止启动以避免重复覆盖登录：%w", err)
+					break
+				}
+				log.Info("迁移 Cookie 已写入并回读核验，网站登录有效性待网站验证", logger.F("event", "login.cookies_restored"), logger.F("profile_id", input.ProfileID), logger.F("restored_count", count), logger.F("snapshot_at", plan.loginRestore.CapturedAt))
+			}
 			if err := syncConfiguredBrowserWindowSize(stableDebugPort, plan.args); err != nil {
 				log.Warn("窗口尺寸校正失败", logger.F("profile_id", input.ProfileID), logger.F("error", err.Error()))
 			}
