@@ -2,6 +2,7 @@ package backend
 
 import (
 	"ant-chrome/backend/internal/browser"
+	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/logger"
 	"context"
 	"fmt"
@@ -297,7 +298,14 @@ func (a *App) prepareBrowserLaunchContext(ctx context.Context, input browserStar
 		return nil, nil, nil, "", "", startErr
 	}
 
-	fingerprintLaunchArgs := a.buildBrowserFingerprintCapabilityReport(input.ProfileID, profile.CoreId, profile.FingerprintArgs).LaunchArgs
+	fingerprintReport := a.buildBrowserFingerprintCapabilityReport(input.ProfileID, profile.CoreId, profile.FingerprintArgs)
+	fingerprintLaunchArgs := fingerprintReport.LaunchArgs
+	if fingerprintReport.FingerprintBackend == config.FingerprintBackendClearcote {
+		fingerprintLaunchArgs, err = prepareClearcoteProfileArgs(profile.FingerprintArgs, fingerprintLaunchArgs)
+		if err != nil {
+			return nil, nil, nil, "", "", fmt.Errorf("实例启动失败：%w", err)
+		}
+	}
 	fingerprintExpectedArgs := combineFingerprintExpectedArgs(fingerprintLaunchArgs, sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs)
 	runtimeBookmarks, fingerprintBookmarkURL, bookmarkErr := a.runtimeBookmarksForProfileExpectedArgsAndProfile(profile.ProfileId, fingerprintExpectedArgs, profile, bookmarks)
 	if bookmarkErr != nil {

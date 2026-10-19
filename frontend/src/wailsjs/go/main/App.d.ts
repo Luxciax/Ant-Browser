@@ -10,6 +10,8 @@ import {logger} from '../models';
 import {launchcode} from '../models';
 import {time} from '../models';
 
+export function BrowserFingerprintProfileImport():Promise<{filePath: string} | null>;
+
 export function AutomationDemoCreateProfile():Promise<Record<string, any>>;
 
 export function AutomationDemoCreateProfileWithOptions(arg1:string):Promise<Record<string, any>>;

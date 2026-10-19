@@ -105,3 +105,9 @@ export async function openCorePath(corePath: string): Promise<boolean> {
   }
   return false
 }
+
+export async function importFingerprintProfile(): Promise<{filePath: string} | null> {
+  const bindings = await getBindings()
+  if (!bindings?.BrowserFingerprintProfileImport) throw new Error('请在桌面应用中导入 Profile JSON')
+  return await bindings.BrowserFingerprintProfileImport()
+}
