@@ -1,4 +1,4 @@
-import { FormItem, Input } from '../../../shared/components'
+import { FormItem, Input, Select } from '../../../shared/components'
 import type { FingerprintConfig } from '../utils/fingerprintSerializer'
 import { getFingerprintAdapter, storeFingerprintConfig, type FingerprintBackend } from '../utils/fingerprintAdapters'
 
@@ -18,6 +18,10 @@ export function KernelFingerprintPanel({ value, onChange, backend }: KernelFinge
   const validation = adapter.validate(config)
   return <div className="space-y-4">
     <p className="text-sm">指纹内核：<strong>{backend === 'clearcote' ? 'Clearcote' : '普通 Chromium'}</strong></p>
+    {backend === 'clearcote' && <>
+      <FormItem label="指纹生成方式"><Select aria-label="指纹生成方式" value={config.mode || 'auto'} options={[{ value: 'auto', label: '自动 Persona' }, { value: 'manual', label: '高级手动' }]} onChange={event => update({ mode: event.target.value as FingerprintConfig['mode'] })} /></FormItem>
+      <p className="text-sm text-[var(--color-text-muted)]">自动 Persona 由 Clearcote 生成一致设备画像。Seed 留空时按实例 ID 稳定生成，重启保持不变。</p>
+    </>}
     {backend === 'generic-chromium' && <p className="text-sm text-[var(--color-text-muted)]">当前内核不支持原生指纹伪装。可在内核管理中修改指纹后端。</p>}
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{fields.map(([field, label]) => <FormItem key={field} label={label}><Input aria-label={label} value={String(config[field] ?? '')} onChange={event => update({ [field]: event.target.value })} /></FormItem>)}</div>
     {validation.issues.map((issue, index) => <p role={issue.level === 'error' ? 'alert' : undefined} key={index} className="text-sm text-[var(--color-error)]">{issue.message}</p>)}
