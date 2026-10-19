@@ -11,38 +11,38 @@ import (
 
 // Profile 浏览器配置文件
 type Profile struct {
-	ProfileId          string   `json:"profileId"`
-	ProfileName        string   `json:"profileName"`
-	UserDataDir        string   `json:"userDataDir"`
-	CoreId             string   `json:"coreId"`
-	RestoreLastSession string   `json:"restoreLastSession"`
-	FingerprintArgs    []string `json:"fingerprintArgs"`
-	ProxyId            string   `json:"proxyId"`
-	ProxyConfig        string   `json:"proxyConfig"`
-	ProxyBindSourceID  string   `json:"proxyBindSourceId"`
-	ProxyBindSourceURL string   `json:"proxyBindSourceUrl"`
-	ProxyBindName      string   `json:"proxyBindName"`
-	ProxyBindUpdatedAt string   `json:"proxyBindUpdatedAt"`
-	MemoryLimitMB      int      `json:"memoryLimitMb"`
-	LaunchArgs         []string `json:"launchArgs"`
-	LastLaunchArgs     []string `json:"lastLaunchArgs"`
-	Tags               []string `json:"tags"`
-	Keywords           []string `json:"keywords"`
-	GroupId            string   `json:"groupId"` // 所属分组ID
-	LaunchCode         string   `json:"launchCode"`
-	WindowMarkerCode   string   `json:"windowMarkerCode,omitempty"`
+	ProfileId          string              `json:"profileId"`
+	ProfileName        string              `json:"profileName"`
+	UserDataDir        string              `json:"userDataDir"`
+	CoreId             string              `json:"coreId"`
+	RestoreLastSession string              `json:"restoreLastSession"`
+	FingerprintArgs    []string            `json:"fingerprintArgs"`
+	ProxyId            string              `json:"proxyId"`
+	ProxyConfig        string              `json:"proxyConfig"`
+	ProxyBindSourceID  string              `json:"proxyBindSourceId"`
+	ProxyBindSourceURL string              `json:"proxyBindSourceUrl"`
+	ProxyBindName      string              `json:"proxyBindName"`
+	ProxyBindUpdatedAt string              `json:"proxyBindUpdatedAt"`
+	MemoryLimitMB      int                 `json:"memoryLimitMb"`
+	LaunchArgs         []string            `json:"launchArgs"`
+	LastLaunchArgs     []string            `json:"lastLaunchArgs"`
+	Tags               []string            `json:"tags"`
+	Keywords           []string            `json:"keywords"`
+	GroupId            string              `json:"groupId"` // 所属分组ID
+	LaunchCode         string              `json:"launchCode"`
+	WindowMarkerCode   string              `json:"windowMarkerCode,omitempty"`
 	RuntimeState       ProfileRuntimeState `json:"runtimeState"`
-	Running            bool     `json:"running"`
-	DebugPort          int      `json:"debugPort"`
-	DebugReady         bool     `json:"debugReady"`
-	Pid                int      `json:"pid"`
-	RuntimeWarning     string   `json:"runtimeWarning"`
-	LastError          string   `json:"lastError"`
-	CreatedAt          string   `json:"createdAt"`
-	UpdatedAt          string   `json:"updatedAt"`
-	DeletedAt          string   `json:"deletedAt"`
-	LastStartAt        string   `json:"lastStartAt"`
-	LastStopAt         string   `json:"lastStopAt"`
+	Running            bool                `json:"running"`
+	DebugPort          int                 `json:"debugPort"`
+	DebugReady         bool                `json:"debugReady"`
+	Pid                int                 `json:"pid"`
+	RuntimeWarning     string              `json:"runtimeWarning"`
+	LastError          string              `json:"lastError"`
+	CreatedAt          string              `json:"createdAt"`
+	UpdatedAt          string              `json:"updatedAt"`
+	DeletedAt          string              `json:"deletedAt"`
+	LastStartAt        string              `json:"lastStartAt"`
+	LastStopAt         string              `json:"lastStopAt"`
 }
 
 type ProfileRuntimeState string
@@ -128,10 +128,11 @@ type Settings struct {
 
 // CoreInput 内核配置输入
 type CoreInput struct {
-	CoreId    string `json:"coreId"`
-	CoreName  string `json:"coreName"`
-	CorePath  string `json:"corePath"`
-	IsDefault bool   `json:"isDefault"`
+	FingerprintBackend config.FingerprintBackend `json:"fingerprintBackend"`
+	CoreId             string                    `json:"coreId"`
+	CoreName           string                    `json:"coreName"`
+	CorePath           string                    `json:"corePath"`
+	IsDefault          bool                      `json:"isDefault"`
 }
 
 // CoreValidateResult 内核路径验证结果

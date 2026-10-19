@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/logger"
 	"fmt"
 	"strings"
@@ -35,11 +36,21 @@ func (m *Manager) SaveCore(input CoreInput) error {
 		return fmt.Errorf("内核路径不能为空")
 	}
 
+	backend := input.FingerprintBackend
+	if backend != "" && !backend.Valid() {
+		return fmt.Errorf("无效指纹内核: %s", backend)
+	}
+	if backend == "" {
+		backend = config.FingerprintBackendGenericChromium
+		if existing, ok := m.GetCore(coreId); ok {
+			backend = existing.FingerprintBackend.LegacyDefault()
+		}
+	}
 	if m.CoreDAO != nil {
 		if coreId == "" {
 			coreId = uuid.NewString()
 		}
-		core := Core{CoreId: coreId, CoreName: coreName, CorePath: corePath, IsDefault: input.IsDefault}
+		core := Core{CoreId: coreId, CoreName: coreName, CorePath: corePath, IsDefault: input.IsDefault, FingerprintBackend: backend}
 		if err := m.CoreDAO.Upsert(core); err != nil {
 			return err
 		}
@@ -59,6 +70,7 @@ func (m *Manager) SaveCore(input CoreInput) error {
 		}
 	}
 	if existingIndex >= 0 {
+		m.Config.Browser.Cores[existingIndex].FingerprintBackend = backend
 		m.Config.Browser.Cores[existingIndex].CoreName = coreName
 		m.Config.Browser.Cores[existingIndex].CorePath = corePath
 		if input.IsDefault {
@@ -70,10 +82,11 @@ func (m *Manager) SaveCore(input CoreInput) error {
 			coreId = uuid.NewString()
 		}
 		newCore := Core{
-			CoreId:    coreId,
-			CoreName:  coreName,
-			CorePath:  corePath,
-			IsDefault: input.IsDefault || len(m.Config.Browser.Cores) == 0,
+			FingerprintBackend: backend,
+			CoreId:             coreId,
+			CoreName:           coreName,
+			CorePath:           corePath,
+			IsDefault:          input.IsDefault || len(m.Config.Browser.Cores) == 0,
 		}
 		if newCore.IsDefault {
 			m.clearDefaultCore()

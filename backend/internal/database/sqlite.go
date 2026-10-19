@@ -268,6 +268,7 @@ var migrations = []migration{
 			committed INTEGER NOT NULL DEFAULT 0 CHECK(committed IN (0,1))
 		)`},
 	},
+	{version: 19, desc: "Independent fingerprint backend per core", stmts: []string{`ALTER TABLE browser_cores ADD COLUMN fingerprint_backend TEXT NOT NULL DEFAULT ''`}},
 	// ── 新版本在此追加，格式：
 	// {
 	//     version: 4,

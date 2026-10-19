@@ -231,10 +231,11 @@ type BrowserConfig struct {
 }
 
 type BrowserCore struct {
-	CoreId    string `yaml:"core_id" json:"coreId"`
-	CoreName  string `yaml:"core_name" json:"coreName"`
-	CorePath  string `yaml:"core_path" json:"corePath"`
-	IsDefault bool   `yaml:"is_default" json:"isDefault"`
+	FingerprintBackend FingerprintBackend `yaml:"fingerprint_backend,omitempty" json:"fingerprintBackend"`
+	CoreId             string             `yaml:"core_id" json:"coreId"`
+	CoreName           string             `yaml:"core_name" json:"coreName"`
+	CorePath           string             `yaml:"core_path" json:"corePath"`
+	IsDefault          bool               `yaml:"is_default" json:"isDefault"`
 }
 
 type BrowserProxy struct {

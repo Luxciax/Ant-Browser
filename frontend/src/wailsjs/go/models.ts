@@ -1487,6 +1487,7 @@ export namespace browser {
 	}
 	export class CoreInput {
 	    coreId: string;
+        fingerprintBackend?: string;
 	    coreName: string;
 	    corePath: string;
 	    isDefault: boolean;
@@ -1498,6 +1499,7 @@ export namespace browser {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.coreId = source["coreId"];
+        this.fingerprintBackend = source["fingerprintBackend"];
 	        this.coreName = source["coreName"];
 	        this.corePath = source["corePath"];
 	        this.isDefault = source["isDefault"];
@@ -1870,6 +1872,7 @@ export namespace config {
 	}
 	export class BrowserCore {
 	    coreId: string;
+        fingerprintBackend?: string;
 	    coreName: string;
 	    corePath: string;
 	    isDefault: boolean;
@@ -1881,6 +1884,7 @@ export namespace config {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.coreId = source["coreId"];
+        this.fingerprintBackend = source["fingerprintBackend"];
 	        this.coreName = source["coreName"];
 	        this.corePath = source["corePath"];
 	        this.isDefault = source["isDefault"];

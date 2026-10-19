@@ -272,6 +272,7 @@ export interface ProxyCheckSettings {
 }
 
 export interface BrowserCore {
+  fingerprintBackend?: 'fingerprint-chromium' | 'clearcote' | 'generic-chromium' | ''
   coreId: string
   coreName: string
   corePath: string
@@ -279,6 +280,7 @@ export interface BrowserCore {
 }
 
 export interface BrowserCoreInput {
+  fingerprintBackend?: 'fingerprint-chromium' | 'clearcote' | 'generic-chromium' | ''
   coreId: string
   coreName: string
   corePath: string

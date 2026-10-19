@@ -1,4 +1,5 @@
 export interface CoreDisplayInfo {
+  fingerprintBackend?: 'fingerprint-chromium' | 'clearcote' | 'generic-chromium' | ''
   coreId: string
   coreName: string
   corePath: string
@@ -21,6 +22,7 @@ export interface CoreSettingsForm {
 }
 
 export interface CoreEditForm {
+  fingerprintBackend?: 'fingerprint-chromium' | 'clearcote' | 'generic-chromium' | ''
   coreName: string
   corePath: string
 }

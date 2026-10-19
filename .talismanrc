@@ -29,7 +29,7 @@ fileignoreconfig:
 # Reviewed release 1.9.0 false positives; checksums expire on any file change.
 # SQL source code, not a database dump.
 - filename: backend/internal/database/sqlite.go
-  checksum: e1ae99304ec24fe9d1289b6332e1f5ec4b367d5f8fad5d313753265dd839da5d
+  checksum: dc93e17f096639aec7f864051eab61c960ae979b6aa96bb8146fa21ee4a9231c
 # Public Git commit ID recorded as audit evidence.
 - filename: docs/audits/release-quality-audit-2026-09-19.md
   checksum: 31b94606a88da8f851ed7da4d8fe57f7ec5b4a83490fc491456e5a4392bfaf5c
@@ -97,4 +97,8 @@ fileignoreconfig:
   checksum: 1930b13a0ddfa3d20d72a4897126d174c8a0ff10627d7105127cd97cbd0974c4
 - filename: backend/internal/logger/evidence_test.go
   checksum: 81177670be63cd4b0ffd4bff8b28fde5a991255396f7c8ab87c9f18d37b25604
+
+# Reviewed fingerprint backend change: Go schema declarations, no secrets.
+- filename: backend/internal/browser/types.go
+  checksum: 3e45c42cb00f5c2cf50c4bdbc496b43379bb39eca5d1e47c49738e041bfe332e
 version: "1.0"
