@@ -112,7 +112,7 @@ fileignoreconfig:
   checksum: 1590674d90afdab5d65c0be800cdfdd84d5dc9618899c4f18e89465e99dfe474
 # Reviewed React identifiers and form schema; no credentials.
 - filename: frontend/src/modules/browser/components/KernelFingerprintPanel.tsx
-  checksum: 5c9e4d30e87ad39fbe3944bd8f5397909201c027a543f36761cb6dfe619b73ab
+  checksum: bef2351457974930289013ca6b7b7426f1a22df05b29e8a0fc8ea63bdfdc6309
 # Reviewed device Profile encoding and CLI field names; no credentials.
 - filename: backend/fingerprint_profile.go
   checksum: 4f570962796daa0835c613a87108730f0f0787e679b0585d272d8e88ee3c6a67

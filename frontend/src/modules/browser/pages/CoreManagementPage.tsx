@@ -326,12 +326,12 @@ export function CoreManagementPage() {
   }
 
   const handleRedownload = (record: CoreDisplayInfo) => {
-    setDownloadForm({ coreId: record.coreId, name: record.coreName, url: '', proxyMode: 'system', proxyId: '', mode: 'redownload' })
+    setDownloadForm({ coreId: record.coreId, name: record.coreName, url: '', proxyMode: 'system', proxyId: '', mode: 'redownload', provider: record.fingerprintBackend === 'clearcote' ? 'clearcote' : 'fingerprint-chromium' })
     setDownloadProgress(null)
     setDownloadRecommendation(null)
     setDownloadRecommendationError('')
     setDownloadModalOpen(true)
-    void loadCoreDownloadRecommendation()
+    void loadCoreDownloadRecommendation(record.fingerprintBackend === 'clearcote' ? 'clearcote' : 'fingerprint-chromium')
   }
 
   // 保存内核

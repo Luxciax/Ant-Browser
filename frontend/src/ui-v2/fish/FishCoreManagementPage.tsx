@@ -238,8 +238,8 @@ export function FishCoreManagementPage() {
     setDownloadProgress(null); setRecommendation(null); setRecommendationError(''); setDownloadOpen(true); void loadRecommendation()
   }
   const openRedownload = (row: CoreDisplayInfo) => {
-    setDownloadForm({ coreId: row.coreId, name: row.coreName, url: '', proxyMode: 'system', proxyId: '', mode: 'redownload' })
-    setDownloadProgress(null); setRecommendation(null); setRecommendationError(''); setDownloadOpen(true); void loadRecommendation()
+    setDownloadForm({ coreId: row.coreId, name: row.coreName, url: '', proxyMode: 'system', proxyId: '', mode: 'redownload', provider: row.fingerprintBackend === 'clearcote' ? 'clearcote' : 'fingerprint-chromium' })
+    setDownloadProgress(null); setRecommendation(null); setRecommendationError(''); setDownloadOpen(true); void loadRecommendation(row.fingerprintBackend === 'clearcote' ? 'clearcote' : 'fingerprint-chromium')
   }
 
   const startDownload = async () => {

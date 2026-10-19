@@ -45,7 +45,7 @@ export function KernelFingerprintPanel({ value, onChange, backend }: KernelFinge
       {config.fingerprintProfile && <Button variant="secondary" onClick={() => update({ fingerprintProfile: undefined })}>取消使用</Button>}</div>
       {importError && <p role="alert" className="text-sm text-[var(--color-error)]">{importError}</p>}
     </FormItem>}
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{fields.map(([field, label]) => <FormItem key={field} label={label}><Input aria-label={label} value={String(config[field] ?? '')} onChange={event => update({ [field]: event.target.value })} /></FormItem>)}</div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{fields.map(([field, label]) => <FormItem key={field} label={label}><Input aria-label={label} value={String(field === 'resolution' && config.resolution === 'custom' ? config.customResolution || '' : config[field] ?? '')} onChange={event => update({ [field]: event.target.value })} /></FormItem>)}</div>
     {validation.issues.map((issue, index) => <p role={issue.level === 'error' ? 'alert' : undefined} key={index} className="text-sm text-[var(--color-error)]">{issue.message}</p>)}
     <details><summary>当前内核能力</summary>{adapter.capabilities.map(item => <p key={item.id} className="text-sm mt-2"><strong>{item.name}</strong>：{item.coverage}</p>)}</details>
   </div>
