@@ -15,6 +15,18 @@ export function getSystemTimezone(): string {
 }
 
 export interface FingerprintConfig {
+  mode?: 'auto' | 'profile' | 'manual'
+  fingerprintProfile?: { source: 'file'; filePath: string }
+  screenWidth?: string
+  screenHeight?: string
+  availWidth?: string
+  availHeight?: string
+  devicePixelRatio?: string
+  gpuVendor?: string
+  gpuRenderer?: string
+  location?: string
+  webrtcIp?: string
+  acceptLanguage?: string
   // 指纹种子（核心）
   seed?: string            // --fingerprint=<seed>  控制所有随机噪声的根种子
 
