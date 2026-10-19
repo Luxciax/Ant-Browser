@@ -101,4 +101,7 @@ fileignoreconfig:
 # Reviewed fingerprint backend change: Go schema declarations, no secrets.
 - filename: backend/internal/browser/types.go
   checksum: 3e45c42cb00f5c2cf50c4bdbc496b43379bb39eca5d1e47c49738e041bfe332e
+# Moved legacy serializer unchanged; keys are CLI names, not secrets.
+- filename: frontend/src/modules/browser/utils/fingerprintAdapters/fingerprintChromium.ts
+  checksum: 3d25e9ccbc7abf613238545c06232c8f3891cb65826dc1bfd2e239dc6991c338
 version: "1.0"
