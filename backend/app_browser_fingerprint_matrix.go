@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"ant-chrome/backend/internal/config"
 	"fmt"
 	"runtime"
 	"strconv"
@@ -11,16 +12,17 @@ import (
 const fingerprintChrome144Major = 144
 
 type BrowserFingerprintCapabilityReport struct {
-	ProfileId     string                            `json:"profileId"`
-	CoreId        string                            `json:"coreId"`
-	CoreName      string                            `json:"coreName"`
-	ChromeVersion string                            `json:"chromeVersion"`
-	ChromeMajor   int                               `json:"chromeMajor"`
-	VersionStatus string                            `json:"versionStatus"`
-	RawArgs       []string                          `json:"rawArgs"`
-	LaunchArgs    []string                          `json:"launchArgs"`
-	Rows          []BrowserFingerprintCapabilityRow `json:"rows"`
-	Warnings      []string                          `json:"warnings"`
+	FingerprintBackend config.FingerprintBackend         `json:"fingerprintBackend"`
+	ProfileId          string                            `json:"profileId"`
+	CoreId             string                            `json:"coreId"`
+	CoreName           string                            `json:"coreName"`
+	ChromeVersion      string                            `json:"chromeVersion"`
+	ChromeMajor        int                               `json:"chromeMajor"`
+	VersionStatus      string                            `json:"versionStatus"`
+	RawArgs            []string                          `json:"rawArgs"`
+	LaunchArgs         []string                          `json:"launchArgs"`
+	Rows               []BrowserFingerprintCapabilityRow `json:"rows"`
+	Warnings           []string                          `json:"warnings"`
 }
 
 type BrowserFingerprintCapabilityRow struct {
@@ -138,16 +140,18 @@ func (a *App) buildBrowserFingerprintCapabilityReport(profileId string, coreId s
 		chromeVersion = a.browserMgr.GetChromeVersion(core.CorePath)
 	}
 
-	plan := buildBrowserFingerprintLaunchPlan(profileId, fingerprintArgs, chromeVersion)
+	backend := core.FingerprintBackend.LegacyDefault()
+	plan := fingerprintAdapterForBackend(backend).launchPlan(profileId, fingerprintArgs, chromeVersion)
 	report := BrowserFingerprintCapabilityReport{
-		ProfileId:     profileId,
-		ChromeVersion: chromeVersion,
-		ChromeMajor:   parseChromeMajor(chromeVersion),
-		VersionStatus: fingerprintVersionStatus(chromeVersion),
-		RawArgs:       normalizeNonEmptyStrings(fingerprintArgs),
-		LaunchArgs:    append([]string{}, plan.launchArgs...),
-		Rows:          append([]BrowserFingerprintCapabilityRow{}, plan.rows...),
-		Warnings:      append([]string{}, plan.warnings...),
+		FingerprintBackend: backend,
+		ProfileId:          profileId,
+		ChromeVersion:      chromeVersion,
+		ChromeMajor:        parseChromeMajor(chromeVersion),
+		VersionStatus:      fingerprintVersionStatus(chromeVersion),
+		RawArgs:            normalizeNonEmptyStrings(fingerprintArgs),
+		LaunchArgs:         append([]string{}, plan.launchArgs...),
+		Rows:               append([]BrowserFingerprintCapabilityRow{}, plan.rows...),
+		Warnings:           append([]string{}, plan.warnings...),
 	}
 	if coreFound {
 		report.CoreId = core.CoreId

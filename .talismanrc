@@ -104,4 +104,7 @@ fileignoreconfig:
 # Moved legacy serializer unchanged; keys are CLI names, not secrets.
 - filename: frontend/src/modules/browser/utils/fingerprintAdapters/fingerprintChromium.ts
   checksum: 3d25e9ccbc7abf613238545c06232c8f3891cb65826dc1bfd2e239dc6991c338
+# Reviewed adapter dispatch and command-line switch identifiers; no credentials.
+- filename: backend/fingerprint_backend_adapter.go
+  checksum: cdcfa99d5177897f49681af29af8b63b154bf18108775182f168d743edf45d92
 version: "1.0"
