@@ -153,11 +153,16 @@ func (a *App) scanAndRegisterCores() []browser.Core {
 			continue
 		}
 		core.IsDefault = !hasDefault
+		core.FingerprintBackend = config.FingerprintBackendGenericChromium
+		if manifest, ok := browser.ReadCoreFingerprintManifest(a.browserMgr.ResolveRelativePath(core.CorePath)); ok {
+			core.FingerprintBackend = manifest.FingerprintBackend
+		}
 		if err := a.browserMgr.SaveCore(browser.CoreInput{
-			CoreId:    core.CoreId,
-			CoreName:  core.CoreName,
-			CorePath:  core.CorePath,
-			IsDefault: core.IsDefault,
+			FingerprintBackend: core.FingerprintBackend,
+			CoreId:             core.CoreId,
+			CoreName:           core.CoreName,
+			CorePath:           core.CorePath,
+			IsDefault:          core.IsDefault,
 		}); err != nil {
 			log.Warn("自动注册内核失败", logger.F("core_id", core.CoreId), logger.F("path", core.CorePath), logger.F("error", err.Error()))
 			continue

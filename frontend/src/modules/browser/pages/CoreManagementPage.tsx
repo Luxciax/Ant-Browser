@@ -349,7 +349,7 @@ export function CoreManagementPage() {
       const input: BrowserCoreInput = {
         coreId: editingCore?.coreId || `core-${Date.now()}`,
         coreName: editForm.coreName.trim(),
-        corePath: editForm.corePath.trim(), fingerprintBackend: editForm.fingerprintBackend,
+        corePath: editForm.corePath.trim(), fingerprintBackend: editForm.fingerprintBackend || 'auto',
         isDefault: editingCore?.isDefault || false,
       }
       await saveBrowserCore(input)

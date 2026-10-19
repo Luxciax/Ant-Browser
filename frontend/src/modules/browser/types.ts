@@ -280,7 +280,7 @@ export interface BrowserCore {
 }
 
 export interface BrowserCoreInput {
-  fingerprintBackend?: 'fingerprint-chromium' | 'clearcote' | 'generic-chromium' | ''
+  fingerprintBackend?: 'fingerprint-chromium' | 'clearcote' | 'generic-chromium' | '' | 'auto'
   coreId: string
   coreName: string
   corePath: string

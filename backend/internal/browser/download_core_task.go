@@ -21,10 +21,11 @@ func (m *Manager) DownloadAndExtractCore(ctx context.Context, coreName string, t
 	for _, core := range m.ListCores() {
 		if strings.EqualFold(core.CoreName, coreName) || filepath.Base(core.CorePath) == coreName {
 			m.downloadAndExtractCore(ctx, CoreInput{
-				CoreId:    core.CoreId,
-				CoreName:  core.CoreName,
-				CorePath:  core.CorePath,
-				IsDefault: core.IsDefault,
+				CoreId:             core.CoreId,
+				CoreName:           core.CoreName,
+				CorePath:           core.CorePath,
+				IsDefault:          core.IsDefault,
+				FingerprintBackend: core.FingerprintBackend,
 			}, targetUrl, proxyConfig, false)
 			return
 		}
@@ -40,10 +41,11 @@ func (m *Manager) RedownloadCore(ctx context.Context, coreId string, targetUrl s
 		return
 	}
 	m.downloadAndExtractCore(ctx, CoreInput{
-		CoreId:    core.CoreId,
-		CoreName:  core.CoreName,
-		CorePath:  core.CorePath,
-		IsDefault: core.IsDefault,
+		CoreId:             core.CoreId,
+		CoreName:           core.CoreName,
+		CorePath:           core.CorePath,
+		IsDefault:          core.IsDefault,
+		FingerprintBackend: core.FingerprintBackend,
 	}, targetUrl, proxyConfig, true)
 }
 
@@ -198,11 +200,21 @@ func (m *Manager) downloadAndExtractCore(ctx context.Context, coreInput CoreInpu
 	}
 	cleanupTempExtract = false
 
+	backend, provider := FingerprintBackendForDownload(targetUrl)
+	if backend != "" {
+		if err := WriteCoreFingerprintManifest(targetDir, CoreFingerprintManifest{Provider: provider, FingerprintBackend: backend, ChromiumVersion: m.GetChromeVersion(targetCorePath)}); err != nil {
+			sendEvent("error", 0, "写入内核来源失败: "+err.Error())
+			return
+		}
+	} else if coreInput.FingerprintBackend.Valid() {
+		backend = coreInput.FingerprintBackend
+	}
 	coreToSave := CoreInput{
-		CoreId:    strings.TrimSpace(coreInput.CoreId),
-		CoreName:  coreName,
-		CorePath:  targetCorePath,
-		IsDefault: coreInput.IsDefault,
+		FingerprintBackend: backend,
+		CoreId:             strings.TrimSpace(coreInput.CoreId),
+		CoreName:           coreName,
+		CorePath:           targetCorePath,
+		IsDefault:          coreInput.IsDefault,
 	}
 	if coreToSave.CoreId == "" {
 		coreToSave.CoreId = uuid.NewString()

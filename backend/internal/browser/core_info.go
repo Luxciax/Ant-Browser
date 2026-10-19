@@ -15,6 +15,12 @@ func (m *Manager) GetChromeVersion(corePath string) string {
 	}
 
 	baseDir := m.ResolveRelativePath(corePath)
+	if manifest, ok := ReadCoreFingerprintManifest(baseDir); ok && manifest.ChromiumVersion != "" {
+		return manifest.ChromiumVersion
+	}
+	if info, err := os.Stat(baseDir); err == nil && !info.IsDir() {
+		baseDir = filepath.Dir(baseDir)
+	}
 
 	// 尝试读取 manifest.json 或 *.manifest 文件
 	manifestPath := filepath.Join(baseDir, "manifest.json")

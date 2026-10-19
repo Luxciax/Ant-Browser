@@ -83,7 +83,11 @@ func (m *Manager) ValidateCorePath(corePath string) CoreValidateResult {
 		return CoreValidateResult{Valid: false, Message: fmt.Sprintf("浏览器可执行文件不可用：%v", err)}
 	}
 
-	return CoreValidateResult{Valid: true, Message: fmt.Sprintf("路径有效: %s", exePath)}
+	message := fmt.Sprintf("路径有效: %s", exePath)
+	if manifest, ok := ReadCoreFingerprintManifest(baseDir); ok && manifest.Provider == "clearcote-compatible" {
+		message += "；检测到 Clearcote 兼容指纹接口，建议后端：Clearcote"
+	}
+	return CoreValidateResult{Valid: true, Message: message}
 }
 
 // ResolveChromeBinary 解析 Chrome 二进制路径（简化版）

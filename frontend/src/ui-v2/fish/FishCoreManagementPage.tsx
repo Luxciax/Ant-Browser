@@ -175,7 +175,7 @@ export function FishCoreManagementPage() {
     if (!editForm.corePath.trim()) { toast.error('请输入内核路径'); return }
     setSavingCore(true)
     try {
-      const input: BrowserCoreInput = { coreId: editingCore?.coreId || `core-${Date.now()}`, coreName: editForm.coreName.trim(), corePath: editForm.corePath.trim(), fingerprintBackend: editForm.fingerprintBackend, isDefault: editingCore?.isDefault || false }
+      const input: BrowserCoreInput = { coreId: editingCore?.coreId || `core-${Date.now()}`, coreName: editForm.coreName.trim(), corePath: editForm.corePath.trim(), fingerprintBackend: editForm.fingerprintBackend || 'auto', isDefault: editingCore?.isDefault || false }
       await saveBrowserCore(input)
       setEditOpen(false)
       await loadData()

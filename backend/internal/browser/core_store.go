@@ -1,7 +1,6 @@
 package browser
 
 import (
-	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/logger"
 	"fmt"
 	"strings"
@@ -16,10 +15,10 @@ func (m *Manager) ListCores() []Core {
 		if err == nil {
 			// 同步到内存 config，供其他逻辑使用
 			m.Config.Browser.Cores = cores
-			return cores
+			return normalizedCoreBackends(cores)
 		}
 	}
-	return m.Config.Browser.Cores
+	return normalizedCoreBackends(m.Config.Browser.Cores)
 }
 
 // SaveCore 保存内核配置（新增或更新）
@@ -37,15 +36,28 @@ func (m *Manager) SaveCore(input CoreInput) error {
 	}
 
 	backend := input.FingerprintBackend
+	autoDetect := backend == "auto"
+	if autoDetect {
+		backend = ""
+	}
 	if backend != "" && !backend.Valid() {
 		return fmt.Errorf("无效指纹内核: %s", backend)
 	}
 	if backend == "" {
-		backend = config.FingerprintBackendGenericChromium
-		if existing, ok := m.GetCore(coreId); ok {
+		if existing, ok := m.GetCore(coreId); ok && !autoDetect {
 			backend = existing.FingerprintBackend.LegacyDefault()
+		} else {
+			var provider string
+			backend, provider = m.DetectCoreFingerprintBackend(corePath)
+			absolute := m.ResolveRelativePath(corePath)
+			if _, _, ok := FindCoreExecutable(absolute); ok {
+				if err := WriteCoreFingerprintManifest(absolute, CoreFingerprintManifest{Provider: provider, FingerprintBackend: backend, ChromiumVersion: m.GetChromeVersion(corePath)}); err != nil {
+					log.Warn("内核 manifest 保存失败", logger.F("error", err.Error()))
+				}
+			}
 		}
 	}
+
 	if m.CoreDAO != nil {
 		if coreId == "" {
 			coreId = uuid.NewString()
@@ -198,4 +210,12 @@ func (m *Manager) clearDefaultCore() {
 	for i := range m.Config.Browser.Cores {
 		m.Config.Browser.Cores[i].IsDefault = false
 	}
+}
+
+func normalizedCoreBackends(cores []Core) []Core {
+	result := append([]Core{}, cores...)
+	for index := range result {
+		result[index].FingerprintBackend = result[index].FingerprintBackend.LegacyDefault()
+	}
+	return result
 }
