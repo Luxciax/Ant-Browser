@@ -15,6 +15,14 @@ export function KernelFingerprintPanel({ value, onChange, backend }: KernelFinge
   const fields: [keyof FingerprintConfig, string][] = backend === 'clearcote'
     ? [['seed', 'Seed（留空按实例稳定生成）'], ['platform', '平台（windows / macos / linux / android）'], ['platformVersion', '系统版本'], ['brand', '品牌（默认 Chrome）'], ['brandVersion', '品牌版本（留空跟随内核）'], ['lang', '界面语言'], ['acceptLanguage', '语言列表'], ['timezone', '时区']]
     : [['lang', '语言'], ['acceptLang', '语言列表'], ['resolution', '窗口大小（宽,高）']]
+  if (backend === 'clearcote') {
+    fields.push(['location', '位置（纬度,经度）'], ['webrtcIp', 'WebRTC IP'], ['resolution', '窗口大小（宽,高）'])
+    if (config.mode === 'manual') fields.push(
+      ['hardwareConcurrency', 'CPU 核心数'], ['deviceMemory', 'RAM（GB，Chromium 最高报告 8）'],
+      ['screenWidth', '屏幕宽度'], ['screenHeight', '屏幕高度'], ['availWidth', '可用屏幕宽度'], ['availHeight', '可用屏幕高度'],
+      ['colorDepth', '色深'], ['devicePixelRatio', 'DPR'], ['touchPoints', '触控点（0 表示无触控）'], ['gpuVendor', 'GPU Vendor'], ['gpuRenderer', 'GPU Renderer'],
+    )
+  }
   const validation = adapter.validate(config)
   return <div className="space-y-4">
     <p className="text-sm">指纹内核：<strong>{backend === 'clearcote' ? 'Clearcote' : '普通 Chromium'}</strong></p>
