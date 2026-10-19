@@ -101,6 +101,8 @@ export async function checkBrowserProfileFingerprint(profileId: string): Promise
       userAgent: navigator.userAgent || '',
       userAgentData: '',
       webdriver: navigator.webdriver === true,
+      availWidth: window.screen.availWidth || 0,
+      availHeight: window.screen.availHeight || 0,
       screenWidth: window.screen.width || 0,
       screenHeight: window.screen.height || 0,
       colorDepth: window.screen.colorDepth || 0,

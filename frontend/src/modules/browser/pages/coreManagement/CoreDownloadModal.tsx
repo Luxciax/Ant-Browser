@@ -16,7 +16,7 @@ interface CoreDownloadModalProps {
   proxies: BrowserProxy[]
   setForm: Dispatch<SetStateAction<CoreDownloadForm>>
   setProgress: Dispatch<SetStateAction<CoreDownloadProgress | null>>
-  onRefreshRecommendation: () => void
+  onRefreshRecommendation: (provider?: 'clearcote' | 'fingerprint-chromium') => void
   onClose: () => void
   onStart: () => void
 }
@@ -61,6 +61,11 @@ export function CoreDownloadModal({
       }
     >
       <div className="space-y-4">
+<label className="block text-sm">下载来源<select aria-label="下载来源" className="block w-full border rounded-lg p-2 mt-1 bg-[var(--color-bg-surface)]" disabled={downloading || recommendationLoading} value={form.provider || 'fingerprint-chromium'} onChange={event => {
+          const provider = event.target.value as 'fingerprint-chromium' | 'clearcote'
+          setForm(current => ({ ...current, provider, url: '' }))
+          onRefreshRecommendation(provider)
+        }}><option value="fingerprint-chromium">fingerprint-chromium Release</option><option value="clearcote">Clearcote Release</option></select></label>
         <FormItem label="内核名称" required>
           <Input
             value={form.name}
@@ -114,7 +119,7 @@ export function CoreDownloadModal({
             {!recommendationLoading && !recommendation && (
               <button
                 type="button"
-                onClick={onRefreshRecommendation}
+                onClick={() => onRefreshRecommendation(form.provider)}
                 className="shrink-0 text-[var(--color-accent)] hover:underline cursor-pointer font-medium"
               >
                 重试

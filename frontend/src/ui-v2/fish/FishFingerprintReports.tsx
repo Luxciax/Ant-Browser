@@ -83,9 +83,9 @@ export function FishFingerprintCheckReport({ result }: { result: BrowserFingerpr
       <CheckRow label="语言列表" expected={result.expected.acceptLanguage} actual={result.runtime.languages} />
       <CheckRow label="时区" expected={result.expected.timezone} actual={result.runtime.timezone} />
       <CheckRow label="CPU 核心" expected={result.expected.hardwareConcurrency} actual={result.runtime.hardwareConcurrency} />
-      <CheckRow label="设备内存" actual={result.runtime.deviceMemory} mode="display" />
-      <CheckRow label="颜色深度" actual={result.runtime.colorDepth} mode="display" />
-      <CheckRow label="触控点" actual={result.runtime.maxTouchPoints} mode="display" />
+      <CheckRow label="设备内存" expected={result.expected.deviceMemory} actual={result.runtime.deviceMemory} />
+      <CheckRow label="颜色深度" expected={result.expected.colorDepth} actual={result.runtime.colorDepth} />
+      <CheckRow label="触控点" expected={result.expected.touchPoints} actual={result.runtime.maxTouchPoints} />
       <CheckRow label="Do Not Track" actual={result.runtime.doNotTrack} mode="display" />
       <CheckRow label="窗口大小" expected={result.expected.windowSize} actual={`${result.runtime.outerWidth},${result.runtime.outerHeight}`} />
       <CheckRow label="平台" expected={result.expected.platform} actual={result.runtime.platform} mode="platform" />
@@ -94,9 +94,14 @@ export function FishFingerprintCheckReport({ result }: { result: BrowserFingerpr
       <CheckRow label="UA" expected={result.expected.brand} actual={result.runtime.userAgent} mode="contains" />
       <CheckRow label="UA Data" actual={result.runtime.userAgentData} mode="display" />
       <CheckRow label="Webdriver" expected={false} actual={result.runtime.webdriver} />
+      <CheckRow label="屏幕宽度" expected={result.expected.screenWidth} actual={result.runtime.screenWidth} />
+      <CheckRow label="屏幕高度" expected={result.expected.screenHeight} actual={result.runtime.screenHeight} />
+      <CheckRow label="可用屏幕宽度" expected={result.expected.availWidth} actual={result.runtime.availWidth} />
+      <CheckRow label="可用屏幕高度" expected={result.expected.availHeight} actual={result.runtime.availHeight} />
+      <CheckRow label="DPR" expected={result.expected.devicePixelRatio} actual={result.runtime.devicePixelRatio} />
       <CheckRow label="屏幕" actual={`${result.runtime.screenWidth}x${result.runtime.screenHeight} depth ${result.runtime.colorDepth} @ ${result.runtime.devicePixelRatio}`} mode="display" />
-      <CheckRow label="WebGL Vendor" actual={result.runtime.webglVendor} mode="display" />
-      <CheckRow label="WebGL Renderer" actual={result.runtime.webglRenderer} mode="display" />
+      <CheckRow label="WebGL Vendor" expected={result.expected.webglVendor} actual={result.runtime.webglVendor} />
+      <CheckRow label="WebGL Renderer" expected={result.expected.webglRenderer} actual={result.runtime.webglRenderer} />
       <CheckRow label="Canvas Hash" actual={result.runtime.canvasHash} mode="display" />
       <CheckRow label="Audio Hash" actual={result.runtime.audioHash} mode="display" />
       <CheckRow label="ClientRects Hash" actual={result.runtime.clientRectsHash} mode="display" />

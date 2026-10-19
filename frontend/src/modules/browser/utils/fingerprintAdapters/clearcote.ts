@@ -1,4 +1,4 @@
-import { buildAcceptLanguage, getSystemTimezone, normalizeFingerprintPlatform, type FingerprintConfig } from './fingerprintChromium'
+import { deserialize as deserializeLegacy, buildAcceptLanguage, getSystemTimezone, normalizeFingerprintPlatform, type FingerprintConfig } from './fingerprintChromium'
 import { CLEARCOTE_CONFIG_ARG, type FingerprintAdapter } from './types'
 
 export const CLEARCOTE_FIELDS = {
@@ -40,7 +40,7 @@ export function deserializeClearcote(args: string[]): FingerprintConfig {
   if (stored) {
     try { config = JSON.parse(stored.slice(CLEARCOTE_CONFIG_ARG.length)) } catch { /* Raw arguments remain editable. */ }
   }
-  config = { ...config, unknownArgs: [] }
+  config = { ...deserializeLegacy(args), ...config, unknownArgs: [] }
   for (const arg of args) {
     if (arg.startsWith(CLEARCOTE_CONFIG_ARG)) continue
     const eq = arg.indexOf('=')

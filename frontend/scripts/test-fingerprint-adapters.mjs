@@ -30,7 +30,29 @@ try {
   assert.ok(!getFingerprintAdapter('fingerprint-chromium').serialize(config).includes('--fingerprint-device-memory=8'))
   assert.equal(clearcote.validate({ ...config, devicePixelRatio: '-1' }).valid, false)
   assert.equal(clearcote.validate({ ...config, seed: 'string-seed' }).valid, true)
+  const generic = getFingerprintAdapter('generic-chromium')
+  const genericEdited = generic.deserialize(storeFingerprintConfig(clearcote, config))
+  const returned = clearcote.deserialize(storeFingerprintConfig(generic, { ...genericEdited, lang: 'en-US' }))
+  assert.equal(returned.deviceMemory, '8', 'Clearcote configuration must survive editing a generic kernel')
+  assert.ok(clearcote.serialize(returned).includes('--fingerprint-device-memory=8'))
+  assert.equal(clearcote.deserialize(['--fingerprint-webgl-vendor=legacy']).webglVendor, 'legacy')
   console.log('Clearcote mappings, mode isolation, validation and persistence passed')
+  const downloadOutput = join(dir, 'downloads.mjs')
+  buildSync({ entryPoints: ['src/modules/browser/pages/coreManagement/coreDownloadRecommendation.ts'], bundle: true, format: 'esm', platform: 'node', outfile: downloadOutput })
+  const { fetchCoreDownloadRecommendation } = await import(pathToFileURL(downloadOutput).href)
+  const originalFetch = globalThis.fetch
+  try {
+    let requestedURL = ''
+    globalThis.fetch = async url => {
+      requestedURL = String(url)
+      return { ok: true, json: async () => ({ tag_name: 'v0.1.0-pre.23', assets: [{ name: 'clearcote-150-windows-x64.zip', browser_download_url: 'https://github.com/clearcotelabs/clearcote-browser/releases/download/test/clearcote-150-windows-x64.zip' }] }) }
+    }
+    const recommendation = await fetchCoreDownloadRecommendation({ platform: 'windows', arch: 'amd64' }, undefined, 'clearcote')
+    assert.equal(requestedURL, 'https://api.github.com/repos/clearcotelabs/clearcote-browser/releases/latest')
+    assert.equal(recommendation?.assetName, 'clearcote-150-windows-x64.zip')
+    assert.equal(recommendation?.releasesUrl, 'https://github.com/clearcotelabs/clearcote-browser/releases')
+    console.log('Clearcote Release recommendation passed')
+  } finally { globalThis.fetch = originalFetch }
 } finally {
   rmSync(dir, { recursive: true, force: true })
 }

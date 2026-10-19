@@ -17,11 +17,13 @@ export async function saveBrowserCore(input: BrowserCoreInput): Promise<boolean>
   }
 
   const nextCores = [...getMockCores()]
+  const existing = nextCores.find(core => core.coreId === input.coreId)
+  const normalized: BrowserCore = { ...input, fingerprintBackend: input.fingerprintBackend === 'auto' ? existing?.fingerprintBackend || 'generic-chromium' : input.fingerprintBackend }
   const index = nextCores.findIndex((core) => core.coreId === input.coreId)
   if (index >= 0) {
-    nextCores[index] = input
+    nextCores[index] = normalized
   } else {
-    nextCores.push({ ...input, coreId: input.coreId || `core-${Date.now()}` })
+    nextCores.push({ ...normalized, coreId: input.coreId || `core-${Date.now()}` })
   }
   setMockCores(nextCores)
   return true

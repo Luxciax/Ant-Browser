@@ -11,7 +11,8 @@ import (
 const clearcoteConfigArg = "--ant-clearcote-config="
 
 type clearcoteStoredConfig struct {
-	Mode               string `json:"mode"`
+	Values             map[string]json.RawMessage `json:"-"`
+	Mode               string                     `json:"mode"`
 	FingerprintProfile *struct {
 		Source   string `json:"source"`
 		FilePath string `json:"filePath"`
@@ -25,6 +26,9 @@ func readClearcoteStoredConfig(args []string) (clearcoteStoredConfig, error) {
 			result = clearcoteStoredConfig{Mode: "auto"}
 			if err := json.Unmarshal([]byte(strings.TrimPrefix(arg, clearcoteConfigArg)), &result); err != nil {
 				return result, fmt.Errorf("Clearcote 配置无效: %w", err)
+			}
+			if err := json.Unmarshal([]byte(strings.TrimPrefix(arg, clearcoteConfigArg)), &result.Values); err != nil {
+				return result, err
 			}
 		}
 	}
@@ -94,6 +98,33 @@ var clearcoteManualArgs = map[string]bool{
 	"--fingerprint-gpu-vendor": true, "--fingerprint-gpu-renderer": true,
 }
 
+// Restore dormant configuration after editing with another backend. Explicit raw
+// switches win; metadata only fills fields that the other serializer cannot model.
+func restoreClearcoteArgs(args []string, stored clearcoteStoredConfig) []string {
+	result := append([]string{}, args...)
+	fields := [][2]string{
+		{"seed", "fingerprint"}, {"platform", "fingerprint-platform"}, {"platformVersion", "fingerprint-platform-version"},
+		{"brand", "fingerprint-brand"}, {"brandVersion", "fingerprint-brand-version"},
+		{"hardwareConcurrency", "fingerprint-hardware-concurrency"}, {"deviceMemory", "fingerprint-device-memory"},
+		{"screenWidth", "fingerprint-screen-width"}, {"screenHeight", "fingerprint-screen-height"},
+		{"availWidth", "fingerprint-avail-width"}, {"availHeight", "fingerprint-avail-height"},
+		{"colorDepth", "fingerprint-color-depth"}, {"devicePixelRatio", "fingerprint-device-pixel-ratio"}, {"touchPoints", "fingerprint-max-touch-points"},
+		{"gpuVendor", "fingerprint-gpu-vendor"}, {"gpuRenderer", "fingerprint-gpu-renderer"},
+		{"location", "fingerprint-location"}, {"webrtcIp", "webrtc-ip"},
+	}
+	for _, field := range fields {
+		flag := "--" + field[1]
+		if browserLastArgIndexWithKey(result, flag) >= 0 {
+			continue
+		}
+		var value string
+		if json.Unmarshal(stored.Values[field[0]], &value) == nil && value != "" {
+			result = append(result, flag+"="+value)
+		}
+	}
+	return result
+}
+
 func (clearcoteKernelAdapter) launchPlan(id string, args []string, _ string) browserFingerprintLaunchPlan {
 	stored, err := readClearcoteStoredConfig(args)
 	plan := browserFingerprintLaunchPlan{launchArgs: []string{}, rows: []BrowserFingerprintCapabilityRow{}, warnings: []string{}}
@@ -101,7 +132,7 @@ func (clearcoteKernelAdapter) launchPlan(id string, args []string, _ string) bro
 		plan.warnings = append(plan.warnings, err.Error())
 		return plan
 	}
-	args = normalizeBrowserLanguageArgs(args)
+	args = normalizeBrowserLanguageArgs(restoreClearcoteArgs(args, stored))
 	if !browserArgsHaveFingerprintSeed(args) && id != "" {
 		plan.launchArgs = append(plan.launchArgs, fmt.Sprintf("--fingerprint=%d", browserFingerprintSeedForProfileID(id)))
 	}
@@ -139,6 +170,11 @@ func (clearcoteKernelAdapter) launchPlan(id string, args []string, _ string) bro
 }
 func (clearcoteKernelAdapter) expected(args []string) BrowserFingerprintExpectedInfo {
 	result := buildBrowserFingerprintExpected(args)
+	result.ScreenWidth = browserArgValue(args, "--fingerprint-screen-width")
+	result.ScreenHeight = browserArgValue(args, "--fingerprint-screen-height")
+	result.AvailWidth = browserArgValue(args, "--fingerprint-avail-width")
+	result.AvailHeight = browserArgValue(args, "--fingerprint-avail-height")
+	result.DevicePixelRatio = browserArgValue(args, "--fingerprint-device-pixel-ratio")
 	result.DeviceMemory = browserArgValue(args, "--fingerprint-device-memory")
 	result.ColorDepth = browserArgValue(args, "--fingerprint-color-depth")
 	result.TouchPoints = browserArgValue(args, "--fingerprint-max-touch-points")
@@ -156,4 +192,16 @@ func fingerprintAdapterForBackend(backend config.FingerprintBackend) kernelFinge
 	default:
 		return fingerprintChromiumKernelAdapter{}
 	}
+}
+
+func (a *App) fingerprintExpectedForProfile(id string, profile *BrowserProfile, args []string) BrowserFingerprintExpectedInfo {
+	coreID := ""
+	if profile == nil && id != "" && a != nil && a.browserMgr != nil {
+		profile, _ = a.fingerprintCheckProfileSnapshot(id)
+	}
+	if profile != nil {
+		coreID = profile.CoreId
+	}
+	core, _ := a.resolveBrowserCoreForFingerprintReport(coreID)
+	return fingerprintAdapterForBackend(core.FingerprintBackend).expected(args)
 }

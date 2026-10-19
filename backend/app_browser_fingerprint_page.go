@@ -261,7 +261,7 @@ func (a *App) buildFingerprintCheckPageContextForExpectedArgs(profileId string, 
 }
 
 func (a *App) buildFingerprintCheckPageContextForExpectedArgsAndProfile(profileId string, expectedArgs []string, profile *BrowserProfile) ([]byte, error) {
-	expected := buildBrowserFingerprintExpected(expectedArgs)
+	expected := a.fingerprintExpectedForProfile(profileId, profile, expectedArgs)
 	data, err := json.MarshalIndent(fingerprintCheckPageContext{
 		ProfileId:  profileId,
 		Expected:   expected,
@@ -1574,8 +1574,10 @@ function buildFingerprintRows(report, context) {
   rows.push(effectObservedFingerprintRow('WebGL Hash', context, 'webglHash', report.advanced.webglHash, 'WebGL Hash is detected output hash, not expected config'));
   rows.push(observedFingerprintRow('Plugins', context, 'plugins', '', report.advanced.plugins, compareExactStatus, 'Compare plugin list'));
   rows.push(observedFingerprintRow('MIME Types', context, 'mimeTypes', '', report.advanced.mimeTypes, compareExactStatus, 'Compare MIME list'));
-  rows.push(observedFingerprintRow('Screen Size', context, 'screenSize', '', report.screen.width + 'x' + report.screen.height, compareExactStatus, 'Compare screen size'));
-  rows.push(observedFingerprintRow('DPR', context, 'devicePixelRatio', '', report.screen.devicePixelRatio, compareExactStatus, 'Compare DPR'));
+  rows.push(observedFingerprintRow('Screen Size', context, 'screenSize', expected.screenWidth && expected.screenHeight ? expected.screenWidth + 'x' + expected.screenHeight : '', report.screen.width + 'x' + report.screen.height, compareExactStatus, 'Compare screen size'));
+  rows.push(observedFingerprintRow('Available Width', context, 'availWidth', expected.availWidth, report.screen.availWidth, compareExactStatus, 'Compare screen.availWidth'));
+  rows.push(observedFingerprintRow('Available Height', context, 'availHeight', expected.availHeight, report.screen.availHeight, compareExactStatus, 'Compare screen.availHeight'));
+  rows.push(observedFingerprintRow('DPR', context, 'devicePixelRatio', expected.devicePixelRatio, report.screen.devicePixelRatio, compareExactStatus, 'Compare DPR'));
   return rows;
 }
 function shouldShowReason(status) {

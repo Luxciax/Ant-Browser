@@ -48,12 +48,13 @@ type ProfilePackageDatabaseGroup struct {
 }
 
 type ProfilePackageDatabaseCore struct {
-	CoreId    string `json:"coreId"`
-	CoreName  string `json:"coreName"`
-	CorePath  string `json:"corePath"`
-	IsDefault bool   `json:"isDefault"`
-	SortOrder int    `json:"sortOrder"`
-	CreatedAt string `json:"createdAt"`
+	FingerprintBackend string `json:"fingerprintBackend,omitempty"`
+	CoreId             string `json:"coreId"`
+	CoreName           string `json:"coreName"`
+	CorePath           string `json:"corePath"`
+	IsDefault          bool   `json:"isDefault"`
+	SortOrder          int    `json:"sortOrder"`
+	CreatedAt          string `json:"createdAt"`
 }
 
 type ProfilePackageDatabaseProxy struct {
@@ -299,9 +300,9 @@ func queryProfilePackageCores(conn *sql.DB, coreIDs []string) ([]ProfilePackageD
 		var core ProfilePackageDatabaseCore
 		var isDefault int
 		err := conn.QueryRow(`
-			SELECT core_id, core_name, core_path, is_default, sort_order, created_at
+			SELECT core_id, core_name, core_path, is_default, sort_order, created_at, fingerprint_backend
 			FROM browser_cores WHERE core_id = ?`, coreID).Scan(
-			&core.CoreId, &core.CoreName, &core.CorePath, &isDefault, &core.SortOrder, &core.CreatedAt,
+			&core.CoreId, &core.CoreName, &core.CorePath, &isDefault, &core.SortOrder, &core.CreatedAt, &core.FingerprintBackend,
 		)
 		if errors.Is(err, sql.ErrNoRows) {
 			warnings = append(warnings, fmt.Sprintf("实例关联的内核「%s」不存在，未导出该内核", coreID))
@@ -848,8 +849,8 @@ func (a *App) restoreProfilePackageCores(tx *sql.Tx, source []ProfilePackageData
 			createdAt = time.Now().Format(time.RFC3339)
 		}
 		if _, err := tx.Exec(`
-			INSERT INTO browser_cores (core_id, core_name, core_path, is_default, sort_order, created_at)
-			VALUES (?, ?, ?, ?, ?, ?)`, targetID, row.CoreName, row.CorePath, 0, row.SortOrder, createdAt); err != nil {
+			INSERT INTO browser_cores (core_id, core_name, core_path, is_default, sort_order, created_at, fingerprint_backend)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, targetID, row.CoreName, row.CorePath, 0, row.SortOrder, createdAt, row.FingerprintBackend); err != nil {
 			return nil, fmt.Errorf("恢复内核失败(%s): %w", row.CoreName, err)
 		}
 		targetByID[backupImportIDKey(targetID)] = profilePackageTargetCore{ID: targetID, Path: row.CorePath}

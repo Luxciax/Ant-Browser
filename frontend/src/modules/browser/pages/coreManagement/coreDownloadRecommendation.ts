@@ -1,3 +1,4 @@
+export const CLEARCOTE_RELEASES_URL = 'https://github.com/clearcotelabs/clearcote-browser/releases'
 export const FINGERPRINT_CHROMIUM_RELEASES_URL = 'https://github.com/adryfish/fingerprint-chromium/releases'
 
 const FINGERPRINT_CHROMIUM_LATEST_RELEASE_API_URL = 'https://api.github.com/repos/adryfish/fingerprint-chromium/releases/latest'
@@ -125,9 +126,10 @@ function pickReleaseAsset(assets: GitHubReleaseAsset[], target: CoreDownloadTarg
 export async function fetchCoreDownloadRecommendation(
   env: CoreDownloadRuntimeEnvironment | null | undefined,
   signal?: AbortSignal,
+  provider: 'fingerprint-chromium' | 'clearcote' = 'fingerprint-chromium',
 ): Promise<CoreDownloadRecommendation | null> {
   const target = resolveCoreDownloadTarget(env)
-  const response = await fetch(FINGERPRINT_CHROMIUM_LATEST_RELEASE_API_URL, {
+  const response = await fetch(provider === 'clearcote' ? 'https://api.github.com/repos/clearcotelabs/clearcote-browser/releases/latest' : FINGERPRINT_CHROMIUM_LATEST_RELEASE_API_URL, {
     headers: { Accept: 'application/vnd.github+json' },
     signal,
   })
@@ -145,7 +147,7 @@ export async function fetchCoreDownloadRecommendation(
     releaseTag,
     assetName: asset.name,
     downloadUrl: asset.browser_download_url,
-    releasesUrl: release.html_url || FINGERPRINT_CHROMIUM_RELEASES_URL,
-    namePlaceholder: majorVersion ? `例如: chrome-${majorVersion}` : '例如: chrome-latest',
+    releasesUrl: release.html_url || (provider === 'clearcote' ? CLEARCOTE_RELEASES_URL : FINGERPRINT_CHROMIUM_RELEASES_URL),
+    namePlaceholder: provider === 'clearcote' ? '例如: clearcote-latest' : majorVersion ? `例如: chrome-${majorVersion}` : '例如: chrome-latest',
   }
 }

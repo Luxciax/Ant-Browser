@@ -54,3 +54,21 @@ func TestFingerprintChromiumAdapterPreservesLegacyLaunchPlan(t *testing.T) {
 		}
 	}
 }
+
+func TestClearcoteRestoresDormantSettingsAfterKernelSwitch(t *testing.T) {
+	args := []string{"--fingerprint=1234", "--fingerprint-hardware-concurrency=12", clearcoteConfigArg + `{"mode":"manual","hardwareConcurrency":"8","deviceMemory":"4","screenWidth":"1366","touchPoints":"0","devicePixelRatio":"1.25"}`}
+	plan := clearcoteKernelAdapter{}.launchPlan("profile", args, "150")
+	for _, expected := range []string{"--fingerprint-hardware-concurrency=12", "--fingerprint-device-memory=4", "--fingerprint-screen-width=1366", "--fingerprint-max-touch-points=0", "--fingerprint-device-pixel-ratio=1.25"} {
+		if !hasStringValue(plan.launchArgs, expected) {
+			t.Fatalf("lost settings after kernel switch: %s in %v", expected, plan.launchArgs)
+		}
+	}
+	expected := clearcoteKernelAdapter{}.expected(plan.launchArgs)
+	if expected.DeviceMemory != "4" || expected.ScreenWidth != "1366" || expected.TouchPoints != "0" || expected.DevicePixelRatio != "1.25" {
+		t.Fatalf("Clearcote expected values use wrong contract: %+v", expected)
+	}
+	legacy := fingerprintChromiumKernelAdapter{}.expected(plan.launchArgs)
+	if legacy.DeviceMemory != "" || legacy.ScreenWidth != "" || legacy.TouchPoints != "" {
+		t.Fatalf("legacy expectations changed: %+v", legacy)
+	}
+}

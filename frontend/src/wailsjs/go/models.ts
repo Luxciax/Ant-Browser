@@ -526,6 +526,7 @@ export namespace backend {
 	    }
 	}
 	export class BrowserFingerprintCapabilityReport {
+        fingerprintBackend: string;
 	    profileId: string;
 	    coreId: string;
 	    coreName: string;
@@ -543,6 +544,8 @@ export namespace backend {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+        this.fingerprintBackend = source["fingerprintBackend"];
+
 	        this.profileId = source["profileId"];
 	        this.coreId = source["coreId"];
 	        this.coreName = source["coreName"];
@@ -575,6 +578,11 @@ export namespace backend {
 	}
 	
 	export class BrowserFingerprintExpectedInfo {
+        screenWidth: string;
+        screenHeight: string;
+        availWidth: string;
+        availHeight: string;
+        devicePixelRatio: string;
 	    language: string;
 	    acceptLanguage: string;
 	    timezone: string;
@@ -605,6 +613,12 @@ export namespace backend {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+        this.screenWidth = source["screenWidth"];
+        this.screenHeight = source["screenHeight"];
+        this.availWidth = source["availWidth"];
+        this.availHeight = source["availHeight"];
+        this.devicePixelRatio = source["devicePixelRatio"];
+
 	        this.language = source["language"];
 	        this.acceptLanguage = source["acceptLanguage"];
 	        this.timezone = source["timezone"];
@@ -631,6 +645,8 @@ export namespace backend {
 	    }
 	}
 	export class BrowserFingerprintRuntimeInfo {
+        availWidth: number;
+        availHeight: number;
 	    language: string;
 	    languages: string[];
 	    timezone: string;
@@ -664,6 +680,9 @@ export namespace backend {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+        this.availWidth = source["availWidth"];
+        this.availHeight = source["availHeight"];
+
 	        this.language = source["language"];
 	        this.languages = source["languages"];
 	        this.timezone = source["timezone"];

@@ -25,6 +25,7 @@ export function resolveFingerprintBackend(cores: { coreId: string; isDefault: bo
 }
 export function storeFingerprintConfig(adapter: FingerprintAdapter, config: legacy.FingerprintConfig): string[] {
   const args = adapter.serialize(config)
+  if (adapter.id === 'generic-chromium') return legacy.serialize(config)
   if (adapter.id !== 'clearcote') return args
   const { unknownArgs: _unknownArgs, ...stored } = config
   return [...args, CLEARCOTE_CONFIG_ARG + JSON.stringify(stored)]

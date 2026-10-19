@@ -219,13 +219,13 @@ export function FishCoreManagementPage() {
     catch (error) { toast.error(error instanceof Error ? error.message : '打开目录失败') }
   }
 
-  const loadRecommendation = async () => {
+  const loadRecommendation = async (provider: 'clearcote' | 'fingerprint-chromium' = 'fingerprint-chromium') => {
     setRecommendationLoading(true); setRecommendationError('')
     try {
       const runtime = (window as Window & { runtime?: { Environment?: () => Promise<{ platform?: string; arch?: string }> } }).runtime
       let env: { platform?: string; arch?: string } | null = null
       try { env = runtime?.Environment ? await runtime.Environment() : null } catch { env = null }
-      const result = await fetchCoreDownloadRecommendation(env)
+      const result = await fetchCoreDownloadRecommendation(env, undefined, provider)
       setRecommendation(result)
       if (!result) { setRecommendationError('当前环境没有可自动解压的 Release 压缩包'); return }
       setDownloadForm((current) => ({ ...current, url: current.url.trim() ? current.url : result.downloadUrl }))

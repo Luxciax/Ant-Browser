@@ -288,7 +288,7 @@ export function CoreManagementPage() {
     }
   }
 
-  const loadCoreDownloadRecommendation = async () => {
+  const loadCoreDownloadRecommendation = async (provider: 'clearcote' | 'fingerprint-chromium' = 'fingerprint-chromium') => {
     setDownloadRecommendationLoading(true)
     setDownloadRecommendationError('')
     try {
@@ -298,7 +298,7 @@ export function CoreManagementPage() {
       } catch {
         runtimeEnv = null
       }
-      const recommendation = await fetchCoreDownloadRecommendation(runtimeEnv)
+      const recommendation = await fetchCoreDownloadRecommendation(runtimeEnv, undefined, provider)
       setDownloadRecommendation(recommendation)
       if (!recommendation) {
         setDownloadRecommendationError('当前环境没有可自动解压的 Release 压缩包')
@@ -552,7 +552,7 @@ export function CoreManagementPage() {
         proxies={proxies}
         setForm={setDownloadForm}
         setProgress={setDownloadProgress}
-        onRefreshRecommendation={loadCoreDownloadRecommendation}
+        onRefreshRecommendation={provider => void loadCoreDownloadRecommendation(provider || downloadForm.provider)}
         onClose={() => setDownloadModalOpen(false)}
         onStart={handleStartDownloadCore}
       />

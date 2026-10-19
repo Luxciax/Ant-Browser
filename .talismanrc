@@ -106,7 +106,7 @@ fileignoreconfig:
   checksum: 3d25e9ccbc7abf613238545c06232c8f3891cb65826dc1bfd2e239dc6991c338
 # Reviewed adapter dispatch and command-line switch identifiers; no credentials.
 - filename: backend/fingerprint_backend_adapter.go
-  checksum: cdcfa99d5177897f49681af29af8b63b154bf18108775182f168d743edf45d92
+  checksum: bd36bb486768116264a6a20fbe85af74bd3fe5a9b2ecdec203471f1673c982a5
 # Reviewed React identifiers and form schema; no credentials.
 - filename: frontend/src/modules/browser/pages/CoreManagementPage.tsx
   checksum: 1590674d90afdab5d65c0be800cdfdd84d5dc9618899c4f18e89465e99dfe474
@@ -116,4 +116,13 @@ fileignoreconfig:
 # Reviewed device Profile encoding and CLI field names; no credentials.
 - filename: backend/fingerprint_profile.go
   checksum: 4f570962796daa0835c613a87108730f0f0787e679b0585d272d8e88ee3c6a67
+# Reviewed SQL declarations, CLI identifiers, synthetic fixtures and public release hashes.
+- filename: backend/app_backup_data_merge_mapping_sql.go
+  checksum: ad5d66f51582d1b3a165f7c6d828d1c8bb8ea0574f9f0ff8c7579d1adfcab3cf
+# Reviewed SQL declarations, CLI identifiers, synthetic fixtures and public release hashes.
+- filename: CLEARCOTE-ADAPTATION.md
+  checksum: 484e8b05ab2335504be8c00749cc3e3e66721d55962cabac4244e6684a6d48ee
+# Reviewed SQL declarations, CLI identifiers, synthetic fixtures and public release hashes.
+- filename: backend/fingerprint_native_integration_test.go
+  checksum: dd19614b00c8aabb9ea62852eb73bb23489cd22ecd2750497ede667a8d5e4806
 version: "1.0"

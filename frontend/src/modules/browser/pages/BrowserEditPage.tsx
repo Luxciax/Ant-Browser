@@ -852,9 +852,9 @@ export function BrowserEditPage() {
               <FingerprintCheckRow label="语言列表" expected={fingerprintCheckResult.expected.acceptLanguage} actual={fingerprintCheckResult.runtime.languages} />
               <FingerprintCheckRow label="时区" expected={fingerprintCheckResult.expected.timezone} actual={fingerprintCheckResult.runtime.timezone} />
               <FingerprintCheckRow label="CPU 核心" expected={fingerprintCheckResult.expected.hardwareConcurrency} actual={fingerprintCheckResult.runtime.hardwareConcurrency} />
-              <FingerprintDisplayRow label="设备内存" actual={fingerprintCheckResult.runtime.deviceMemory} />
-              <FingerprintDisplayRow label="颜色深度" actual={fingerprintCheckResult.runtime.colorDepth} />
-              <FingerprintDisplayRow label="触控点" actual={fingerprintCheckResult.runtime.maxTouchPoints} />
+              <FingerprintCheckRow label="设备内存" expected={fingerprintCheckResult.expected.deviceMemory} actual={fingerprintCheckResult.runtime.deviceMemory} />
+              <FingerprintCheckRow label="颜色深度" expected={fingerprintCheckResult.expected.colorDepth} actual={fingerprintCheckResult.runtime.colorDepth} />
+              <FingerprintCheckRow label="触控点" expected={fingerprintCheckResult.expected.touchPoints} actual={fingerprintCheckResult.runtime.maxTouchPoints} />
               <FingerprintDisplayRow label="Do Not Track" actual={fingerprintCheckResult.runtime.doNotTrack} />
               <FingerprintCheckRow label="窗口大小" expected={fingerprintCheckResult.expected.windowSize} actual={`${fingerprintCheckResult.runtime.outerWidth},${fingerprintCheckResult.runtime.outerHeight}`} />
               <FingerprintCheckRow label="平台" expected={fingerprintCheckResult.expected.platform} actual={fingerprintCheckResult.runtime.platform} mode="platform" />
@@ -863,9 +863,14 @@ export function BrowserEditPage() {
               <FingerprintCheckRow label="UA" expected={fingerprintCheckResult.expected.brand} actual={fingerprintCheckResult.runtime.userAgent} mode="contains" />
               <FingerprintDisplayRow label="UA Data" actual={fingerprintCheckResult.runtime.userAgentData} />
               <FingerprintCheckRow label="Webdriver" expected={false} actual={fingerprintCheckResult.runtime.webdriver} />
+              <FingerprintCheckRow label="屏幕宽度" expected={fingerprintCheckResult.expected.screenWidth} actual={fingerprintCheckResult.runtime.screenWidth} />
+              <FingerprintCheckRow label="屏幕高度" expected={fingerprintCheckResult.expected.screenHeight} actual={fingerprintCheckResult.runtime.screenHeight} />
+              <FingerprintCheckRow label="可用屏幕宽度" expected={fingerprintCheckResult.expected.availWidth} actual={fingerprintCheckResult.runtime.availWidth} />
+              <FingerprintCheckRow label="可用屏幕高度" expected={fingerprintCheckResult.expected.availHeight} actual={fingerprintCheckResult.runtime.availHeight} />
+              <FingerprintCheckRow label="DPR" expected={fingerprintCheckResult.expected.devicePixelRatio} actual={fingerprintCheckResult.runtime.devicePixelRatio} />
               <FingerprintDisplayRow label="屏幕" actual={`${fingerprintCheckResult.runtime.screenWidth}x${fingerprintCheckResult.runtime.screenHeight} depth ${fingerprintCheckResult.runtime.colorDepth} @ ${fingerprintCheckResult.runtime.devicePixelRatio}`} />
-              <FingerprintDisplayRow label="WebGL Vendor" actual={fingerprintCheckResult.runtime.webglVendor} />
-              <FingerprintDisplayRow label="WebGL Renderer" actual={fingerprintCheckResult.runtime.webglRenderer} />
+              <FingerprintCheckRow label="WebGL Vendor" expected={fingerprintCheckResult.expected.webglVendor} actual={fingerprintCheckResult.runtime.webglVendor} />
+              <FingerprintCheckRow label="WebGL Renderer" expected={fingerprintCheckResult.expected.webglRenderer} actual={fingerprintCheckResult.runtime.webglRenderer} />
               <FingerprintDisplayRow label="Canvas Hash" actual={fingerprintCheckResult.runtime.canvasHash} />
               <FingerprintDisplayRow label="Audio Hash" actual={fingerprintCheckResult.runtime.audioHash} />
               <FingerprintDisplayRow label="ClientRects Hash" actual={fingerprintCheckResult.runtime.clientRectsHash} />

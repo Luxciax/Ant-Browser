@@ -28,6 +28,7 @@ export interface CoreEditForm {
 }
 
 export interface CoreDownloadForm {
+  provider?: 'fingerprint-chromium' | 'clearcote'
   coreId?: string
   name: string
   url: string

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -101,14 +102,34 @@ func ProbeClearcoteCompatibility(ctx context.Context, executable, probeRoot stri
 		return err
 	}
 	defer os.RemoveAll(directory)
-	cmd := exec.Command(executable, "--headless=new", "--no-first-run", "--no-default-browser-check", "--user-data-dir="+directory, "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "--fingerprint-device-memory=4", "--fingerprint-max-touch-points=7", "about:blank")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return err
+	}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<!doctype html><title>Ant core probe</title>"))
+	}), ReadHeaderTimeout: time.Second}
+	go func() { _ = server.Serve(listener) }()
+	defer server.Close()
+	probeURL := "http://" + listener.Addr().String() + "/"
+	cmd := exec.Command(executable, "--headless=new", "--no-first-run", "--no-default-browser-check", "--user-data-dir="+directory, "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0", "--fingerprint-device-memory=4", "--fingerprint-max-touch-points=7", probeURL)
 	hideCoreProbeWindow(cmd)
 	if err = cmd.Start(); err != nil {
 		return err
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
+	finished := false
 	defer func() {
+		if finished {
+			return
+		}
+		select {
+		case <-done:
+			return
+		case <-time.After(250 * time.Millisecond):
+		}
 		stopCoreProbeProcess(cmd)
 		select {
 		case <-done:
@@ -128,6 +149,7 @@ func ProbeClearcoteCompatibility(ctx context.Context, executable, probeRoot stri
 		case <-ctx.Done():
 			return ctx.Err()
 		case err := <-done:
+			finished = true
 			return fmt.Errorf("probe exited: %v", err)
 		case <-time.After(50 * time.Millisecond):
 		}
@@ -172,7 +194,7 @@ func ProbeClearcoteCompatibility(ctx context.Context, executable, probeRoot stri
 	deadline, _ := ctx.Deadline()
 	_ = socket.SetReadDeadline(deadline)
 	_ = socket.SetWriteDeadline(deadline)
-	if err = socket.WriteJSON(map[string]any{"id": 1, "method": "Runtime.evaluate", "params": map[string]any{"expression": "({deviceMemory:navigator.deviceMemory,maxTouchPoints:navigator.maxTouchPoints})", "returnByValue": true}}); err != nil {
+	if err = socket.WriteJSON(map[string]any{"id": 1, "method": "Runtime.evaluate", "params": map[string]any{"expression": "({deviceMemory:navigator.deviceMemory,maxTouchPoints:navigator.maxTouchPoints,secureContext:isSecureContext})", "returnByValue": true}}); err != nil {
 		return err
 	}
 	for {
@@ -183,6 +205,7 @@ func ProbeClearcoteCompatibility(ctx context.Context, executable, probeRoot stri
 					Value struct {
 						DeviceMemory   float64 `json:"deviceMemory"`
 						MaxTouchPoints int     `json:"maxTouchPoints"`
+						SecureContext  bool    `json:"secureContext"`
 					} `json:"value"`
 				} `json:"result"`
 			} `json:"result"`
@@ -193,8 +216,19 @@ func ProbeClearcoteCompatibility(ctx context.Context, executable, probeRoot stri
 		if message.ID != 1 {
 			continue
 		}
+		if !message.Result.Result.Value.SecureContext {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(50 * time.Millisecond):
+			}
+			if err = socket.WriteJSON(map[string]any{"id": 1, "method": "Runtime.evaluate", "params": map[string]any{"expression": "({deviceMemory:navigator.deviceMemory,maxTouchPoints:navigator.maxTouchPoints,secureContext:isSecureContext})", "returnByValue": true}}); err != nil {
+				return err
+			}
+			continue
+		}
 		if message.Result.Result.Value.DeviceMemory != 4 || message.Result.Result.Value.MaxTouchPoints != 7 {
-			return fmt.Errorf("native Clearcote overrides not detected")
+			return fmt.Errorf("native Clearcote overrides not detected: %+v", message.Result.Result.Value)
 		}
 		_ = socket.WriteJSON(map[string]any{"id": 2, "method": "Browser.close"})
 		return nil

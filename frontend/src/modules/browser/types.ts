@@ -49,6 +49,8 @@ export interface BrowserProfileInput {
 }
 
 export interface BrowserFingerprintRuntimeInfo {
+  availWidth: number
+  availHeight: number
   worker?: { language: string; languages: string[]; timezone: string; hardwareConcurrency: number; platform: string; userAgent: string; error?: string }
   language: string
   languages: string[]
@@ -79,6 +81,11 @@ export interface BrowserFingerprintRuntimeInfo {
 }
 
 export interface BrowserFingerprintExpectedInfo {
+  screenWidth?: string
+  screenHeight?: string
+  availWidth?: string
+  availHeight?: string
+  devicePixelRatio?: string
   language: string
   acceptLanguage: string
   timezone: string
@@ -123,6 +130,7 @@ export interface BrowserFingerprintCapabilityRow {
 }
 
 export interface BrowserFingerprintCapabilityReport {
+  fingerprintBackend?: string
   profileId: string
   coreId: string
   coreName: string

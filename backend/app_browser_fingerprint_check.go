@@ -18,6 +18,8 @@ type BrowserFingerprintCheckResult struct {
 }
 
 type BrowserFingerprintRuntimeInfo struct {
+	AvailWidth          int                           `json:"availWidth"`
+	AvailHeight         int                           `json:"availHeight"`
 	Worker              *BrowserFingerprintWorkerInfo `json:"worker,omitempty"`
 	Language            string                        `json:"language"`
 	Languages           []string                      `json:"languages"`
@@ -48,6 +50,11 @@ type BrowserFingerprintRuntimeInfo struct {
 }
 
 type BrowserFingerprintExpectedInfo struct {
+	ScreenWidth         string `json:"screenWidth"`
+	ScreenHeight        string `json:"screenHeight"`
+	AvailWidth          string `json:"availWidth"`
+	AvailHeight         string `json:"availHeight"`
+	DevicePixelRatio    string `json:"devicePixelRatio"`
 	Language            string `json:"language"`
 	AcceptLanguage      string `json:"acceptLanguage"`
 	Timezone            string `json:"timezone"`
@@ -94,7 +101,7 @@ func (a *App) BrowserProfileFingerprintCheck(profileId string) (*BrowserFingerpr
 	if err != nil {
 		return nil, err
 	}
-	expected := buildBrowserFingerprintExpected(a.fingerprintCheckExpectedArgsFromProfile(profile))
+	expected := a.fingerprintExpectedForProfile(profile.ProfileId, profile, a.fingerprintCheckExpectedArgsFromProfile(profile))
 	status, issues := assessFingerprintRuntime(runtimeInfo, expected)
 	logger.New("Fingerprint").Info("基础指纹自测完成", logger.F("profile_id", profile.ProfileId), logger.F("status", status), logger.F("issues", issues))
 	return &BrowserFingerprintCheckResult{
@@ -281,6 +288,8 @@ func evaluateBrowserFingerprintRuntime(debugPort int) (BrowserFingerprintRuntime
     userAgent: navigator.userAgent || '',
     userAgentData: navigator.userAgentData ? JSON.stringify({brands: navigator.userAgentData.brands || [], mobile: navigator.userAgentData.mobile, platform: navigator.userAgentData.platform || ''}) : '',
     webdriver: navigator.webdriver === true,
+    availWidth: screen.availWidth || 0,
+    availHeight: screen.availHeight || 0,
     screenWidth: screen.width || 0,
     screenHeight: screen.height || 0,
     colorDepth: screen.colorDepth || 0,
