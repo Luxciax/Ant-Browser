@@ -1,3 +1,4 @@
+import { getFingerprintAdapter, resolveFingerprintBackend, storeFingerprintConfig } from '../utils/fingerprintAdapters'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ChevronDown, ChevronUp, FolderOpen, HelpCircle, Layers, ShieldCheck } from 'lucide-react'
@@ -5,7 +6,7 @@ import { Button, Card, ConfirmModal, FormItem, Input, Modal, Select, Textarea, t
 import type { BrowserCore, BrowserFingerprintCapabilityReport, BrowserFingerprintCapabilityRow, BrowserFingerprintCheckResult, BrowserProfileInput, BrowserProxy, BrowserGroup, ProxyLocationResolveResult } from '../types'
 import { browserProxyResolveLocation, checkBrowserProfileFingerprint, createBrowserProfile, fetchAllTags, fetchBrowserCores, fetchBrowserProfileFingerprintMatrix, fetchBrowserProfiles, fetchBrowserProxies, fetchBrowserSettings, fetchGroups, openBrowserFingerprintCheck, openUserDataDir, updateBrowserProfile, validateProxyConfig } from '../api'
 import { FingerprintPanel } from '../components/FingerprintPanel'
-import { applyLocaleToFingerprintArgs, validateFingerprintArgs, withAdaptiveDefaultWindowSize } from '../utils/fingerprintSerializer'
+import {  withAdaptiveDefaultWindowSize } from '../utils/fingerprintSerializer'
 import { TagInput } from '../components/TagInput'
 import { GroupSelector } from '../components/GroupSelector'
 import { ProxyPickerModal } from '../components/ProxyPickerModal'
@@ -397,7 +398,7 @@ export function BrowserEditPage() {
       memoryLimitMb: Math.max(0, Math.floor(Number(formData.memoryLimitMb) || 0)),
       launchArgs: normalizeLaunchArgs(launchArgsText.split('\n')),
     }
-    const fingerprintValidation = validateFingerprintArgs(payload.fingerprintArgs)
+    const fingerprintValidation = getFingerprintAdapter(resolveFingerprintBackend(cores, formData.coreId)).validate(getFingerprintAdapter(resolveFingerprintBackend(cores, formData.coreId)).deserialize(payload.fingerprintArgs))
     if (!fingerprintValidation.valid) {
       setSaveError(fingerprintValidation.issues.filter(issue => issue.level === 'error').map(issue => issue.message).join('\n'))
       return
@@ -448,7 +449,7 @@ export function BrowserEditPage() {
         toast.error(result.error || '无法根据代理 IP 匹配定位')
         return
       }
-      const nextArgs = applyLocaleToFingerprintArgs(formData.fingerprintArgs, result.lang, result.timezone)
+      const nextArgs = storeFingerprintConfig(getFingerprintAdapter(resolveFingerprintBackend(cores, formData.coreId)), { ...getFingerprintAdapter(resolveFingerprintBackend(cores, formData.coreId)).deserialize(formData.fingerprintArgs), lang: result.lang, acceptLanguage: result.lang, acceptLang: result.lang, timezone: result.timezone })
       handleChange('fingerprintArgs', nextArgs)
       toast.success(`已设置 ${result.lang} / ${result.timezone}`)
     } catch (error: unknown) {
@@ -727,6 +728,7 @@ export function BrowserEditPage() {
         )}
       >
         <FingerprintPanel
+          backend={resolveFingerprintBackend(cores, formData.coreId)}
           value={formData.fingerprintArgs}
           onChange={args => handleChange('fingerprintArgs', args)}
         />

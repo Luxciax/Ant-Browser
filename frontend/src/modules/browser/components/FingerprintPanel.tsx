@@ -1,3 +1,5 @@
+import { KernelFingerprintPanel } from './KernelFingerprintPanel'
+import type { FingerprintBackend } from '../utils/fingerprintAdapters'
 import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp, HelpCircle, RefreshCw } from 'lucide-react'
 import { Button, ConfirmModal, FormItem, Input, Modal, Select, Switch, Textarea } from '../../../shared/components'
@@ -16,6 +18,7 @@ import {
 import { FINGERPRINT_CAPABILITIES, FINGERPRINT_PERSONAS, capabilityModeLabel } from '../utils/fingerprintCapabilities'
 
 interface FingerprintPanelProps {
+  backend?: FingerprintBackend
   value: string[]
   onChange: (args: string[]) => void
 }
@@ -229,7 +232,7 @@ function EditableOptionInput({ value, onChange, options, placeholder }: Editable
   )
 }
 
-export function FingerprintPanel({ value, onChange }: FingerprintPanelProps) {
+function LegacyFingerprintPanel({ value, onChange }: FingerprintPanelProps) {
   const [config, setConfig] = useState<FingerprintConfig>(() => deserialize(value))
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [advancedHelpOpen, setAdvancedHelpOpen] = useState(false)
@@ -518,4 +521,8 @@ export function FingerprintPanel({ value, onChange }: FingerprintPanelProps) {
       </div>
     </div>
   )
+}
+
+export function FingerprintPanel({ backend = 'fingerprint-chromium', ...props }: FingerprintPanelProps) {
+ return backend === 'fingerprint-chromium' ? <LegacyFingerprintPanel {...props} /> : <KernelFingerprintPanel {...props} backend={backend} />
 }

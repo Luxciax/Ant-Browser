@@ -40,6 +40,7 @@ export function CoreEditModal({
       }
     >
       <div className="space-y-4">
+<label className="block text-sm">指纹后端<select aria-label="指纹后端" className="block w-full border rounded-lg p-2 mt-1 bg-[var(--color-bg-surface)]" value={form.fingerprintBackend || ''} onChange={event => setForm(current => ({ ...current, fingerprintBackend: event.target.value as CoreEditForm['fingerprintBackend'] }))}><option value="">自动检测 / 保留现有</option><option value="clearcote">Clearcote</option><option value="fingerprint-chromium">fingerprint-chromium</option><option value="generic-chromium">普通 Chromium</option></select></label>
         <FormItem label="内核名称" required>
           <Input
             value={form.coreName}

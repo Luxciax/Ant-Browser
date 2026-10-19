@@ -1,3 +1,4 @@
+import { getFingerprintAdapter, resolveFingerprintBackend, storeFingerprintConfig } from '../../modules/browser/utils/fingerprintAdapters'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, ChevronDown, ChevronUp, FolderOpen, Gauge, HelpCircle, Layers3, MapPin, Save, ShieldCheck } from 'lucide-react'
@@ -19,7 +20,7 @@ import {
   updateBrowserProfile,
   validateProxyConfig,
 } from '../../modules/browser/api'
-import { applyLocaleToFingerprintArgs, validateFingerprintArgs, withAdaptiveDefaultWindowSize } from '../../modules/browser/utils/fingerprintSerializer'
+import {  withAdaptiveDefaultWindowSize } from '../../modules/browser/utils/fingerprintSerializer'
 import { FishConfirm, FishModal, FishTagInput } from './FishFormPrimitives'
 import { FishFingerprintEditor } from './FishFingerprintEditor'
 import { FishFingerprintCheckReport, FishFingerprintMatrixReport } from './FishFingerprintReports'
@@ -142,7 +143,7 @@ export function FishBrowserEditPage() {
   const selectedProxy = proxies.find((proxy) => proxy.proxyId === formData.proxyId)
   const proxyGroups = useMemo(() => Array.from(new Set(proxies.map((proxy) => proxy.groupName || '').filter(Boolean))), [proxies])
   const filteredProxies = useMemo(() => proxies.filter((proxy) => (!proxyGroup || (proxy.groupName || '') === proxyGroup) && (!proxySearch.trim() || `${proxy.proxyName} ${proxy.proxyId} ${proxy.proxyConfig} ${proxy.groupName || ''}`.toLowerCase().includes(proxySearch.trim().toLowerCase()))), [proxies, proxyGroup, proxySearch])
-  const fingerprintValidation = useMemo(() => validateFingerprintArgs(formData.fingerprintArgs), [formData.fingerprintArgs])
+  const fingerprintValidation = useMemo(() => getFingerprintAdapter(resolveFingerprintBackend(cores, formData.coreId)).validate(getFingerprintAdapter(resolveFingerprintBackend(cores, formData.coreId)).deserialize(formData.fingerprintArgs)), [formData.fingerprintArgs, cores, formData.coreId])
 
   const handleProxyModeChange = (mode: ProxySourceMode) => {
     setIsDirty(true); setProxyMode(mode); setLocationResult(null)
@@ -173,7 +174,7 @@ export function FishBrowserEditPage() {
     try {
       const result = await browserProxyResolveLocation(formData.proxyId); setLocationResult(result)
       if (!result.ok || !result.lang || !result.timezone) { toast.error(result.error || '无法根据代理 IP 匹配定位'); return }
-      change('fingerprintArgs', applyLocaleToFingerprintArgs(formData.fingerprintArgs, result.lang, result.timezone)); toast.success(`已设置 ${result.lang} / ${result.timezone}`)
+      change('fingerprintArgs', storeFingerprintConfig(getFingerprintAdapter(resolveFingerprintBackend(cores, formData.coreId)), { ...getFingerprintAdapter(resolveFingerprintBackend(cores, formData.coreId)).deserialize(formData.fingerprintArgs), lang: result.lang, acceptLanguage: result.lang, acceptLang: result.lang, timezone: result.timezone })); toast.success(`已设置 ${result.lang} / ${result.timezone}`)
     } catch (error) { toast.error(error instanceof Error ? error.message : '代理定位失败') } finally { setLocationResolving(false) }
   }
   const handleFingerprintCheck = async () => {
@@ -223,7 +224,7 @@ export function FishBrowserEditPage() {
 
           <section className="fish-panel">
             <div className="fish-panel-head"><div><strong>指纹配置</strong><span>保持身份、定位、设备与防泄漏策略一致。</span></div><div className="fish-panel-actions"><button className="fish-icon-btn" type="button" title="版本适配矩阵" onClick={() => setMatrixOpen(true)}><HelpCircle size={16} strokeWidth={1.8} /></button><button className="fish-btn" type="button" disabled={isCreate || fingerprintPageOpening} onClick={() => void handleOpenFingerprintPage()}>{fingerprintPageOpening ? '打开中' : '浏览器内检测'}</button><button className="fish-btn" type="button" disabled={isCreate || fingerprintChecking} onClick={() => void handleFingerprintCheck()}><ShieldCheck size={16} strokeWidth={1.8} />{fingerprintChecking ? '自测中' : '自测当前实例'}</button></div></div>
-            <div className="fish-panel-body"><FishFingerprintEditor value={formData.fingerprintArgs} onChange={(args) => change('fingerprintArgs', args)} /></div>
+            <div className="fish-panel-body"><FishFingerprintEditor backend={resolveFingerprintBackend(cores, formData.coreId)} value={formData.fingerprintArgs} onChange={(args) => change('fingerprintArgs', args)} /></div>
           </section>
 
           <section className="fish-collapsible fish-launch-collapsible">

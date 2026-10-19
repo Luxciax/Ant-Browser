@@ -107,4 +107,10 @@ fileignoreconfig:
 # Reviewed adapter dispatch and command-line switch identifiers; no credentials.
 - filename: backend/fingerprint_backend_adapter.go
   checksum: cdcfa99d5177897f49681af29af8b63b154bf18108775182f168d743edf45d92
+# Reviewed React identifiers and form schema; no credentials.
+- filename: frontend/src/modules/browser/pages/CoreManagementPage.tsx
+  checksum: 1590674d90afdab5d65c0be800cdfdd84d5dc9618899c4f18e89465e99dfe474
+# Reviewed React identifiers and form schema; no credentials.
+- filename: frontend/src/modules/browser/components/KernelFingerprintPanel.tsx
+  checksum: 5c9e4d30e87ad39fbe3944bd8f5397909201c027a543f36761cb6dfe619b73ab
 version: "1.0"

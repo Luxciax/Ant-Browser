@@ -126,7 +126,7 @@ export function CoreManagementPage() {
           return {
             coreId: core.coreId,
             coreName: core.coreName,
-            corePath: core.corePath,
+            corePath: core.corePath, fingerprintBackend: core.fingerprintBackend,
             isDefault: core.isDefault,
             pathValid: result.valid,
             pathMessage: result.message,
@@ -170,6 +170,7 @@ export function CoreManagementPage() {
   // 表格列定义
   const columns: TableColumn<CoreDisplayInfo>[] = [
     { key: 'coreName', title: '内核名称', width: '150px' },
+    { key: 'fingerprintBackend', title: 'Fingerprint Backend', render: val => val || 'fingerprint-chromium' },
     { key: 'corePath', title: '内核路径', width: '180px' },
     {
       key: 'chromeVersion',
@@ -281,7 +282,7 @@ export function CoreManagementPage() {
     const core = cores.find(c => c.coreId === record.coreId)
     if (core) {
       setEditingCore(core)
-      setEditForm({ coreName: core.coreName, corePath: core.corePath })
+      setEditForm({ coreName: core.coreName, corePath: core.corePath, fingerprintBackend: core.fingerprintBackend })
       setPathValidResult({ valid: record.pathValid, message: record.pathMessage })
       setEditModalOpen(true)
     }
@@ -348,7 +349,7 @@ export function CoreManagementPage() {
       const input: BrowserCoreInput = {
         coreId: editingCore?.coreId || `core-${Date.now()}`,
         coreName: editForm.coreName.trim(),
-        corePath: editForm.corePath.trim(),
+        corePath: editForm.corePath.trim(), fingerprintBackend: editForm.fingerprintBackend,
         isDefault: editingCore?.isDefault || false,
       }
       await saveBrowserCore(input)

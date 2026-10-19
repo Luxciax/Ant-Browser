@@ -1,3 +1,5 @@
+import { KernelFingerprintPanel } from '../../modules/browser/components/KernelFingerprintPanel'
+import type { FingerprintBackend } from '../../modules/browser/utils/fingerprintAdapters'
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp, HelpCircle, RefreshCw } from 'lucide-react'
 import {
@@ -16,6 +18,7 @@ import { FINGERPRINT_CAPABILITIES, FINGERPRINT_PERSONAS, capabilityModeLabel } f
 import { FishConfirm, FishModal, FishSwitch } from './FishFormPrimitives'
 
 interface FishFingerprintEditorProps {
+  backend?: FingerprintBackend
   value: string[]
   onChange: (args: string[]) => void
 }
@@ -68,7 +71,7 @@ function FishField({ label, children, hint }: { label: string; children: React.R
   return <div className="fish-field"><label>{label}</label>{children}{hint ? <small>{hint}</small> : null}</div>
 }
 
-export function FishFingerprintEditor({ value, onChange }: FishFingerprintEditorProps) {
+function LegacyFishFingerprintEditor({ value, onChange }: FishFingerprintEditorProps) {
   const [config, setConfig] = useState<FingerprintConfig>(() => deserialize(value))
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
@@ -175,4 +178,8 @@ export function FishFingerprintEditor({ value, onChange }: FishFingerprintEditor
       </FishModal>
     </div>
   )
+}
+
+export function FishFingerprintEditor({ backend = 'fingerprint-chromium', ...props }: FishFingerprintEditorProps) {
+ return backend === 'fingerprint-chromium' ? <LegacyFishFingerprintEditor {...props} /> : <KernelFingerprintPanel {...props} backend={backend} />
 }

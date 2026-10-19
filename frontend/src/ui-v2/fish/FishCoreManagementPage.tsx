@@ -85,7 +85,7 @@ export function FishCoreManagementPage() {
       const rows = await Promise.all(coreList.map(async (core): Promise<CoreDisplayInfo> => {
         const validation = await validateBrowserCorePath(core.corePath)
         const extended = extendedMap.get(core.coreId)
-        return { coreId: core.coreId, coreName: core.coreName, corePath: core.corePath, isDefault: core.isDefault, pathValid: validation.valid, pathMessage: validation.message, chromeVersion: extended?.chromeVersion || '', instanceCount: extended?.instanceCount || 0 }
+        return { coreId: core.coreId, coreName: core.coreName, corePath: core.corePath, fingerprintBackend: core.fingerprintBackend, isDefault: core.isDefault, pathValid: validation.valid, pathMessage: validation.message, chromeVersion: extended?.chromeVersion || '', instanceCount: extended?.instanceCount || 0 }
       }))
       setDisplayList(rows)
     } catch (error) {
@@ -165,7 +165,7 @@ export function FishCoreManagementPage() {
     const core = cores.find((item) => item.coreId === row.coreId)
     if (!core) return
     setEditingCore(core)
-    setEditForm({ coreName: core.coreName, corePath: core.corePath })
+    setEditForm({ coreName: core.coreName, corePath: core.corePath, fingerprintBackend: core.fingerprintBackend })
     setPathValidation({ valid: row.pathValid, message: row.pathMessage })
     setEditOpen(true)
   }
@@ -175,7 +175,7 @@ export function FishCoreManagementPage() {
     if (!editForm.corePath.trim()) { toast.error('请输入内核路径'); return }
     setSavingCore(true)
     try {
-      const input: BrowserCoreInput = { coreId: editingCore?.coreId || `core-${Date.now()}`, coreName: editForm.coreName.trim(), corePath: editForm.corePath.trim(), isDefault: editingCore?.isDefault || false }
+      const input: BrowserCoreInput = { coreId: editingCore?.coreId || `core-${Date.now()}`, coreName: editForm.coreName.trim(), corePath: editForm.corePath.trim(), fingerprintBackend: editForm.fingerprintBackend, isDefault: editingCore?.isDefault || false }
       await saveBrowserCore(input)
       setEditOpen(false)
       await loadData()
@@ -274,7 +274,7 @@ export function FishCoreManagementPage() {
 
     <section className="fish-core-list">
       {loading ? <div className="fish-data-empty"><strong>正在读取内核</strong><span>验证路径并读取 Chrome 版本与实例占用。</span></div> : filteredRows.length ? filteredRows.map((row) => <article className="fish-core-row" key={row.coreId}>
-        <div className="fish-core-name"><span className={`fish-core-mark${row.pathValid ? ' good' : ' bad'}`}><Star size={16} strokeWidth={1.8} /></span><div><strong>{row.coreName}{row.isDefault ? <em>默认</em> : null}</strong><small>{row.chromeVersion ? `Chrome ${row.chromeVersion}` : '版本未识别'}</small></div></div>
+        <div className="fish-core-name"><span className={`fish-core-mark${row.pathValid ? ' good' : ' bad'}`}><Star size={16} strokeWidth={1.8} /></span><div><strong>{row.coreName}{row.isDefault ? <em>默认</em> : null}</strong><small>{row.fingerprintBackend || 'fingerprint-chromium'} · {row.chromeVersion ? `Chrome ${row.chromeVersion}` : '版本未识别'}</small></div></div>
         <div className="fish-core-path"><strong>{row.corePath || '—'}</strong><small>{row.pathMessage || '内核路径'}</small></div>
         <div className={`fish-core-status${row.pathValid ? ' good' : ' bad'}`}><strong>{row.pathValid ? '路径有效' : '路径无效'}</strong><small>{row.instanceCount} 个实例使用</small></div>
         <div className="fish-core-actions"><button className="fish-mini-action" type="button" onClick={() => void openPath(row.corePath)}><FolderOpen size={16} strokeWidth={1.8} />目录</button><button className="fish-mini-action" type="button" onClick={() => openEdit(row)}><Pencil size={16} strokeWidth={1.8} />编辑</button><div className="fish-row-menu-wrap"><button className="fish-mini-icon" type="button" onClick={() => setRowMenuId(rowMenuId === row.coreId ? null : row.coreId)}><MoreHorizontal size={16} strokeWidth={1.8} /></button>{rowMenuId === row.coreId ? <div className="fish-context-menu fish-core-row-menu"><button type="button" onClick={() => { openRedownload(row); setRowMenuId(null) }}><Download size={16} strokeWidth={1.8} />重新下载</button>{!row.isDefault ? <button type="button" onClick={() => { void setDefaultCore(row.coreId); setRowMenuId(null) }}><Star size={16} strokeWidth={1.8} />设为默认</button> : null}<button className="danger" type="button" disabled={row.isDefault} onClick={() => { if (row.isDefault) toast.warning('默认内核不能删除'); else setDeleteCore(row); setRowMenuId(null) }}><Trash2 size={16} strokeWidth={1.8} />删除</button></div> : null}</div></div>
