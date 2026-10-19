@@ -1,23 +1,23 @@
-name: Publish Windows 1.9.5
+name: Publish Windows 1.9.7
 
 on:
   push:
-    branches: [release/1.9.5]
+    branches: [release/1.9.7]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: publish-windows-1.9.5
+  group: publish-windows-1.9.7
   cancel-in-progress: false
 
 env:
-  RELEASE_VERSION: 1.9.5
+  RELEASE_VERSION: 1.9.7
 
 jobs:
   build:
-    if: github.repository == 'Luxciax/Ant-Browser' && github.ref == 'refs/heads/release/1.9.5'
+    if: github.repository == 'Luxciax/Ant-Browser' && github.ref == 'refs/heads/release/1.9.7'
     runs-on: windows-2022
     timeout-minutes: 45
     env:
@@ -86,15 +86,15 @@ jobs:
           [IO.File]::WriteAllLines((Join-Path $output 'SHA256SUMS.txt'), $lines, [Text.UTF8Encoding]::new($false))
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-1.9.5
+          name: windows-1.9.7
           if-no-files-found: error
           path: |
-            publish/output/AntBrowser-Setup-1.9.5.exe
-            publish/output/AntBrowser-1.9.5-windows-amd64-portable.zip
+            publish/output/AntBrowser-Setup-1.9.7.exe
+            publish/output/AntBrowser-1.9.7-windows-amd64-portable.zip
             publish/output/SHA256SUMS.txt
 
   release:
-    if: github.ref == 'refs/heads/release/1.9.5'
+    if: github.ref == 'refs/heads/release/1.9.7'
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -104,7 +104,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: windows-1.9.5
+          name: windows-1.9.7
           path: release-artifacts
       - name: Publish release
         env:
@@ -120,8 +120,8 @@ jobs:
             exit 1
           fi
           gh release create "v${RELEASE_VERSION}" \
-            release-artifacts/AntBrowser-Setup-1.9.5.exe \
-            release-artifacts/AntBrowser-1.9.5-windows-amd64-portable.zip \
+            release-artifacts/AntBrowser-Setup-1.9.7.exe \
+            release-artifacts/AntBrowser-1.9.7-windows-amd64-portable.zip \
             release-artifacts/SHA256SUMS.txt \
             --target "$GITHUB_SHA" --title "Ant Browser ${RELEASE_VERSION}" \
-            --notes-file publish/release-notes-1.9.5.md --latest
+            --notes-file publish/release-notes-1.9.7.md --latest

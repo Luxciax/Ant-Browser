@@ -2,7 +2,9 @@ name: Fingerprint backend checks
 
 on:
   push:
-    branches: [feat/clearcote-backend]
+    branches:
+      - feat/clearcote-backend
+      - release/1.9.7
   pull_request:
     paths:
       - 'backend/**'
