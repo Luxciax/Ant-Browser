@@ -146,16 +146,30 @@ func (m *ClashManager) ensureNodeBridgeContext(ctx context.Context, proxyConfig 
 			unlock()
 			return "", "", reuseErr
 		} else if reused {
-			unlock()
-			rememberEgressDecision(decisionKey, mode, interfaceName)
-			log.Info("复用 mihomo 桥接",
-				logger.F("engine", "mihomo"),
-				logger.F("egress", string(mode)),
-				logger.F("interface", interfaceName),
-				logger.F("key", key[:8]),
-				logger.F("proxy_url", proxyURL),
-			)
-			return proxyURL, key, nil
+			if probeErr := probeLocalProxy(ctx, proxyURL); probeErr == nil {
+				unlock()
+				rememberEgressDecision(decisionKey, mode, interfaceName)
+				log.Info("复用 mihomo 桥接",
+					logger.F("engine", "mihomo"),
+					logger.F("egress", string(mode)),
+					logger.F("interface", interfaceName),
+					logger.F("key", key[:8]),
+					logger.F("proxy_url", proxyURL),
+				)
+				return proxyURL, key, nil
+			} else {
+				if pin {
+					m.ReleaseNodeBridge(key)
+				}
+				unlock()
+				log.Warn("mihomo 已有桥接出口失效，尝试其他出口",
+					logger.F("egress", string(mode)),
+					logger.F("interface", interfaceName),
+					logger.F("proxy_id", proxyId),
+					logger.F("error", probeErr),
+				)
+				continue
+			}
 		}
 		if err := ctx.Err(); err != nil {
 			unlock()
