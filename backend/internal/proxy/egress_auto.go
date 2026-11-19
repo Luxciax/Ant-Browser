@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"ant-chrome/backend/internal/config"
 	"context"
 	"fmt"
 	"net"
@@ -231,6 +232,49 @@ func egressModeLabel(mode outboundEgressMode) string {
 		return "System/TUN"
 	}
 	return ""
+}
+
+func egressBaseKeySourceForKernel(kernel string, src string, proxies []config.BrowserProxy, proxyId string) string {
+	base := chainProxyRuntimeKeySource(normalizeNodeScheme(src), proxies, proxyId)
+	switch NormalizePreferredKernel(kernel) {
+	case ProxyKernelSingBox:
+		return base
+	case ProxyKernelMihomo:
+		return base + "\x00mihomo"
+	case ProxyKernelXray:
+		dnsServers := ""
+		if strings.TrimSpace(proxyId) != "" {
+			for _, item := range proxies {
+				if strings.EqualFold(strings.TrimSpace(item.ProxyId), strings.TrimSpace(proxyId)) {
+					dnsServers = item.DnsServers
+					break
+				}
+			}
+		}
+		return base + "\x00" + dnsServers
+	default:
+		return ""
+	}
+}
+
+func selectedEgressForKernel(kernel string, src string, proxies []config.BrowserProxy, proxyId string) (string, outboundEgressMode, string, bool) {
+	base := egressBaseKeySourceForKernel(kernel, src, proxies, proxyId)
+	if base == "" {
+		return "", "", "", false
+	}
+	return selectedEgressRuntimeKey(base)
+}
+
+func appendSelectedEgressLabel(engine string, src string, proxies []config.BrowserProxy, proxyId string) string {
+	_, mode, _, ok := selectedEgressForKernel(engine, src, proxies, proxyId)
+	if !ok {
+		return engine
+	}
+	label := egressModeLabel(mode)
+	if label == "" {
+		return engine
+	}
+	return engine + " · " + label
 }
 
 func applySingBoxPhysicalEgress(outbounds []interface{}, interfaceName string) {
