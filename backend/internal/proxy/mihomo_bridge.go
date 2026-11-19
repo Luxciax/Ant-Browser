@@ -101,35 +101,21 @@ func (m *ClashManager) ensureNodeBridgeContext(ctx context.Context, proxyConfig 
 		return "direct://", "", nil
 	}
 
-	key := computeNodeKey(chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00mihomo")
-	unlock := m.lockLaunchForKey(key)
-	defer unlock()
-
-	if proxyURL, reused, err := m.tryReuseMihomoNodeBridgeContext(ctx, key, pin); err != nil {
-		return "", "", err
-	} else if reused {
-		log.Info("复用 mihomo 桥接", logger.F("engine", "mihomo"), logger.F("key", key[:8]), logger.F("proxy_url", proxyURL))
-		return proxyURL, key, nil
-	}
-	if err := ctx.Err(); err != nil {
-		return "", "", err
-	}
-
 	binaryPath, err := m.resolveMihomoBinary()
 	if err != nil {
 		return "", "", err
 	}
 	var (
-		nodes         []interface{}
-		targetName    string
-		preferredPort int
+		baseNodes      []interface{}
+		targetName     string
+		preferredPort  int
 	)
 	if IsChainProxy(src) {
 		chainCfg, err := ParseChainProxyConfig(src)
 		if err != nil {
 			return "", "", err
 		}
-		nodes, targetName, err = buildMihomoReferencedChainNodes(chainCfg, proxies, proxyId)
+		baseNodes, targetName, err = buildMihomoReferencedChainNodes(chainCfg, proxies, proxyId)
 		if err != nil {
 			return "", "", err
 		}
@@ -139,96 +125,157 @@ func (m *ClashManager) ensureNodeBridgeContext(ctx context.Context, proxyConfig 
 		if err != nil {
 			return "", "", err
 		}
-		nodes = []interface{}{node}
+		baseNodes = []interface{}{node}
 		targetName = strings.TrimSpace(getMapString(node, "name"))
 	}
-	port := preferredPort
-	if port <= 0 {
-		port, err = nextAvailablePort()
-		if err != nil {
+
+	baseKeySource := chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00mihomo"
+	decisionKey := computeNodeKey(baseKeySource + "\x00egress-auto")
+	var lastErr error
+
+	for _, mode := range egressCandidateModes(decisionKey) {
+		interfaceName, usable := egressInterfaceForMode(mode)
+		if !usable {
+			continue
+		}
+		nodes := cloneInterfaceSlice(baseNodes)
+		key := computeNodeKey(baseKeySource + "\x00egress:" + string(mode) + ":" + interfaceName)
+
+		unlock := m.lockLaunchForKey(key)
+		if proxyURL, reused, reuseErr := m.tryReuseMihomoNodeBridgeContext(ctx, key, pin); reuseErr != nil {
+			unlock()
+			return "", "", reuseErr
+		} else if reused {
+			unlock()
+			rememberEgressDecision(decisionKey, mode, interfaceName)
+			log.Info("复用 mihomo 桥接",
+				logger.F("engine", "mihomo"),
+				logger.F("egress", string(mode)),
+				logger.F("interface", interfaceName),
+				logger.F("key", key[:8]),
+				logger.F("proxy_url", proxyURL),
+			)
+			return proxyURL, key, nil
+		}
+		if err := ctx.Err(); err != nil {
+			unlock()
 			return "", "", err
 		}
-	}
-	controllerPort, err := nextAvailablePort()
-	if err != nil {
-		return "", "", err
-	}
-	cfgPath, err := m.buildMihomoNodesConfig(key, nodes, targetName, port, controllerPort)
-	if err != nil {
-		return "", "", err
-	}
 
-	cmd := exec.Command(binaryPath, "-f", cfgPath, "-d", filepath.Dir(cfgPath))
-	hideWindow(cmd)
-	cmd.Dir = filepath.Dir(cfgPath)
-	stderrPath := filepath.Join(filepath.Dir(cfgPath), "mihomo-stderr.log")
-	stderrFile, captureErr := logger.NewProcessLog(stderrPath)
-	if captureErr != nil {
-		return "", "", fmt.Errorf("mihomo output capture: %w", captureErr)
-	}
-	stderrPath = stderrFile.Path
-	if stderrFile != nil {
-		cmd.Stderr = stderrFile
-		cmd.Stdout = stderrFile
-	}
-	if err := cmd.Start(); err != nil {
-		if stderrFile != nil {
-			stderrFile.Close()
+		port := preferredPort
+		if port <= 0 {
+			port, err = nextAvailablePort()
+			if err != nil {
+				unlock()
+				lastErr = err
+				continue
+			}
 		}
-		return "", "", fmt.Errorf("mihomo 启动失败: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-		if stderrFile != nil {
-			stderrFile.Close()
+		controllerPort, portErr := nextAvailablePort()
+		if portErr != nil {
+			unlock()
+			lastErr = portErr
+			continue
 		}
-		return "", "", err
-	}
-	bridge := &MihomoNodeBridge{NodeKey: key, Port: port, ControllerPort: controllerPort, Cmd: cmd, Pid: cmd.Process.Pid, ConfigPath: cfgPath, Running: true, LastUsedAt: time.Now(), ExitDone: make(chan struct{})}
-	if pin {
-		bridge.RefCount = 1
-	}
-	managed := false
-	defer func() {
-		if !managed {
+		cfgPath, cfgErr := m.buildMihomoNodesConfigWithInterface(key, nodes, targetName, port, controllerPort, interfaceName)
+		if cfgErr != nil {
+			unlock()
+			lastErr = cfgErr
+			continue
+		}
+
+		cmd := exec.Command(binaryPath, "-f", cfgPath, "-d", filepath.Dir(cfgPath))
+		hideWindow(cmd)
+		cmd.Dir = filepath.Dir(cfgPath)
+		stderrPath := filepath.Join(filepath.Dir(cfgPath), "mihomo-stderr.log")
+		stderrFile, captureErr := logger.NewProcessLog(stderrPath)
+		if captureErr != nil {
+			unlock()
+			lastErr = fmt.Errorf("mihomo output capture: %w", captureErr)
+			continue
+		}
+		if stderrFile != nil {
+			cmd.Stderr = stderrFile
+			cmd.Stdout = stderrFile
+		}
+		if startErr := cmd.Start(); startErr != nil {
+			if stderrFile != nil {
+				_ = stderrFile.Close()
+			}
+			unlock()
+			lastErr = fmt.Errorf("mihomo 启动失败: %w", startErr)
+			continue
+		}
+
+		bridge := &MihomoNodeBridge{
+			NodeKey: key, Port: port, ControllerPort: controllerPort, Cmd: cmd,
+			Pid: cmd.Process.Pid, ConfigPath: cfgPath, Running: true,
+			LastUsedAt: time.Now(), ExitDone: make(chan struct{}),
+		}
+		if pin {
+			bridge.RefCount = 1
+		}
+
+		readyErr := waitTCPPortReadyContext(ctx, "127.0.0.1", port, 10*time.Second)
+		if readyErr == nil {
+			readyErr = waitTCPPortReadyContext(ctx, "127.0.0.1", controllerPort, 10*time.Second)
+		}
+		if stderrFile != nil {
+			_ = stderrFile.Close()
+		}
+		if readyErr != nil {
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
+			unlock()
+			lastErr = fmt.Errorf("mihomo 本地端口未就绪: %w", readyErr)
+			if preferredPort > 0 {
+				time.Sleep(150 * time.Millisecond)
+			}
+			continue
 		}
-	}()
-	if err := waitTCPPortReadyContext(ctx, "127.0.0.1", port, 10*time.Second); err != nil {
-		if stderrFile != nil {
-			stderrFile.Close()
+		if err := ctx.Err(); err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			unlock()
+			return "", "", err
 		}
-		_ = cmd.Process.Kill()
-		return "", "", fmt.Errorf("mihomo mixed-port 未就绪: %w", err)
-	}
-	if err := waitTCPPortReadyContext(ctx, "127.0.0.1", controllerPort, 10*time.Second); err != nil {
-		if stderrFile != nil {
-			stderrFile.Close()
+
+		proxyURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+		if probeErr := probeLocalProxy(ctx, proxyURL); probeErr != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			unlock()
+			lastErr = fmt.Errorf("%s 出口探测失败: %w", mode, probeErr)
+			log.Warn("mihomo 出口候选不可用",
+				logger.F("egress", string(mode)),
+				logger.F("interface", interfaceName),
+				logger.F("proxy_id", proxyId),
+				logger.F("error", lastErr),
+			)
+			if preferredPort > 0 {
+				time.Sleep(150 * time.Millisecond)
+			}
+			continue
 		}
-		_ = cmd.Process.Kill()
-		return "", "", fmt.Errorf("mihomo 控制端口未就绪: %w", err)
+
+		m.registerMihomoNodeBridge(key, bridge)
+		m.watchMihomoNodeBridge(bridge)
+		unlock()
+		rememberEgressDecision(decisionKey, mode, interfaceName)
+		log.Info("mihomo 自动出口选择成功",
+			logger.F("engine", "mihomo"),
+			logger.F("egress", string(mode)),
+			logger.F("interface", interfaceName),
+			logger.F("proxy_id", proxyId),
+		)
+		return proxyURL, key, nil
 	}
-	if err := ctx.Err(); err != nil {
-		m.discardMihomoNodeBridge(key, bridge)
-		if stderrFile != nil {
-			stderrFile.Close()
-		}
-		return "", "", err
+
+	forgetEgressDecision(decisionKey)
+	if lastErr == nil {
+		lastErr = fmt.Errorf("没有可用的物理或系统出口")
 	}
-	if stderrFile != nil {
-		stderrFile.Close()
-	}
-	m.registerMihomoNodeBridge(key, bridge)
-	managed = true
-	m.watchMihomoNodeBridge(bridge)
-	if err := ctx.Err(); err != nil {
-		m.discardMihomoNodeBridge(key, bridge)
-		return "", "", err
-	}
-	log.Info("mihomo 内核进程已启动", logger.F("engine", "mihomo"), logger.F("key", key[:8]), logger.F("pid", bridge.Pid), logger.F("port", port))
-	return fmt.Sprintf("http://127.0.0.1:%d", port), key, nil
+	return "", "", fmt.Errorf("mihomo 自动出口选择失败: %w", lastErr)
 }
 
 func (m *ClashManager) tryReuseMihomoNodeBridge(key string, pin bool) (string, bool) {
@@ -475,6 +522,10 @@ func (m *ClashManager) buildMihomoNodeConfig(key string, node map[string]interfa
 }
 
 func (m *ClashManager) buildMihomoNodesConfig(key string, nodes []interface{}, targetName string, port int, controllerPort int) (string, error) {
+	return m.buildMihomoNodesConfigWithInterface(key, nodes, targetName, port, controllerPort, "")
+}
+
+func (m *ClashManager) buildMihomoNodesConfigWithInterface(key string, nodes []interface{}, targetName string, port int, controllerPort int, interfaceName string) (string, error) {
 	baseDir := m.resolveMihomoWorkdir(key)
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return "", err
@@ -513,6 +564,9 @@ func (m *ClashManager) buildMihomoNodesConfig(key string, nodes []interface{}, t
 			},
 		},
 		"rules": []interface{}{"MATCH,proxy-out"},
+	}
+	if interfaceName = strings.TrimSpace(interfaceName); interfaceName != "" {
+		payload["interface-name"] = interfaceName
 	}
 	cfgPath := filepath.Join(baseDir, "mihomo-config.yaml")
 	data, err := yaml.Marshal(payload)
