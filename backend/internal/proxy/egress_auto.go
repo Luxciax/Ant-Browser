@@ -158,7 +158,8 @@ func physicalInterfaceScore(name string) int {
 	virtualMarkers := []string{
 		"tun", "tap", "wintun", "v2ray", "xray", "sing-box", "singbox", "mihomo", "clash",
 		"wireguard", "tailscale", "zerotier", "hamachi", "vpn", "docker", "container",
-		"vmware", "virtualbox", "hyper-v", "loopback", "pseudo",
+		"vmware", "virtualbox", "hyper-v", "vethernet", "default switch", "virtual switch", "wsl",
+		"loopback", "pseudo", "npcap", "bluetooth", "teredo",
 	}
 	for _, marker := range virtualMarkers {
 		if strings.Contains(lower, marker) {
