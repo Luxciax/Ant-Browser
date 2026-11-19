@@ -115,6 +115,7 @@ func (m *SingBoxManager) ensureBridgeContext(ctx context.Context, proxyConfig st
 	decisionKey := computeNodeKey(baseKeySource + "\x00egress-auto")
 	var lastErr error
 
+modeLoop:
 	for _, mode := range egressCandidateModes(decisionKey) {
 		interfaceName, usable := egressInterfaceForMode(mode)
 		if !usable {
@@ -127,15 +128,28 @@ func (m *SingBoxManager) ensureBridgeContext(ctx context.Context, proxyConfig st
 		key := computeNodeKey(baseKeySource + "\x00egress:" + string(mode) + ":" + interfaceName)
 
 		if socksURL, reused := m.tryReuseBridge(key, pin); reused {
-			rememberEgressDecision(decisionKey, mode, interfaceName)
-			log.Info("复用 sing-box 桥接",
-				logger.F("engine", "sing-box"),
-				logger.F("egress", string(mode)),
-				logger.F("interface", interfaceName),
-				logger.F("key", key[:8]),
-				logger.F("socks_url", socksURL),
-			)
-			return socksURL, key, nil
+			if probeErr := probeLocalProxy(ctx, socksURL); probeErr == nil {
+				rememberEgressDecision(decisionKey, mode, interfaceName)
+				log.Info("复用 sing-box 桥接",
+					logger.F("engine", "sing-box"),
+					logger.F("egress", string(mode)),
+					logger.F("interface", interfaceName),
+					logger.F("key", key[:8]),
+					logger.F("socks_url", socksURL),
+				)
+				return socksURL, key, nil
+			} else {
+				if pin {
+					m.ReleaseBridge(key)
+				}
+				log.Warn("sing-box 已有桥接出口失效，尝试其他出口",
+					logger.F("egress", string(mode)),
+					logger.F("interface", interfaceName),
+					logger.F("proxy_id", proxyId),
+					logger.F("error", probeErr),
+				)
+				continue modeLoop
+			}
 		}
 
 		unlockLaunch := m.lockLaunchForKey(key)
@@ -144,9 +158,23 @@ func (m *SingBoxManager) ensureBridgeContext(ctx context.Context, proxyConfig st
 			return "", "", err
 		}
 		if socksURL, reused := m.tryReuseBridge(key, pin); reused {
-			unlockLaunch()
-			rememberEgressDecision(decisionKey, mode, interfaceName)
-			return socksURL, key, nil
+			if probeErr := probeLocalProxy(ctx, socksURL); probeErr == nil {
+				unlockLaunch()
+				rememberEgressDecision(decisionKey, mode, interfaceName)
+				return socksURL, key, nil
+			} else {
+				if pin {
+					m.ReleaseBridge(key)
+				}
+				unlockLaunch()
+				log.Warn("sing-box 已有桥接出口失效，尝试其他出口",
+					logger.F("egress", string(mode)),
+					logger.F("interface", interfaceName),
+					logger.F("proxy_id", proxyId),
+					logger.F("error", probeErr),
+				)
+				continue modeLoop
+			}
 		}
 
 		maxRetries := 2
