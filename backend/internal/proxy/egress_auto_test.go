@@ -3,7 +3,7 @@ package proxy
 import "testing"
 
 func TestPhysicalInterfaceScoreRejectsVirtualAdapters(t *testing.T) {
-	for _, name := range []string{"v2rayN TUN", "Wintun Userspace Tunnel", "WireGuard Tunnel", "VMware Network Adapter", "Tailscale"} {
+	for _, name := range []string{"v2rayN TUN", "Wintun Userspace Tunnel", "WireGuard Tunnel", "VMware Network Adapter", "Tailscale", "vEthernet (Default Switch)", "vEthernet (WSL)"} {
 		if score := physicalInterfaceScore(name); score > -100 {
 			t.Fatalf("virtual adapter %q score = %d, want rejected", name, score)
 		}
