@@ -212,7 +212,6 @@ func buildSingBoxDiagnostic(src string, proxies []config.BrowserProxy, proxyId s
 
 func buildXrayDiagnostic(src string, proxies []config.BrowserProxy, proxyId string, manager *XrayManager, result *ProxyBuildDiagnostic) {
 	result.Engine = "xray"
-	var preferredKeySource string
 	if IsChainProxy(src) {
 		chainCfg, err := ParseChainProxyConfig(src)
 		if err != nil {
@@ -274,8 +273,6 @@ func buildXrayDiagnostic(src string, proxies []config.BrowserProxy, proxyId stri
 
 	result.Ok = true
 	result.Inbound = buildXrayDiagnosticInbound()
-	preferredKeySource = chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00" + dnsServersForDiagnostic(proxies, proxyId)
-	_ = preferredKeySource
 	applyDiagnosticEgress(result, ProxyKernelXray, src, proxies, proxyId)
 	if manager != nil {
 		workDir := manager.resolveWorkdir(result.NodeKey)
