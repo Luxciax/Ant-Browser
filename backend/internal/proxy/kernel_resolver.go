@@ -157,9 +157,9 @@ func SupportedKernelsForProtocol(protocol string, proxyConfig string, proxies []
 	case "direct":
 		return []string{ProxyKernelNative}
 	case "http", "https", "socks5":
-		// 带账号密码鉴权的 socks5/http 代理：Chromium 的 --proxy-server 无法携带凭据，
-		// 浏览器 native 会静默丢弃鉴权信息导致连接失败。这类代理必须通过 xray / mihomo
-		// 桥接成本地无鉴权 socks5 再交给浏览器。无鉴权的代理仍走 native。
+		// 标准 HTTP/SOCKS 也统一进入托管桥接。除了兼容鉴权，这让所有代理协议都能使用
+		// 同一套 physical / system(TUN) 自动出口选择；否则 Chromium native 代理无法控制
+		// 到上游代理服务器的底层 socket 绑定接口。
 		if RequiresLocalProxyBridgeForBrowser(proxyConfig) {
 			return []string{ProxyKernelXray, ProxyKernelMihomo}
 		}
