@@ -178,7 +178,59 @@ func physicalInterfaceScore(name string) int {
 }
 
 func cloneOutboundsForEgress(outbounds []interface{}) []interface{} {
-	return cloneInterfaceSlice(outbounds)
+	if len(outbounds) == 0 {
+		return nil
+	}
+	cloned := make([]interface{}, len(outbounds))
+	for i, item := range outbounds {
+		cloned[i] = deepCloneEgressValue(item)
+	}
+	return cloned
+}
+
+func deepCloneEgressValue(value interface{}) interface{} {
+	switch item := value.(type) {
+	case map[string]interface{}:
+		cloned := make(map[string]interface{}, len(item))
+		for key, nested := range item {
+			cloned[key] = deepCloneEgressValue(nested)
+		}
+		return cloned
+	case []interface{}:
+		cloned := make([]interface{}, len(item))
+		for i, nested := range item {
+			cloned[i] = deepCloneEgressValue(nested)
+		}
+		return cloned
+	case []string:
+		return append([]string(nil), item...)
+	default:
+		return value
+	}
+}
+
+func selectedEgressRuntimeKey(baseKeySource string) (string, outboundEgressMode, string, bool) {
+	decisionKey := computeNodeKey(baseKeySource + "\x00egress-auto")
+	decision, ok := loadEgressDecision(decisionKey)
+	if !ok {
+		return "", "", "", false
+	}
+	interfaceName := strings.TrimSpace(decision.Interface)
+	if decision.Mode == outboundEgressSystem {
+		interfaceName = ""
+	}
+	key := computeNodeKey(baseKeySource + "\x00egress:" + string(decision.Mode) + ":" + interfaceName)
+	return key, decision.Mode, interfaceName, true
+}
+
+func egressModeLabel(mode outboundEgressMode) string {
+	if mode == outboundEgressPhysical {
+		return "Direct"
+	}
+	if mode == outboundEgressSystem {
+		return "System/TUN"
+	}
+	return ""
 }
 
 func applySingBoxPhysicalEgress(outbounds []interface{}, interfaceName string) {
@@ -189,6 +241,9 @@ func applySingBoxPhysicalEgress(outbounds []interface{}, interfaceName string) {
 	for _, raw := range outbounds {
 		outbound, ok := raw.(map[string]interface{})
 		if !ok || outbound == nil {
+			continue
+		}
+		if detour := strings.TrimSpace(getStringAny(outbound["detour"])); detour != "" {
 			continue
 		}
 		outbound["bind_interface"] = interfaceName
