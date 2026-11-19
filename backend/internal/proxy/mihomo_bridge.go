@@ -371,12 +371,20 @@ func (m *ClashManager) TestNodeDelay(proxyId string, proxies []config.BrowserPro
 	if _, err := m.EnsureNodeBridge(src, proxies, proxyId); err != nil {
 		return TestResult{ProxyId: proxyId, Ok: false, Engine: "mihomo", Error: err.Error()}
 	}
-	key := computeNodeKey(chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00mihomo")
+	baseKeySource := chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00mihomo"
+	key, mode, _, ok := selectedEgressRuntimeKey(baseKeySource)
+	if !ok {
+		return TestResult{ProxyId: proxyId, Ok: false, Engine: "mihomo", Error: "mihomo 自动出口状态不可用"}
+	}
 	m.mu.Lock()
 	bridge := m.NodeBridges[key]
 	m.mu.Unlock()
+	engine := "mihomo"
+	if label := egressModeLabel(mode); label != "" {
+		engine += " · " + label
+	}
 	if bridge == nil || !bridge.Running || bridge.ControllerPort <= 0 {
-		return TestResult{ProxyId: proxyId, Ok: false, Engine: "mihomo", Error: "mihomo 控制端口未就绪"}
+		return TestResult{ProxyId: proxyId, Ok: false, Engine: engine, Error: "mihomo 控制端口未就绪"}
 	}
 	timeout := 10 * time.Second
 	testURL := DefaultSpeedTestURL
@@ -398,7 +406,7 @@ func (m *ClashManager) TestNodeDelay(proxyId string, proxies []config.BrowserPro
 	client := &http.Client{Timeout: timeout + time.Second}
 	resp, err := client.Get(apiURL)
 	if err != nil {
-		return TestResult{ProxyId: proxyId, Ok: false, Engine: "mihomo", Error: "mihomo 延迟测试失败: " + err.Error()}
+		return TestResult{ProxyId: proxyId, Ok: false, Engine: engine, Error: "mihomo 延迟测试失败: " + err.Error()}
 	}
 	defer resp.Body.Close()
 	var payload struct {
@@ -406,21 +414,21 @@ func (m *ClashManager) TestNodeDelay(proxyId string, proxies []config.BrowserPro
 		Error string `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return TestResult{ProxyId: proxyId, Ok: false, Engine: "mihomo", Error: "mihomo 延迟结果解析失败: " + err.Error()}
+		return TestResult{ProxyId: proxyId, Ok: false, Engine: engine, Error: "mihomo 延迟结果解析失败: " + err.Error()}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if payload.Error != "" {
-			return TestResult{ProxyId: proxyId, Ok: false, Engine: "mihomo", Error: payload.Error}
+			return TestResult{ProxyId: proxyId, Ok: false, Engine: engine, Error: payload.Error}
 		}
-		return TestResult{ProxyId: proxyId, Ok: false, Engine: "mihomo", Error: fmt.Sprintf("mihomo 延迟测试失败: HTTP %d", resp.StatusCode)}
+		return TestResult{ProxyId: proxyId, Ok: false, Engine: engine, Error: fmt.Sprintf("mihomo 延迟测试失败: HTTP %d", resp.StatusCode)}
 	}
 	if payload.Delay <= 0 {
 		if payload.Error != "" {
-			return TestResult{ProxyId: proxyId, Ok: false, Engine: "mihomo", Error: payload.Error}
+			return TestResult{ProxyId: proxyId, Ok: false, Engine: engine, Error: payload.Error}
 		}
-		return TestResult{ProxyId: proxyId, Ok: false, Engine: "mihomo", Error: "mihomo 延迟测试无结果"}
+		return TestResult{ProxyId: proxyId, Ok: false, Engine: engine, Error: "mihomo 延迟测试无结果"}
 	}
-	return TestResult{ProxyId: proxyId, Ok: true, LatencyMs: payload.Delay, Engine: "mihomo"}
+	return TestResult{ProxyId: proxyId, Ok: true, LatencyMs: payload.Delay, Engine: engine}
 }
 
 func (m *ClashManager) registerMihomoNodeBridge(key string, bridge *MihomoNodeBridge) {
