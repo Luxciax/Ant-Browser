@@ -183,7 +183,7 @@ func (s *LaunchServer) handleRuntimeControl(w http.ResponseWriter, r *http.Reque
 	payload := s.profileRuntimePayload(profile)
 	if strings.TrimSpace(launchCode) != "" {
 		payload["launchCode"] = launchCode
-		if nested, ok := payload["profile"].(*browser.Profile); ok && nested != nil && strings.TrimSpace(nested.LaunchCode) == "" {
+		if nested, ok := payload["profile"].(*browser.ProfilePublicView); ok && nested != nil && strings.TrimSpace(nested.LaunchCode) == "" {
 			nested.LaunchCode = launchCode
 		}
 	}

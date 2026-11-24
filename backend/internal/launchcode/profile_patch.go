@@ -90,17 +90,28 @@ func (s *LaunchServer) PatchProfile(profileID string, input browser.ProfilePatch
 
 func (s *LaunchServer) handlePatchProfile(w http.ResponseWriter, r *http.Request, profileID string) {
 	var req ProfilePatchWriteRequest
-	dec := json.NewDecoder(io.LimitReader(r.Body, (1<<20)+1))
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil || req.Profile == nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+		status := http.StatusBadRequest
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		writeJSON(w, status, map[string]interface{}{
 			"ok": false, "error": "invalid request body: profile is required",
 		})
 		return
 	}
 	var trailing json.RawMessage
 	if err := dec.Decode(&trailing); err != io.EOF {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+		status := http.StatusBadRequest
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		writeJSON(w, status, map[string]interface{}{
 			"ok": false, "error": "invalid trailing request data",
 		})
 		return

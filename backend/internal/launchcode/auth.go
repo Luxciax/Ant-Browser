@@ -98,16 +98,8 @@ func (s *LaunchServer) apiAuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (s *LaunchServer) requiresAPIAuth(path string) bool {
-	if strings.HasPrefix(path, "/api/") {
-		return true
-	}
-	if path == "/json" || strings.HasPrefix(path, "/json/") || strings.HasPrefix(path, "/devtools/") {
-		return true
-	}
-	mcpPath := s.MCPPath()
-	if mcpPath == "" {
-		return false
-	}
-	return path == mcpPath || strings.HasPrefix(path, mcpPath+"/")
+// Every route is a control API or falls through to the CDP reverse proxy.
+// Do not exempt unrecognized paths from configured authentication.
+func (s *LaunchServer) requiresAPIAuth(_ string) bool {
+	return true
 }

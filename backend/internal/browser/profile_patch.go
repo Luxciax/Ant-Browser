@@ -14,6 +14,7 @@ type ProfilePatchInput struct {
 	ProfileName   *string   `json:"profileName,omitempty"`
 	UserDataDir   *string   `json:"userDataDir,omitempty"`
 	CoreId        *string   `json:"coreId,omitempty"`
+	RestoreLastSession *string `json:"restoreLastSession,omitempty"`
 	ProxyId       *string   `json:"proxyId,omitempty"`
 	GroupId       *string   `json:"groupId,omitempty"`
 	Tags          *[]string `json:"tags,omitempty"`
@@ -22,7 +23,7 @@ type ProfilePatchInput struct {
 }
 
 func (p ProfilePatchInput) Empty() bool {
-	return p.ProfileName == nil && p.UserDataDir == nil && p.CoreId == nil &&
+	return p.ProfileName == nil && p.UserDataDir == nil && p.CoreId == nil && p.RestoreLastSession == nil &&
 		p.ProxyId == nil && p.GroupId == nil && p.Tags == nil &&
 		p.Keywords == nil && p.MemoryLimitMB == nil
 }
@@ -68,6 +69,9 @@ func (m *Manager) Patch(profileId string, input ProfilePatchInput) (*Profile, er
 	if input.CoreId != nil {
 		next.CoreId = normalizeProfileCoreID(strings.TrimSpace(*input.CoreId))
 	}
+	if input.RestoreLastSession != nil {
+		next.RestoreLastSession = NormalizeRestoreLastSessionMode(*input.RestoreLastSession)
+	}
 	if input.ProxyId != nil {
 		requestedID := strings.TrimSpace(*input.ProxyId)
 		resolved, err := m.resolveProfileProxyInput(requestedID, "")
@@ -98,12 +102,22 @@ func (m *Manager) Patch(profileId string, input ProfilePatchInput) (*Profile, er
 	}
 
 	previous := cloneProfileValue(profile)
-	next.UpdatedAt = time.Now().Format(time.RFC3339)
-	*profile = next
-	if err := m.SaveProfiles(); err != nil {
-		*profile = previous
-		return nil, err
+	next.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+	// Persist exactly one record on the SQLite path. Do not rewrite unrelated
+	// profiles merely because a tag, name, or another small field changed.
+	if m.ProfileDAO != nil {
+		if err := m.ProfileDAO.Upsert(&next); err != nil {
+			return nil, err
+		}
+		*profile = next
+	} else {
+		*profile = next
+		if err := m.SaveProfiles(); err != nil {
+			*profile = previous
+			return nil, err
+		}
 	}
 	log.Info("Profile configuration patched", logger.F("profile_id", profileId))
-	return profile, nil
+	snapshot := cloneProfileValue(profile)
+	return &snapshot, nil
 }

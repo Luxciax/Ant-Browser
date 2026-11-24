@@ -1,6 +1,7 @@
 package launchcode
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,14 +15,48 @@ func decodeProfileWriteRequest(r *http.Request) (ProfileWriteRequest, int, strin
 		return ProfileWriteRequest{}, http.StatusMethodNotAllowed, "method not allowed"
 	}
 
+	const maxBody = 1 << 20
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxBody+1))
+	if err != nil {
+		return ProfileWriteRequest{}, http.StatusBadRequest, "invalid request body"
+	}
+	if len(body) > maxBody {
+		return ProfileWriteRequest{}, http.StatusRequestEntityTooLarge, "request body exceeds limit"
+	}
 	var req ProfileWriteRequest
-	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
 		return ProfileWriteRequest{}, http.StatusBadRequest, "invalid request body"
 	}
+	var trailing json.RawMessage
+	if err := dec.Decode(&trailing); err != io.EOF {
+		return ProfileWriteRequest{}, http.StatusBadRequest, "invalid trailing request data"
+	}
 	if req.Profile == nil {
 		return ProfileWriteRequest{}, http.StatusBadRequest, "profile is required"
+	}
+	if r.Method == http.MethodPut {
+		// GET returns an allowlisted view, not a complete replacement input.
+		// Require every writable field to be present on PUT, so sending a
+		// partial/redacted view cannot silently clear hidden configuration.
+		var envelope struct {
+			Profile map[string]json.RawMessage `json:"profile"`
+		}
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			return ProfileWriteRequest{}, http.StatusBadRequest, "invalid profile object"
+		}
+		required := []string{
+			"profileName", "userDataDir", "coreId", "restoreLastSession",
+			"fingerprintArgs", "proxyId", "proxyConfig", "memoryLimitMb",
+			"launchArgs", "tags", "keywords", "groupId",
+		}
+		for _, field := range required {
+			value, ok := envelope.Profile[field]
+			if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+				return ProfileWriteRequest{}, http.StatusBadRequest, "PUT requires explicit non-null profile field " + field + "; use PATCH for partial updates"
+			}
+		}
 	}
 	return req, http.StatusOK, ""
 }
@@ -67,6 +102,7 @@ func mergeProfileRuntime(target, runtimeProfile *browser.Profile) {
 	if target == nil || runtimeProfile == nil {
 		return
 	}
+	target.RuntimeState = runtimeProfile.RuntimeState
 	target.Running = runtimeProfile.Running
 	target.DebugPort = runtimeProfile.DebugPort
 	target.DebugReady = runtimeProfile.DebugReady

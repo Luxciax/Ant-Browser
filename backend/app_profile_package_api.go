@@ -611,12 +611,42 @@ func openProfilePackageContents(zipPath string) (*profilePackageContents, error)
 	} else if err := readProfilePackageJSON(reader.File, "profiles.json", &profiles); err != nil {
 		return nil, err
 	}
-	if len(profiles) == 0 {
-		return nil, fmt.Errorf("实例包为空")
+	if err := validateProfilePackageCatalog(manifest, profiles); err != nil {
+		return nil, err
 	}
 	contents.Profiles = profiles
 	completed = true
 	return contents, nil
+}
+
+// validateProfilePackageCatalog rejects ambiguous source records before any
+// destination directories, database rows, or extension mappings are created.
+func validateProfilePackageCatalog(manifest ProfilePackageManifest, profiles []browser.Profile) error {
+	if len(profiles) == 0 {
+		return fmt.Errorf("实例包为空")
+	}
+	// Older manifests may not have included profileCount. If supplied it
+	// must agree with the authoritative catalog.
+	if manifest.ProfileCount < 0 || (manifest.ProfileCount > 0 && manifest.ProfileCount != len(profiles)) {
+		return fmt.Errorf("实例包配置数量不一致: manifest=%d actual=%d", manifest.ProfileCount, len(profiles))
+	}
+	seen := make(map[string]struct{}, len(profiles))
+	for i := range profiles {
+		id := profiles[i].ProfileId
+		if id == "" || strings.TrimSpace(id) != id || id == "." || id == ".." ||
+			strings.ContainsAny(id, "/\\:\x00") {
+			return fmt.Errorf("实例包第 %d 条配置包含非法 profileId", i+1)
+		}
+		key := backupImportIDKey(id)
+		if key == "" {
+			return fmt.Errorf("实例包第 %d 条配置缺少有效 profileId", i+1)
+		}
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("实例包包含重复 profileId: %s", id)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
 }
 
 func validateProfilePackageArchive(zipPath string, files []*zip.File) error {

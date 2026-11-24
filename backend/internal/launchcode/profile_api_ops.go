@@ -163,9 +163,14 @@ func (s *LaunchServer) profileSnapshotByID(profileID string) (*browser.Profile, 
 	var snapshot browser.Profile
 	if ok && profile != nil {
 		snapshot = *profile
+		snapshot.Tags = append([]string(nil), profile.Tags...)
+		snapshot.Keywords = append([]string(nil), profile.Keywords...)
+		snapshot.LaunchArgs = append([]string(nil), profile.LaunchArgs...)
+		snapshot.LastLaunchArgs = append([]string(nil), profile.LastLaunchArgs...)
+		snapshot.FingerprintArgs = append([]string(nil), profile.FingerprintArgs...)
 	}
 	s.browserMgr.Mutex.Unlock()
-	if !ok {
+	if !ok || profile == nil {
 		return nil, http.StatusNotFound, "profile not found"
 	}
 
@@ -191,11 +196,15 @@ func (s *LaunchServer) applyRequestedLaunchCode(profileID, currentCode, requeste
 }
 
 func (s *LaunchServer) resolveProfileLaunchCode(profileID, currentCode string) string {
-	if trimmed := strings.TrimSpace(currentCode); trimmed != "" {
-		return trimmed
+	currentCode = strings.TrimSpace(currentCode)
+	profileID = strings.TrimSpace(profileID)
+	if s.service == nil || profileID == "" {
+		return currentCode
 	}
-	if s.service == nil || strings.TrimSpace(profileID) == "" {
-		return ""
+	// The launch-code service owns the mapping; cached profile fields may
+	// have become stale after a custom-code change.
+	if code, ok := s.service.LookupCode(profileID); ok {
+		return code
 	}
 	code, err := s.service.EnsureCode(profileID)
 	if err != nil {
