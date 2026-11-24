@@ -8,12 +8,12 @@ import (
 
 func TestSecretStoreRoundTripAndDelete(t *testing.T) {
 	if runtime.GOOS != "windows" {
-		old, had := os.LookupEnv(envMasterKeyName)
-		if err := os.Setenv(envMasterKeyName, "phase5-test-secret-key-with-sufficient-entropy"); err != nil {
+		old, had := os.LookupEnv("ANT_BROWSER_SECRET_KEY")
+		if err := os.Setenv("ANT_BROWSER_SECRET_KEY", "phase5-test-secret-key-with-sufficient-entropy"); err != nil {
 			t.Fatal(err)
 		}
 		defer func() {
-			if had { _ = os.Setenv(envMasterKeyName, old) } else { _ = os.Unsetenv(envMasterKeyName) }
+			if had { _ = os.Setenv("ANT_BROWSER_SECRET_KEY", old) } else { _ = os.Unsetenv("ANT_BROWSER_SECRET_KEY") }
 		}()
 	}
 
