@@ -36,6 +36,7 @@ the requested operation already does so. Refreshing the environment ID clears
 the in-memory launch receipt and runtime evidence because those records belong
 to the previous lifecycle revision.
 
-Package migration/restore from phase 2 remains the cross-machine migration
-path. Kernel upgrade preview compares actual binary identity/version and warns
-when runtime evidence should be repeated after restart.
+Package migration/restore remains the cross-machine migration path and now
+carries environment IDs, NetworkPolicy, and frozen template ID/revision.
+Kernel upgrade preview compares actual binary identity/version and warns when
+runtime evidence should be repeated after restart.

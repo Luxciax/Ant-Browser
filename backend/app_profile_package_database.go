@@ -36,6 +36,8 @@ type ProfilePackageDatabase struct {
 	ProfileExtensions        []ProfilePackageDatabaseExtensionBinding  `json:"profileExtensions"`
 	ProfileExtensionRuntime  []browser.ProfileExtensionRuntime         `json:"profileExtensionRuntime"`
 	EnvironmentIdentities    []browser.EnvironmentIdentity             `json:"environmentIdentities,omitempty"`
+	NetworkPolicies          []browser.NetworkPolicy                    `json:"networkPolicies,omitempty"`
+	TemplateBindings         []browser.EnvironmentTemplateBinding       `json:"templateBindings,omitempty"`
 	Warnings                 []string                                  `json:"warnings,omitempty"`
 }
 
@@ -89,6 +91,8 @@ func (a *App) collectProfilePackageDatabase(profiles []browser.Profile) (Profile
 		ProfileExtensions:        []ProfilePackageDatabaseExtensionBinding{},
 		ProfileExtensionRuntime:  []browser.ProfileExtensionRuntime{},
 		EnvironmentIdentities:    []browser.EnvironmentIdentity{},
+		NetworkPolicies:          []browser.NetworkPolicy{},
+		TemplateBindings:         []browser.EnvironmentTemplateBinding{},
 	}
 	if a == nil || a.db == nil || a.db.GetConn() == nil {
 		return ProfilePackageDatabase{}, fmt.Errorf("数据库未初始化，无法导出实例关联数据")
@@ -129,6 +133,22 @@ func (a *App) collectProfilePackageDatabase(profiles []browser.Profile) (Profile
 				return ProfilePackageDatabase{}, fmt.Errorf("读取实例环境身份失败(%s): %w", profileID, identityErr)
 			}
 			snapshot.EnvironmentIdentities = append(snapshot.EnvironmentIdentities, identity)
+		}
+	}
+	if a.browserMgr != nil && a.browserMgr.NetworkPolicyDAO != nil {
+		for _, profileID := range profileIDs {
+			policy, policyErr := a.browserMgr.GetNetworkPolicy(profileID)
+			if policyErr != nil {
+				return ProfilePackageDatabase{}, fmt.Errorf("读取实例 NetworkPolicy 失败(%s): %w", profileID, policyErr)
+			}
+			snapshot.NetworkPolicies = append(snapshot.NetworkPolicies, policy)
+			if a.browserMgr.TemplateBindingDAO != nil {
+				if binding, bindErr := a.browserMgr.TemplateBindingDAO.Get(profileID); bindErr == nil {
+					snapshot.TemplateBindings = append(snapshot.TemplateBindings, binding)
+				} else if bindErr != sql.ErrNoRows {
+					return ProfilePackageDatabase{}, fmt.Errorf("读取实例模板绑定失败(%s): %w", profileID, bindErr)
+				}
+			}
 		}
 	}
 	groupIDs := make([]string, 0)
@@ -523,6 +543,70 @@ func (a *App) restoreProfilePackageDatabase(snapshot ProfilePackageDatabase, pre
 				updated_at = excluded.updated_at
 		`, targetProfileID, environmentID, createdAt, updatedAt); err != nil {
 			return fmt.Errorf("恢复实例环境身份失败(%s): %w", targetProfileID, err)
+		}
+	}
+
+	for _, policy := range snapshot.NetworkPolicies {
+		targetProfileID := profileMappings[backupImportIDKey(policy.ProfileID)]
+		if targetProfileID == "" {
+			appendProfilePackageWarning(warnings, fmt.Sprintf("NetworkPolicy 缺少目标实例引用（实例=%s）", policy.ProfileID))
+			continue
+		}
+		normalizedPolicy, policyErr := browser.NormalizeNetworkPolicy(browser.NetworkPolicy{
+			ProfileID: targetProfileID,
+			FailClosed: policy.FailClosed,
+			DNSMode: policy.DNSMode,
+			WebRTCMode: policy.WebRTCMode,
+			LocaleLinkMode: policy.LocaleLinkMode,
+			UpdatedAt: policy.UpdatedAt,
+		})
+		if policyErr != nil {
+			return fmt.Errorf("恢复实例 NetworkPolicy 失败(%s): %w", targetProfileID, policyErr)
+		}
+		failClosed := 0
+		if normalizedPolicy.FailClosed {
+			failClosed = 1
+		}
+		if _, err := tx.Exec(`
+			INSERT INTO browser_profile_network_policy
+				(profile_id, fail_closed, dns_mode, webrtc_mode, locale_link_mode, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT(profile_id) DO UPDATE SET
+				fail_closed = excluded.fail_closed,
+				dns_mode = excluded.dns_mode,
+				webrtc_mode = excluded.webrtc_mode,
+				locale_link_mode = excluded.locale_link_mode,
+				updated_at = excluded.updated_at
+		`, targetProfileID, failClosed, normalizedPolicy.DNSMode, normalizedPolicy.WebRTCMode, normalizedPolicy.LocaleLinkMode, normalizedPolicy.UpdatedAt); err != nil {
+			return fmt.Errorf("恢复实例 NetworkPolicy 失败(%s): %w", targetProfileID, err)
+		}
+	}
+	for _, binding := range snapshot.TemplateBindings {
+		targetProfileID := profileMappings[backupImportIDKey(binding.ProfileID)]
+		if targetProfileID == "" {
+			appendProfilePackageWarning(warnings, fmt.Sprintf("模板绑定缺少目标实例引用（实例=%s）", binding.ProfileID))
+			continue
+		}
+		templateID := strings.TrimSpace(binding.TemplateID)
+		templateRevision := strings.TrimSpace(binding.TemplateRevision)
+		if templateID == "" || templateRevision == "" {
+			appendProfilePackageWarning(warnings, fmt.Sprintf("实例「%s」模板绑定不完整，已跳过", binding.ProfileID))
+			continue
+		}
+		updatedAt := strings.TrimSpace(binding.UpdatedAt)
+		if updatedAt == "" {
+			updatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		}
+		if _, err := tx.Exec(`
+			INSERT INTO browser_profile_environment_template
+				(profile_id, template_id, template_revision, updated_at)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT(profile_id) DO UPDATE SET
+				template_id = excluded.template_id,
+				template_revision = excluded.template_revision,
+				updated_at = excluded.updated_at
+		`, targetProfileID, templateID, templateRevision, updatedAt); err != nil {
+			return fmt.Errorf("恢复实例模板绑定失败(%s): %w", targetProfileID, err)
 		}
 	}
 
