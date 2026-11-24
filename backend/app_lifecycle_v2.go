@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -93,6 +94,8 @@ func (a *App) BrowserProfileCloneLifecycle(req BrowserLifecycleCloneRequest) (*B
 			if err := a.browserMgr.TemplateBindingDAO.Upsert(binding); err != nil {
 				return nil, err
 			}
+		} else if bindErr != sql.ErrNoRows {
+			return nil, bindErr
 		}
 	}
 	return &BrowserLifecycleCloneResult{
@@ -123,9 +126,11 @@ func (a *App) BrowserProfileRefreshEnvironmentID(profileID string) (*browser.Env
 		a.browserMgr.Mutex.Unlock()
 		return nil, fmt.Errorf("profile runtime is %s; stop it before refreshing environment id", state)
 	}
+	previousUpdatedAt := profile.UpdatedAt
 	profile.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	if a.browserMgr.ProfileDAO != nil {
 		if err := a.browserMgr.ProfileDAO.Upsert(profile); err != nil {
+			profile.UpdatedAt = previousUpdatedAt
 			a.browserMgr.Mutex.Unlock()
 			return nil, err
 		}
@@ -139,6 +144,14 @@ func (a *App) BrowserProfileRefreshEnvironmentID(profileID string) (*browser.Env
 	}
 	identity, err := setter.Set(profileID, uuid.NewString())
 	if err != nil {
+		a.browserMgr.Mutex.Lock()
+		if current := a.browserMgr.Profiles[profileID]; current != nil {
+			current.UpdatedAt = previousUpdatedAt
+			if a.browserMgr.ProfileDAO != nil {
+				_ = a.browserMgr.ProfileDAO.Upsert(current)
+			}
+		}
+		a.browserMgr.Mutex.Unlock()
 		return nil, err
 	}
 	a.launchPlanMu.Lock()
