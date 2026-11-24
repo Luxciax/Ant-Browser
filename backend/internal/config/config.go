@@ -30,10 +30,11 @@ type LaunchServerConfig struct {
 }
 
 type LaunchServerAuthConfig struct {
-	Enabled bool     `yaml:"enabled"`
-	APIKey  string   `yaml:"api_key"`
-	Header  string   `yaml:"header"`
-	Scopes  []string `yaml:"scopes,omitempty"`
+	Enabled   bool     `yaml:"enabled"`
+	APIKey    string   `yaml:"api_key,omitempty"`
+	APIKeyRef string   `yaml:"api_key_ref,omitempty"`
+	Header    string   `yaml:"header"`
+	Scopes    []string `yaml:"scopes,omitempty"`
 }
 
 type ValidationError struct {

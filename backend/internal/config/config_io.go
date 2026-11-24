@@ -61,6 +61,9 @@ func (c *Config) Save(configPath string) error {
 	}
 	safeConfig := *c
 	safeConfig.Backup = sanitizeBackupConfig(c.Backup)
+	if safeConfig.LaunchServer.Auth.APIKeyRef != "" {
+		safeConfig.LaunchServer.Auth.APIKey = ""
+	}
 	data, err := yaml.Marshal(&safeConfig)
 	if err != nil {
 		return fmt.Errorf("序列化配置失败: %w", err)

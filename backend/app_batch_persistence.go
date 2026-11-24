@@ -35,8 +35,16 @@ func sanitizeBatchOperationForStore(op BrowserBatchOperation) BrowserBatchOperat
 		// Persist only the public/runtime-safe profile snapshot already returned
 		// by batch APIs. Never add proxy credentials or launch internals here.
 		if out.Results[index].Runtime != nil {
-			out.Results[index].Runtime.ProxyConfig = ""
-			out.Results[index].Runtime.LastLaunchArgs = nil
+			runtime := out.Results[index].Runtime
+			runtime.ProxyConfig = ""
+			runtime.ProxyBindSourceURL = ""
+			runtime.ProxyBindSourceID = ""
+			runtime.LaunchCode = ""
+			runtime.WindowMarkerCode = ""
+			runtime.UserDataDir = ""
+			runtime.FingerprintArgs = nil
+			runtime.LaunchArgs = nil
+			runtime.LastLaunchArgs = nil
 		}
 	}
 	return out

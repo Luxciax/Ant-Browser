@@ -24,3 +24,9 @@ not contain backup credentials.
 Profile-package manifests explicitly declare local SecretRefs as non-portable
 and backup credentials as excluded. Extension artifacts and their bindings
 remain portable through the existing extension package mechanism.
+
+The LaunchServer API key uses the same SecretStore. New rotations refuse to
+write a key when the protection provider is unavailable. Existing plaintext
+API keys are treated only as legacy migration input; when SecretStore is
+available they are migrated to `api_key_ref`, and subsequent config writes
+omit the plaintext key.

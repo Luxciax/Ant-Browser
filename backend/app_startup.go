@@ -43,6 +43,9 @@ func (a *App) startup(ctx context.Context) {
 	} else {
 		a.secretStore = store
 	}
+	if err := a.hydrateLaunchAuthSecret(); err != nil {
+		log.Warn("LaunchServer API Key SecretRef 初始化失败", logger.F("error", err))
+	}
 	if err := a.prepareBackupLocalConfig(); err != nil {
 		log.Error("本地备份配置初始化失败", logger.F("error", err))
 	}

@@ -166,6 +166,7 @@ func normalizeConfig(config *Config) {
 		config.LaunchServer.Port = defaultConfig.LaunchServer.Port
 	}
 	config.LaunchServer.Auth.APIKey = strings.TrimSpace(config.LaunchServer.Auth.APIKey)
+	config.LaunchServer.Auth.APIKeyRef = strings.TrimSpace(config.LaunchServer.Auth.APIKeyRef)
 	config.LaunchServer.Auth.Scopes = normalizeLaunchAuthScopes(config.LaunchServer.Auth.Scopes)
 	if strings.TrimSpace(config.LaunchServer.Auth.Header) == "" {
 		config.LaunchServer.Auth.Header = defaultConfig.LaunchServer.Auth.Header
@@ -326,8 +327,9 @@ func DefaultConfig() *Config {
 			Port: DefaultLaunchServerPort,
 			Auth: LaunchServerAuthConfig{
 				Enabled: false,
-				APIKey:  "",
-				Header:  DefaultLaunchServerAPIKeyHeader,
+				APIKey:    "",
+				APIKeyRef: "",
+				Header:    DefaultLaunchServerAPIKeyHeader,
 				Scopes:  []string{"*"},
 			},
 		},
