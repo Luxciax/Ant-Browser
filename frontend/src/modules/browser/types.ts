@@ -48,8 +48,23 @@ export interface BrowserProfileInput {
   groupId?: string
 }
 
+export interface BrowserFingerprintContextInfo {
+  applicable: boolean
+  executed: boolean
+  language: string
+  languages: string[]
+  timezone: string
+  hardwareConcurrency: number
+  platform: string
+  userAgent: string
+  error?: string
+}
+
 export interface BrowserFingerprintRuntimeInfo {
-  worker?: { language: string; languages: string[]; timezone: string; hardwareConcurrency: number; platform: string; userAgent: string; error?: string }
+  worker?: BrowserFingerprintContextInfo
+  iframe?: BrowserFingerprintContextInfo
+  sharedWorker?: BrowserFingerprintContextInfo
+  serviceWorker?: { applicable: boolean; executed: boolean; error?: string }
   language: string
   languages: string[]
   timezone: string

@@ -100,7 +100,7 @@ func requiredScopeForRequest(r *http.Request) string {
 		return ScopeEnvironmentAdmin
 	case strings.HasPrefix(path, "/api/automation"):
 		if method == http.MethodGet { return ScopeEnvironmentRead }
-		return ScopePageAction
+		return ScopeScript
 	case strings.HasPrefix(path, "/api/runtime"):
 		if method == http.MethodGet || strings.HasSuffix(path, "/status") { return ScopeEnvironmentRead }
 		return ScopePageAction

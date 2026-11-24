@@ -11,7 +11,7 @@ const (
 	ServerName = "ant-browser"
 	DefaultPath = "/mcp"
 	sessionTimeout = 30 * time.Minute
-	toolCount = 30
+	toolCount = 36
 )
 
 type Server struct {
@@ -37,10 +37,10 @@ func providerAllowsScope(provider interface{}, scope string) bool {
 
 func (s *Server) buildMCPServer() *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: ServerName, Version: s.version}, nil)
-	if providerAllowsScope(s.provider, "environment-read") || providerAllowsScope(s.provider, "environment-admin") || providerAllowsScope(s.provider, "page-action") {
+	if providerAllowsScope(s.provider, "environment-read") || providerAllowsScope(s.provider, "environment-admin") || providerAllowsScope(s.provider, "page-action") || providerAllowsScope(s.provider, "page-read") {
 		registerInstanceTools(srv, s.provider)
 	}
-	if providerAllowsScope(s.provider, "page-action") {
+	if providerAllowsScope(s.provider, "environment-read") || providerAllowsScope(s.provider, "script") {
 		registerAutomationTools(srv, s.provider)
 	}
 	if providerAllowsScope(s.provider, "environment-read") || providerAllowsScope(s.provider, "environment-admin") {

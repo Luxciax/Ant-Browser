@@ -67,7 +67,8 @@ func toRuntimeState(p *browser.Profile) RuntimeState {
 }
 
 func registerInstanceTools(srv *mcp.Server, p InstanceProvider) {
-	if providerAllowsScope(p, "environment-read") { registerInstanceQueryTools(srv,p); registerPhase2Tools(srv,p) }
+	if providerAllowsScope(p, "environment-read") { registerInstanceQueryTools(srv,p) }
+	if providerAllowsScope(p, "environment-read") || providerAllowsScope(p, "page-read") { registerPhase2Tools(srv,p) }
 	if providerAllowsScope(p, "environment-admin") { registerInstanceWriteTools(srv,p) }
 	if providerAllowsScope(p, "page-action") { registerRuntimeTools(srv,p) }
 	registerPhase4Tools(srv, p)
