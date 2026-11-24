@@ -2,18 +2,33 @@
 
 export async function getBindings() {
   const devMode = Boolean((import.meta as any).env?.DEV)
-  if (!(globalThis as any).go?.main?.App) {
-    if (devMode) {
-      return null
-    }
+  const raw = (globalThis as any).go?.main?.App ?? null
+  if (!raw) {
+    if (devMode) return null
     throw new Error('Wails runtime binding unavailable')
   }
   try {
-    return await import('../../../wailsjs/go/main/App')
+    const generated: any = await import('../../../wailsjs/go/main/App')
+    return new Proxy(generated, {
+      get(target, property, receiver) {
+        const generatedValue = Reflect.get(target, property, receiver)
+        if (generatedValue !== undefined) return generatedValue
+        const rawValue = raw?.[String(property)]
+        if (typeof rawValue === 'function') return (...args: any[]) => rawValue(...args)
+        return rawValue
+      },
+    })
   } catch (error) {
-    if (devMode) {
-      return null
+    if (raw) {
+      return new Proxy({}, {
+        get(_target, property) {
+          const rawValue = raw?.[String(property)]
+          if (typeof rawValue === 'function') return (...args: any[]) => rawValue(...args)
+          return rawValue
+        },
+      })
     }
+    if (devMode) return null
     const reason = error instanceof Error ? error.message : String(error)
     throw new Error(`Failed to load Wails bindings: ${reason}`)
   }

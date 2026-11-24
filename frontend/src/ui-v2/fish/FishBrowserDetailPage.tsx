@@ -19,8 +19,9 @@ import { warmupProfileProxyBeforeStart } from '../../modules/browser/utils/proxy
 import { browserRuntimeLabel, isBrowserRuntimeStoppable, normalizeBrowserRuntimeState } from '../../modules/browser/utils/runtimeState'
 import { toast } from '../../shared/components'
 import { FishCookiePanel, FishSnapshotPanel } from './FishDetailDataPanels'
+import { FishEnvironmentPanel } from './FishEnvironmentPanel'
 
-type DetailTab = 'overview' | 'cookies' | 'snapshots'
+type DetailTab = 'overview' | 'environment' | 'cookies' | 'snapshots'
 type PendingAction = 'starting' | 'stopping' | 'restarting' | null
 
 function formatTime(value?: string) {
@@ -186,7 +187,7 @@ export function FishBrowserDetailPage() {
       <div className="fish-detail-actions"><Link className="fish-btn" to="/browser/list"><ArrowLeft size={16} strokeWidth={1.8} />返回</Link><Link className="fish-btn" to={`/browser/edit/${profile.profileId}`}><Pencil size={16} strokeWidth={1.8} />编辑</Link>{isStoppable ? <button className="fish-btn" type="button" disabled={isBusy && !isStopping} onClick={() => void stop()}><Square size={16} strokeWidth={1.8} />{isStopping ? '停止中' : '停止'}</button> : <button className="fish-btn primary" type="button" disabled={isBusy} onClick={() => void start()}><Play size={16} strokeWidth={1.8} />{isStarting ? '启动中' : '启动'}</button>}<button className="fish-icon-btn" type="button" disabled={isBusy && !isRestarting} title="重启实例" onClick={() => void restart()}><RotateCcw size={16} strokeWidth={1.8} /></button></div>
     </div>
 
-    <div className="fish-detail-tabs"><button className={activeTab === 'overview' ? 'active' : ''} type="button" onClick={() => setActiveTab('overview')}>概览</button><button className={activeTab === 'cookies' ? 'active' : ''} type="button" onClick={() => setActiveTab('cookies')}>Cookie</button><button className={activeTab === 'snapshots' ? 'active' : ''} type="button" onClick={() => setActiveTab('snapshots')}>快照</button></div>
+    <div className="fish-detail-tabs"><button className={activeTab === 'overview' ? 'active' : ''} type="button" onClick={() => setActiveTab('overview')}>概览</button><button className={activeTab === 'environment' ? 'active' : ''} type="button" onClick={() => setActiveTab('environment')}>环境契约</button><button className={activeTab === 'cookies' ? 'active' : ''} type="button" onClick={() => setActiveTab('cookies')}>Cookie</button><button className={activeTab === 'snapshots' ? 'active' : ''} type="button" onClick={() => setActiveTab('snapshots')}>快照</button></div>
 
     {activeTab === 'overview' ? <div className="fish-detail-stack">
       <div className="fish-detail-summary-grid">
@@ -209,6 +210,7 @@ export function FishBrowserDetailPage() {
       </section>
     </div> : null}
 
+    {activeTab === 'environment' ? <FishEnvironmentPanel profileId={profile.profileId} running={isRunning} /> : null}
     {activeTab === 'cookies' ? <FishCookiePanel profileId={profile.profileId} profileName={profile.profileName} running={isRunning} ready={isRunning && profile.debugReady} /> : null}
     {activeTab === 'snapshots' ? <FishSnapshotPanel profileId={profile.profileId} running={isRunning} /> : null}
   </div>

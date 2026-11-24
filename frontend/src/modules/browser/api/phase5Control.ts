@@ -9,3 +9,15 @@ export async function getBrowserSyncStatus():Promise<BrowserSyncStatusV1>{return
 export async function getBrowserSystemIntegrationStatus():Promise<BrowserSystemIntegrationStatus>{return await (await b()).BrowserSystemIntegrationStatusGet()}
 export async function setBrowserProtocolRegistration(enabled:boolean):Promise<BrowserSystemIntegrationStatus>{return await (await b()).BrowserSystemIntegrationSetProtocol(enabled)}
 export async function getBrowserStartupProtocolURLs():Promise<string[]>{return await (await b()).BrowserSystemIntegrationStartupURLs()}
+
+export interface BrowserControlDiagnostics {
+  ok: boolean
+  schemaVersion: number
+  launchServer?: Record<string, any>
+  secretStoreReady?: boolean
+  batchOperationCount?: number
+  runtimeEvidenceCount?: number
+}
+export async function getBrowserControlDiagnostics():Promise<BrowserControlDiagnostics>{return await (await b()).BrowserControlDiagnostics()}
+export async function rotateBrowserLaunchAuth(scopes:string[]):Promise<{apiKey:string;header:string;scopes:string[]}>{return await (await b()).BrowserLaunchAuthRotate(scopes)}
+export async function revokeBrowserLaunchAuth():Promise<void>{await (await b()).BrowserLaunchAuthRevoke()}

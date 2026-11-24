@@ -19,6 +19,7 @@ import {
   Settings2,
   Sun,
   Workflow,
+  ShieldCheck,
   type LucideIcon,
 } from 'lucide-react'
 import { projectConfig } from '../../config'
@@ -51,14 +52,14 @@ const navGroups: FishNavGroup[] = [
     label: '自动化',
     items: [
       { label: '自动化任务', path: '/browser/automation', icon: Workflow },
-    ],
+      { label: '工作流 / RPA', path: '/browser/workflows', icon: Workflow },    ],
   },
   {
     label: '系统',
     items: [
       { label: '日志', path: '/browser/logs', icon: ScrollText },
-      { label: '文档', path: '/system/docs', icon: BookOpenText },
-      { label: '设置', path: '/settings', icon: Settings2 },
+      { label: '控制中心', path: '/system/control', icon: ShieldCheck },
+      { label: '文档', path: '/system/docs', icon: BookOpenText },      { label: '设置', path: '/settings', icon: Settings2 },
     ],
   },
 ]
@@ -85,13 +86,15 @@ export function FishShell({ children, onOpenQuickLaunch }: FishShellProps) {
   const isExtensionsRoute = path === '/browser/extensions'
   const isBookmarksRoute = path === '/browser/bookmarks'
   const isAutomationRoute = path === '/browser/automation' || path.startsWith('/browser/automation/')
+  const isWorkflowRoute = path === '/browser/workflows'
+  const isControlRoute = path === '/system/control'
   const isLogsRoute = path === '/browser/logs'
   const isDocsRoute = path === '/system/docs'
   const isSettingsRoute = path === '/settings'
   const isProfileRoute = path === '/profile'
   const isChartsRoute = path === '/charts'
-  const pageTitle = isEditRoute ? (path.endsWith('/new') ? '新建环境' : '编辑环境') : isDetailRoute ? '实例详情' : isCopyRoute ? '复制环境' : isProxyRoute ? '代理池' : isCoreRoute ? '内核与指纹' : isTagsRoute ? '分组与标签' : isExtensionsRoute ? '扩展' : isBookmarksRoute ? '默认书签' : isAutomationRoute ? (path === '/browser/automation' ? '自动化任务' : '自动化脚本') : isLogsRoute ? '运行日志' : isDocsRoute ? '文档' : isSettingsRoute ? '设置' : isProfileRoute ? '项目信息' : isChartsRoute ? '数据可视化' : '浏览器环境'
-  const PageIcon = isCoreRoute ? Fingerprint : isProxyRoute ? Route : isTagsRoute ? Folders : isExtensionsRoute ? Puzzle : isBookmarksRoute ? Bookmark : isAutomationRoute ? Workflow : isLogsRoute ? ScrollText : isDocsRoute ? BookOpenText : isSettingsRoute ? Settings2 : isProfileRoute ? Briefcase : Layers3
+  const pageTitle = isEditRoute ? (path.endsWith('/new') ? '新建环境' : '编辑环境') : isDetailRoute ? '实例详情' : isCopyRoute ? '复制环境' : isProxyRoute ? '代理池' : isCoreRoute ? '内核与指纹' : isTagsRoute ? '分组与标签' : isExtensionsRoute ? '扩展' : isBookmarksRoute ? '默认书签' : isWorkflowRoute ? '工作流 / RPA' : isControlRoute ? '控制中心' : isAutomationRoute ? (path === '/browser/automation' ? '自动化任务' : '自动化脚本') : isLogsRoute ? '运行日志' : isDocsRoute ? '文档' : isSettingsRoute ? '设置' : isProfileRoute ? '项目信息' : isChartsRoute ? '数据可视化' : '浏览器环境'
+  const PageIcon = isCoreRoute ? Fingerprint : isProxyRoute ? Route : isTagsRoute ? Folders : isExtensionsRoute ? Puzzle : isBookmarksRoute ? Bookmark : isWorkflowRoute ? Workflow : isControlRoute ? ShieldCheck : isAutomationRoute ? Workflow : isLogsRoute ? ScrollText : isDocsRoute ? BookOpenText : isSettingsRoute ? Settings2 : isProfileRoute ? Briefcase : Layers3
   const showCreateEnvironment = path.startsWith('/browser/') && !isEditRoute
 
   useEffect(() => {

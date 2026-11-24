@@ -141,6 +141,14 @@ const FishAutomationDetailPage = lazyNamed(
   () => import("../ui-v2/fish/FishAutomationDetailPage"),
   "FishAutomationDetailPage",
 );
+const FishWorkflowsPage = lazyNamed(
+  () => import("../ui-v2/fish/FishWorkflowsPage"),
+  "FishWorkflowsPage",
+);
+const FishControlCenterPage = lazyNamed(
+  () => import("../ui-v2/fish/FishControlCenterPage"),
+  "FishControlCenterPage",
+);
 
 export function AppRoutes() {
   return (
@@ -179,6 +187,8 @@ export function AppRoutes() {
       <Route path="/browser/automation" element={<FishAutomationPage />} />
       <Route path="/browser/automation-legacy" element={<AutomationLegacyPage />} />
       <Route path="/browser/automation/:scriptId" element={<FishAutomationDetailPage />} />
+      <Route path="/browser/workflows" element={<FishWorkflowsPage />} />
+      <Route path="/system/control" element={<FishControlCenterPage />} />
       <Route path="/browser/automation-legacy/:scriptId" element={<AutomationDetailLegacyPage />} />
       <Route path="/system/docs" element={<FishDocsPage />} />
       <Route path="/system/docs-legacy" element={<DocsLegacyPage />} />
