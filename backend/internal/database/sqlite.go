@@ -286,6 +286,25 @@ var migrations = []migration{
 			END`,
 		},
 	},
+	{
+		version: 20,
+		desc:    "实例 NetworkPolicy",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS browser_profile_network_policy (
+				profile_id TEXT PRIMARY KEY,
+				fail_closed INTEGER NOT NULL DEFAULT 1 CHECK(fail_closed IN (0,1)),
+				dns_mode TEXT NOT NULL DEFAULT 'inherit',
+				webrtc_mode TEXT NOT NULL DEFAULT 'restricted',
+				locale_link_mode TEXT NOT NULL DEFAULT 'manual',
+				updated_at TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE TRIGGER IF NOT EXISTS trg_browser_profile_network_policy_delete
+			AFTER DELETE ON browser_profiles
+			BEGIN
+				DELETE FROM browser_profile_network_policy WHERE profile_id = OLD.profile_id;
+			END`,
+		},
+	},
 	// ── 新版本在此追加，格式：
 	// {
 	//     version: 4,

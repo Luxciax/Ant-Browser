@@ -140,6 +140,21 @@ func (a *App) prepareBrowserStartPlan(ctx context.Context, input browserStartInp
 	if err != nil {
 		return nil, err
 	}
+	networkPolicy, policyErr := a.browserMgr.GetNetworkPolicy(input.ProfileID)
+	if policyErr != nil {
+		if releaseProxyBridge {
+			a.releaseProxyBridgeRef(acquiredProxyBridge)
+		}
+		return nil, fmt.Errorf("实例启动失败：读取 NetworkPolicy 失败: %w", policyErr)
+	}
+	policyArgs := networkPolicyLaunchArgs(networkPolicy)
+	fingerprintLaunchArgs = append(fingerprintLaunchArgs, policyArgs...)
+	if err := validateEffectiveNetworkPolicy(networkPolicy, configuredNetworkMode(profile, input), effectiveNetworkMode(effectiveProxy)); err != nil {
+		if releaseProxyBridge {
+			a.releaseProxyBridgeRef(acquiredProxyBridge)
+		}
+		return nil, fmt.Errorf("实例启动失败：%w", err)
+	}
 	if err := browserStartContextError(ctx, "准备代理桥接"); err != nil {
 		if releaseProxyBridge {
 			a.releaseProxyBridgeRef(acquiredProxyBridge)

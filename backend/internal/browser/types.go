@@ -208,6 +208,7 @@ type Manager struct {
 	GroupDAO     GroupDAO
 	ExtensionDAO ExtensionDAO
 	EnvironmentDAO EnvironmentIdentityDAO
+	NetworkPolicyDAO NetworkPolicyDAO
 }
 
 // XrayBridge Xray 桥接进程

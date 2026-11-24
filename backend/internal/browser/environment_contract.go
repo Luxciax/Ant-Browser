@@ -55,6 +55,33 @@ func (d *SQLiteEnvironmentIdentityDAO) Ensure(profileID string) (EnvironmentIden
 	return d.Get(profileID)
 }
 
+func (d *SQLiteEnvironmentIdentityDAO) Set(profileID, environmentID string) (EnvironmentIdentity, error) {
+	profileID = strings.TrimSpace(profileID)
+	environmentID = strings.TrimSpace(environmentID)
+	if profileID == "" || environmentID == "" {
+		return EnvironmentIdentity{}, fmt.Errorf("profile id and environment id are required")
+	}
+	if d == nil || d.db == nil {
+		return EnvironmentIdentity{}, fmt.Errorf("environment identity database is unavailable")
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	createdAt := now
+	if existing, err := d.Get(profileID); err == nil && strings.TrimSpace(existing.CreatedAt) != "" {
+		createdAt = existing.CreatedAt
+	}
+	if _, err := d.db.Exec(`
+		INSERT INTO browser_profile_environment_identity
+			(profile_id, environment_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(profile_id) DO UPDATE SET
+			environment_id = excluded.environment_id,
+			updated_at = excluded.updated_at
+	`, profileID, environmentID, createdAt, now); err != nil {
+		return EnvironmentIdentity{}, err
+	}
+	return d.Get(profileID)
+}
+
 func (d *SQLiteEnvironmentIdentityDAO) Get(profileID string) (EnvironmentIdentity, error) {
 	profileID = strings.TrimSpace(profileID)
 	if profileID == "" {

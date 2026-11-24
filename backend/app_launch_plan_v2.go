@@ -32,6 +32,10 @@ type BrowserLaunchNetworkSummary struct {
 	ProxyID        string `json:"proxyId,omitempty"`
 	Temporary      bool   `json:"temporary"`
 	ConnectorType  string `json:"connectorType"`
+	FailClosed     bool   `json:"failClosed"`
+	DNSMode        string `json:"dnsMode"`
+	WebRTCMode     string `json:"webRtcMode"`
+	LocaleLinkMode string `json:"localeLinkMode"`
 }
 
 type BrowserLaunchArgumentSummary struct {
@@ -102,6 +106,12 @@ func (a *App) buildLaunchPlanV2(input browserStartInput, plan *browserStartPlan,
 	if a != nil && a.config != nil {
 		connectorType = config.NormalizeBrowserConnectorType(a.config.Browser.DefaultConnectorType)
 	}
+	networkPolicy := BrowserNetworkPolicy{ProfileID: input.ProfileID, FailClosed: true, DNSMode: "inherit", WebRTCMode: "restricted", LocaleLinkMode: "manual"}
+	if a != nil && a.browserMgr != nil {
+		if policy, err := a.browserMgr.GetNetworkPolicy(input.ProfileID); err == nil {
+			networkPolicy = policy
+		}
+	}
 	out := BrowserLaunchPlanV2{
 		SchemaVersion: 2,
 		ProfileID: input.ProfileID,
@@ -114,6 +124,10 @@ func (a *App) buildLaunchPlanV2(input browserStartInput, plan *browserStartPlan,
 			ProxyID: strings.TrimSpace(plan.profile.ProxyId),
 			Temporary: input.hasTemporaryProxy() || input.ForceDirectProxy,
 			ConnectorType: connectorType,
+			FailClosed: networkPolicy.FailClosed,
+			DNSMode: networkPolicy.DNSMode,
+			WebRTCMode: networkPolicy.WebRTCMode,
+			LocaleLinkMode: networkPolicy.LocaleLinkMode,
 		},
 		Arguments: BrowserLaunchArgumentSummary{
 			ProfileConfigured: len(normalizeNonEmptyStrings(plan.profile.LaunchArgs)),
