@@ -22,3 +22,16 @@ stop, or inspect the affected profile.
 
 Batch operations are best-effort, not an all-or-nothing transaction across
 independent browser processes.
+
+## Restart recovery
+
+Operation records are persisted to `data/batch_operations.v1.json` with
+restricted file permissions and a bounded history of 200 records. Runtime
+profile snapshots are sanitized before persistence (proxy configuration and
+effective launch arguments are omitted).
+
+If Ant Browser restarts while an operation is still marked `running`, the
+record is recovered as `interrupted` with a finish timestamp. The operation
+ID and completed per-item results remain queryable, allowing the caller to
+inspect actual profile runtime state before selectively retrying failed or
+unfinished items.

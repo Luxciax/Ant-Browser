@@ -73,6 +73,9 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	a.startupInitManagers(cfg, db)
+	if err := a.loadBatchOperations(); err != nil {
+		log.Warn("批量操作恢复记录加载失败", logger.F("error", err))
+	}
 	a.startupInitLaunchCode(log)
 	a.startupInitLaunchServer(log)
 	a.startupInitAutomation()

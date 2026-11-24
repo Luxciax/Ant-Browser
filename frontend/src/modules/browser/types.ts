@@ -565,7 +565,7 @@ export interface BrowserBatchItemResult {
 export interface BrowserBatchOperation {
   operationId: string
   kind: 'create' | 'start' | 'stop' | string
-  status: 'running' | 'completed' | 'partial' | 'failed' | string
+  status: 'running' | 'completed' | 'partial' | 'failed' | 'interrupted' | string
   concurrency: number
   total: number
   succeeded: number

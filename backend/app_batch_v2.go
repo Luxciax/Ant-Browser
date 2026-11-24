@@ -78,6 +78,7 @@ func (a *App) storeBatchOperation(op BrowserBatchOperation) {
 	a.batchMu.Lock()
 	if a.batchOperations == nil { a.batchOperations = make(map[string]BrowserBatchOperation) }
 	a.batchOperations[op.OperationID] = cloneBatchOperation(op)
+	_ = a.persistBatchOperationsLocked()
 	a.batchMu.Unlock()
 }
 
