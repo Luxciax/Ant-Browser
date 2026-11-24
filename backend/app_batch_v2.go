@@ -18,6 +18,7 @@ type BrowserBatchItemResult struct {
 	ClientKey   string          `json:"clientKey,omitempty"`
 	ProfileID   string          `json:"profileId,omitempty"`
 	ProfileName string          `json:"profileName,omitempty"`
+	Completed   bool            `json:"completed"`
 	OK          bool            `json:"ok"`
 	Error       string          `json:"error,omitempty"`
 	Runtime     *BrowserProfile `json:"runtime,omitempty"`
@@ -93,7 +94,7 @@ func (a *App) BrowserBatchOperationGet(operationID string) (*BrowserBatchOperati
 	return &copyOp, nil
 }
 
-func runBatch(total, concurrency int, fn func(index int) BrowserBatchItemResult) []BrowserBatchItemResult {
+func runBatch(total, concurrency int, fn func(index int) BrowserBatchItemResult, progress func(index int, result BrowserBatchItemResult)) []BrowserBatchItemResult {
 	results := make([]BrowserBatchItemResult, total)
 	jobs := make(chan int)
 	var wg sync.WaitGroup
@@ -102,7 +103,13 @@ func runBatch(total, concurrency int, fn func(index int) BrowserBatchItemResult)
 		go func() {
 			defer wg.Done()
 			for index := range jobs {
-				results[index] = fn(index)
+				result := fn(index)
+				result.Index = index
+				result.Completed = true
+				results[index] = result
+				if progress != nil {
+					progress(index, result)
+				}
 			}
 		}()
 	}
@@ -112,11 +119,31 @@ func runBatch(total, concurrency int, fn func(index int) BrowserBatchItemResult)
 	return results
 }
 
+func (a *App) newBatchProgressRecorder(op BrowserBatchOperation) func(int, BrowserBatchItemResult) {
+	var mu sync.Mutex
+	progress := cloneBatchOperation(op)
+	progress.Results = make([]BrowserBatchItemResult, op.Total)
+	return func(index int, result BrowserBatchItemResult) {
+		mu.Lock()
+		defer mu.Unlock()
+		if index >= 0 && index < len(progress.Results) {
+			progress.Results[index] = result
+		}
+		progress.Succeeded, progress.Failed = 0, 0
+		for _, item := range progress.Results {
+			if !item.Completed { continue }
+			if item.OK { progress.Succeeded++ } else { progress.Failed++ }
+		}
+		a.storeBatchOperation(progress)
+	}
+}
+
 func finalizeBatch(op *BrowserBatchOperation) {
 	op.Status = "completed"
 	op.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	op.Succeeded, op.Failed = 0, 0
 	for _, item := range op.Results {
+		if !item.Completed { continue }
 		if item.OK { op.Succeeded++ } else { op.Failed++ }
 	}
 	if op.Failed > 0 && op.Succeeded > 0 { op.Status = "partial" }
@@ -132,6 +159,7 @@ func (a *App) BrowserBatchCreate(req BrowserBatchCreateRequest) (*BrowserBatchOp
 		StartedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	a.storeBatchOperation(op)
+	recordProgress := a.newBatchProgressRecorder(op)
 	op.Results = runBatch(len(req.Items), concurrency, func(index int) BrowserBatchItemResult {
 		item := req.Items[index]
 		result := BrowserBatchItemResult{Index:index, ClientKey:strings.TrimSpace(item.ClientKey)}
@@ -142,7 +170,7 @@ func (a *App) BrowserBatchCreate(req BrowserBatchCreateRequest) (*BrowserBatchOp
 		result.ProfileName = profile.ProfileName
 		result.Runtime = profile
 		return result
-	})
+	}, recordProgress)
 	finalizeBatch(&op)
 	a.storeBatchOperation(op)
 	copyOp := cloneBatchOperation(op)
@@ -174,6 +202,7 @@ func (a *App) runBatchProfiles(kind string, req BrowserBatchProfilesRequest, act
 		StartedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	a.storeBatchOperation(op)
+	recordProgress := a.newBatchProgressRecorder(op)
 	op.Results = runBatch(len(ids), concurrency, func(index int) BrowserBatchItemResult {
 		profileID := ids[index]
 		result := BrowserBatchItemResult{Index:index, ProfileID:profileID}
@@ -190,7 +219,7 @@ func (a *App) runBatchProfiles(kind string, req BrowserBatchProfilesRequest, act
 		result.Runtime = profile
 		if profile != nil { result.ProfileName = profile.ProfileName }
 		return result
-	})
+	}, recordProgress)
 	finalizeBatch(&op)
 	a.storeBatchOperation(op)
 	copyOp := cloneBatchOperation(op)

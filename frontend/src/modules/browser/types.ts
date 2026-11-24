@@ -557,6 +557,7 @@ export interface BrowserBatchItemResult {
   clientKey?: string
   profileId?: string
   profileName?: string
+  completed: boolean
   ok: boolean
   error?: string
   runtime?: BrowserProfile
