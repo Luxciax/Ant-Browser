@@ -375,7 +375,19 @@ function Assert-RuntimeHashes {
             continue
         }
 
-        $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $fullPath).Hash.ToLowerInvariant()
+        $stream = [System.IO.File]::OpenRead($fullPath)
+        try {
+            $sha256 = [System.Security.Cryptography.SHA256]::Create()
+            try {
+                $actualHash = ([System.BitConverter]::ToString($sha256.ComputeHash($stream))).Replace('-', '').ToLowerInvariant()
+            }
+            finally {
+                $sha256.Dispose()
+            }
+        }
+        finally {
+            $stream.Dispose()
+        }
         if ($actualHash -ne $expectedHash) {
             $errors.Add("${relativePath}: sha256 mismatch (expected $expectedHash, got $actualHash)")
         }
