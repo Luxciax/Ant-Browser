@@ -33,6 +33,7 @@ type PageCommandRequest struct {
 	LaunchAuthHeader string
 	LaunchAuthValue  string
 	ArtifactDir      string
+	UploadDir        string
 	Timeout          time.Duration
 	IdleTimeout      time.Duration
 }
@@ -105,6 +106,7 @@ type pageSessionPayload struct {
 	LaunchAuthHeader string         `json:"launchAuthHeader,omitempty"`
 	LaunchAuthValue  string         `json:"launchAuthValue,omitempty"`
 	ArtifactDir      string         `json:"artifactDir,omitempty"`
+	UploadDir        string         `json:"uploadDir,omitempty"`
 	DefaultTimeoutMs int64          `json:"defaultTimeoutMs,omitempty"`
 	ConnectTimeoutMs int64          `json:"connectTimeoutMs,omitempty"`
 }
@@ -117,6 +119,7 @@ type pageSessionConfigFingerprint struct {
 	LaunchAuthHeader string         `json:"launchAuthHeader,omitempty"`
 	LaunchAuthValue  string         `json:"launchAuthValue,omitempty"`
 	ArtifactDir      string         `json:"artifactDir,omitempty"`
+	UploadDir        string         `json:"uploadDir,omitempty"`
 	DefaultTimeoutMs int64          `json:"defaultTimeoutMs,omitempty"`
 }
 
@@ -129,6 +132,7 @@ func pageSessionConfigKey(state RuntimeState, req PageCommandRequest) (string, e
 		LaunchAuthHeader: strings.TrimSpace(req.LaunchAuthHeader),
 		LaunchAuthValue:  strings.TrimSpace(req.LaunchAuthValue),
 		ArtifactDir:      strings.TrimSpace(req.ArtifactDir),
+		UploadDir:        strings.TrimSpace(req.UploadDir),
 	}
 	if req.Timeout > 0 {
 		fingerprint.DefaultTimeoutMs = req.Timeout.Milliseconds()

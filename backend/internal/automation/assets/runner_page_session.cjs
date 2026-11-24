@@ -74,6 +74,7 @@ async function run(payload) {
   const { chromium } = require(path.join(runtimeDir, 'node_modules', 'playwright-core'));
   const defaultTimeout = normalizeTimeout(payload.defaultTimeoutMs, DEFAULT_TIMEOUT_MS);
   const artifactDir = String(payload.artifactDir || '').trim();
+  const uploadDir = String(payload.uploadDir || '').trim();
   const gateway = createBrowserGateway(payload, chromium, { defaultTimeout });
   const launchSession = await gateway.launch({});
   const connection = await gateway.connect(launchSession, { timeoutMs: payload.connectTimeoutMs });
@@ -95,7 +96,14 @@ async function run(payload) {
     const page = await activePage();
     const selector = String(args.selector || '').trim();
     if (!selector) throw new Error('selector is required');
-    const scope = args.frameSelector ? page.frameLocator(String(args.frameSelector)) : page;
+    let scope = page;
+    const frames = Array.isArray(args.frameSelectors) ? args.frameSelectors : (args.frameSelector ? [args.frameSelector] : []);
+    for (const frameSelector of frames) {
+      scope = scope.frameLocator(String(frameSelector));
+    }
+    for (const shadowHost of (Array.isArray(args.shadowSelectors) ? args.shadowSelectors : [])) {
+      scope = scope.locator(String(shadowHost));
+    }
     const locator = scope.locator(selector);
     const index = Number(args.index);
     return Number.isFinite(index) && index >= 0 ? locator.nth(index) : locator.first();
@@ -135,7 +143,7 @@ async function run(payload) {
           const locator = await locatorFor(args);
           await locator.press(inputToken, { timeout: timeoutOf(args) });
         } else {
-          await page.keyboard.press(key);
+          await page.keyboard.press(inputToken);
         }
         return await describePage(page);
       }
@@ -145,6 +153,15 @@ async function run(payload) {
         if (values.length === 0) throw new Error('values are required');
         const selected = await locator.selectOption(values, { timeout: timeoutOf(args) });
         return { ...(await describePage(page)), selected };
+      }
+      case 'upload': {
+        if (!uploadDir) throw new Error('uploadDir is unavailable');
+        const locator = await locatorFor(args);
+        const files = Array.isArray(args.files) ? args.files : [args.file].filter(Boolean);
+        if (files.length === 0) throw new Error('files are required');
+        const resolved = files.map((item) => normalizePathUnderRoot(uploadDir, String(item)));
+        await locator.setInputFiles(resolved, { timeout: timeoutOf(args) });
+        return { ...(await describePage(page)), files: resolved.map((item) => path.basename(item)) };
       }
       case 'waitFor': {
         const timeout = timeoutOf(args);

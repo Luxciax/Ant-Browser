@@ -20,3 +20,8 @@ a persisted `paused` run that can be resumed.
 
 Schedules support either `everyMinutes` or a local `dailyTime`. Overlap is
 disabled unless explicitly enabled.
+
+Uploads are staged explicitly into Ant's workflow upload directory and the page
+runner resolves upload filenames under that root only. Workflow page actions
+also accept `frameSelectors` chains and `shadowSelectors` chains, while
+retaining the existing single `frameSelector` compatibility field.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -319,6 +321,28 @@ func (a *App) executeWorkflowAction(selector automation.WorkflowSelector, run *a
 		if attempt < attempts && delay > 0 { time.Sleep(delay) }
 	}
 	return fmt.Errorf("step %s failed after %d attempt(s): %w", step.ID, attempts, lastErr)
+}
+
+func (a *App) workflowUploadRoot() string {
+	return filepath.Join(a.automationArtifactsRootDir(), "workflow-uploads")
+}
+
+func (a *App) BrowserAutomationWorkflowStageUpload(sourcePath, filename string) (map[string]any, error) {
+	sourcePath = strings.TrimSpace(sourcePath)
+	if sourcePath == "" { return nil, fmt.Errorf("source path is required") }
+	info, err := os.Stat(sourcePath)
+	if err != nil { return nil, err }
+	if !info.Mode().IsRegular() { return nil, fmt.Errorf("source must be a regular file") }
+	if info.Size() > 100<<20 { return nil, fmt.Errorf("upload file exceeds 100 MiB limit") }
+	name := filepath.Base(strings.TrimSpace(filename))
+	if name == "." || name == "" { name = filepath.Base(sourcePath) }
+	root := a.workflowUploadRoot()
+	if err := os.MkdirAll(root, 0o700); err != nil { return nil, err }
+	data, err := os.ReadFile(sourcePath)
+	if err != nil { return nil, err }
+	target := filepath.Join(root, name)
+	if err := os.WriteFile(target, data, 0o600); err != nil { return nil, err }
+	return map[string]any{"name": name, "size": len(data)}, nil
 }
 
 func (a *App) BrowserAutomationWorkflowValidate(input BrowserAutomationWorkflow) map[string]any {

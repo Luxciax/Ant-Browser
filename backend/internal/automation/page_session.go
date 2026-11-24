@@ -185,6 +185,7 @@ func (m *Manager) spawnPageSession(state RuntimeState, req PageCommandRequest, c
 		LaunchAuthHeader: strings.TrimSpace(req.LaunchAuthHeader),
 		LaunchAuthValue:  strings.TrimSpace(req.LaunchAuthValue),
 		ArtifactDir:      strings.TrimSpace(req.ArtifactDir),
+		UploadDir:        strings.TrimSpace(req.UploadDir),
 		ConnectTimeoutMs: pageSessionReadyTimeout.Milliseconds(),
 	}
 	if req.Timeout > 0 {

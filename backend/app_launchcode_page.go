@@ -60,6 +60,7 @@ func (d appPageDriver) RunPageSteps(req launchcode.PageRequest) (*launchcode.Pag
 		LaunchAuthHeader: authHeader,
 		LaunchAuthValue:  authValue,
 		ArtifactDir:      artifactDir,
+		UploadDir:        d.app.workflowUploadRoot(),
 		Timeout:          pageStepTimeout(req.TimeoutMs),
 	})
 	if err != nil {
