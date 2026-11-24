@@ -134,6 +134,7 @@ func (a *App) GetLaunchServerInfo() map[string]interface{} {
 			"configured": authConfigured,
 			"enabled":    authEnabled,
 			"header":     authHeader,
+			"scopes":     append([]string{}, a.config.LaunchServer.Auth.Scopes...),
 		},
 		"mcp": map[string]interface{}{
 			"enabled":   false,

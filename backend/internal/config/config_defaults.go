@@ -166,6 +166,7 @@ func normalizeConfig(config *Config) {
 		config.LaunchServer.Port = defaultConfig.LaunchServer.Port
 	}
 	config.LaunchServer.Auth.APIKey = strings.TrimSpace(config.LaunchServer.Auth.APIKey)
+	config.LaunchServer.Auth.Scopes = normalizeLaunchAuthScopes(config.LaunchServer.Auth.Scopes)
 	if strings.TrimSpace(config.LaunchServer.Auth.Header) == "" {
 		config.LaunchServer.Auth.Header = defaultConfig.LaunchServer.Auth.Header
 	}
@@ -327,6 +328,7 @@ func DefaultConfig() *Config {
 				Enabled: false,
 				APIKey:  "",
 				Header:  DefaultLaunchServerAPIKeyHeader,
+				Scopes:  []string{"*"},
 			},
 		},
 		Automation: AutomationConfig{
@@ -435,4 +437,21 @@ func normalizeAutomationNodeSource(value string) string {
 func boolPtr(value bool) *bool {
 	v := value
 	return &v
+}
+
+func normalizeLaunchAuthScopes(values []string) []string {
+	if len(values) == 0 {
+		return []string{"*"}
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" { continue }
+		if _, ok := seen[value]; ok { continue }
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	if len(out) == 0 { return []string{"*"} }
+	return out
 }

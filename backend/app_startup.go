@@ -195,6 +195,7 @@ func (a *App) startupInitLaunchServer(log *logger.Logger) {
 		Enabled: a.config.LaunchServer.Auth.Enabled,
 		APIKey:  a.config.LaunchServer.Auth.APIKey,
 		Header:  a.config.LaunchServer.Auth.Header,
+		Scopes:  a.config.LaunchServer.Auth.Scopes,
 	})
 	mcpService := mcpserver.New(a.launchServer, a.appVersion())
 	a.launchServer.SetMCPHandler(mcpserver.DefaultPath, mcpService.Handler(mcpserver.Options{}))

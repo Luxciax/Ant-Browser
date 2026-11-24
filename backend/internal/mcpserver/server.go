@@ -26,12 +26,29 @@ func New(provider Provider, version string) *Server {
 	return &Server{provider: provider, version: version}
 }
 
+type scopeProvider interface { AllowsScope(scope string) bool }
+
+func providerAllowsScope(provider Provider, scope string) bool {
+	if scoped, ok := provider.(scopeProvider); ok {
+		return scoped.AllowsScope(scope)
+	}
+	return true
+}
+
 func (s *Server) buildMCPServer() *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: ServerName, Version: s.version}, nil)
-	registerInstanceTools(srv, s.provider)
-	registerAutomationTools(srv, s.provider)
-	registerProxyTools(srv, s.provider)
-	registerPageTools(srv, s.provider)
+	if providerAllowsScope(s.provider, "environment-read") || providerAllowsScope(s.provider, "environment-admin") || providerAllowsScope(s.provider, "page-action") {
+		registerInstanceTools(srv, s.provider)
+	}
+	if providerAllowsScope(s.provider, "page-action") {
+		registerAutomationTools(srv, s.provider)
+	}
+	if providerAllowsScope(s.provider, "environment-read") || providerAllowsScope(s.provider, "environment-admin") {
+		registerProxyTools(srv, s.provider)
+	}
+	if providerAllowsScope(s.provider, "page-read") || providerAllowsScope(s.provider, "page-action") || providerAllowsScope(s.provider, "script") {
+		registerPageTools(srv, s.provider)
+	}
 	return srv
 }
 
