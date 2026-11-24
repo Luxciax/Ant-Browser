@@ -42,7 +42,7 @@ func (s *LaunchServer) handleCreateProfile(w http.ResponseWriter, r *http.Reques
 			"profileId":   profile.ProfileId,
 			"profileName": profile.ProfileName,
 			"launchCode":  launchCode,
-			"profile":     profile,
+			"profile":     browser.NewProfilePublicView(profile),
 			"error":       launchErr.Error(),
 		})
 		log.Warn("Profile API 创建后自动启动失败",
@@ -82,7 +82,7 @@ func (s *LaunchServer) handleListProfiles(w http.ResponseWriter, _ *http.Request
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ok":    true,
 		"count": len(items),
-		"items": items,
+		"items": browser.NewProfilePublicViews(items),
 	})
 }
 
@@ -101,7 +101,7 @@ func (s *LaunchServer) handleGetProfile(w http.ResponseWriter, _ *http.Request, 
 		"profileId":   profile.ProfileId,
 		"profileName": profile.ProfileName,
 		"launchCode":  profile.LaunchCode,
-		"profile":     profile,
+		"profile":     browser.NewProfilePublicView(profile),
 	})
 }
 
@@ -147,7 +147,7 @@ func (s *LaunchServer) handleUpdateProfile(w http.ResponseWriter, r *http.Reques
 			"profileId":   profile.ProfileId,
 			"profileName": profile.ProfileName,
 			"launchCode":  launchCode,
-			"profile":     profile,
+			"profile":     browser.NewProfilePublicView(profile),
 			"error":       launchErr.Error(),
 		})
 		log.Warn("Profile API 更新后自动启动失败",

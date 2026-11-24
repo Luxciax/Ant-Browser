@@ -88,6 +88,20 @@ func (a *App) BrowserProfileUpdate(profileId string, input BrowserProfileInput) 
 	return a.snapshotManagedBrowserProfile(profile), nil
 }
 
+// PatchBrowserProfile is the sparse update entry used by the local control API.
+// Keep the same maintenance and runtime-operation locks as full updates.
+func (a *App) PatchBrowserProfile(profileId string, input browser.ProfilePatchInput) (*BrowserProfile, error) {
+	a.maintenanceMu.Lock()
+	defer a.maintenanceMu.Unlock()
+	unlockRuntimeOp := a.lockProfileRuntimeOperation(profileId)
+	defer unlockRuntimeOp()
+	profile, err := a.browserMgr.Patch(profileId, input)
+	if err != nil {
+		return nil, err
+	}
+	return a.snapshotManagedBrowserProfile(profile), nil
+}
+
 func (a *App) BrowserProfileDelete(profileId string) error {
 	a.maintenanceMu.Lock()
 	defer a.maintenanceMu.Unlock()

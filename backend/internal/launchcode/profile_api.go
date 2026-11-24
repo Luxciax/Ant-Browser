@@ -65,6 +65,8 @@ func (s *LaunchServer) handleProfileByID(w http.ResponseWriter, r *http.Request)
 		s.handleGetProfile(w, r, profileID)
 	case http.MethodPut:
 		s.handleUpdateProfile(w, r, profileID)
+	case http.MethodPatch:
+		s.handlePatchProfile(w, r, profileID)
 	case http.MethodDelete:
 		s.handleDeleteProfile(w, r, profileID)
 	default:

@@ -150,6 +150,6 @@ func (s *LaunchServer) profileRuntimePayload(profile *browser.Profile) map[strin
 		"cdpPort":        cdpPort,
 		"cdpUrl":         cdpURL,
 		"directDebugUrl": directDebugURL,
-		"profile":        normalized,
+		"profile":        browser.NewProfilePublicView(normalized),
 	}
 }

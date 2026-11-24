@@ -124,8 +124,10 @@ func mapProfileWriteErrorStatus(err error) int {
 		return http.StatusServiceUnavailable
 	case strings.Contains(msg, "profile not found"):
 		return http.StatusNotFound
-	case strings.Contains(msg, "running profile cannot be deleted"):
+	case strings.Contains(msg, "running profile cannot be deleted"), strings.Contains(msg, "profile runtime is "):
 		return http.StatusConflict
+	case strings.Contains(msg, "profile name is required"):
+		return http.StatusBadRequest
 	case strings.Contains(msg, "launch code already exists"):
 		return http.StatusConflict
 	case strings.Contains(msg, "launch code format invalid"),

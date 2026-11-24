@@ -73,14 +73,14 @@ func registerInstanceTools(srv *mcp.Server, p InstanceProvider) {
 type listInstancesInput struct { Tag string `json:"tag,omitempty"`; GroupID string `json:"groupId,omitempty"`; Keyword string `json:"keyword,omitempty"`; RunningOnly bool `json:"runningOnly,omitempty"` }
 type listInstancesOutput struct { Count int `json:"count"`; Items []InstanceSummary `json:"items"` }
 type getInstanceInput struct { Selector Selector `json:"selector"` }
-type getInstanceOutput struct { Instance InstanceSummary `json:"instance"`; Profile *browser.Profile `json:"profile"` }
+type getInstanceOutput struct { Instance InstanceSummary `json:"instance"`; Profile *browser.ProfilePublicView `json:"profile"` }
 
 func registerInstanceQueryTools(srv *mcp.Server, p InstanceProvider) {
 	mcp.AddTool(srv,&mcp.Tool{Name:"ant_instance_list",Description:"列出浏览器实例，可按标签、分组、关键字和运行状态过滤。",Annotations:readOnly("列出实例")},func(_ context.Context,_ *mcp.CallToolRequest,in listInstancesInput)(*mcp.CallToolResult,listInstancesOutput,error){
 		items,err:=p.ListProfiles(); if err!=nil{return toolError(err),listInstancesOutput{},nil}; filtered:=filterInstances(items,in); return nil,listInstancesOutput{Count:len(filtered),Items:toSummaries(filtered)},nil
 	})
-	mcp.AddTool(srv,&mcp.Tool{Name:"ant_instance_get",Description:"按 selector 查询单个实例的完整配置。",Annotations:readOnly("查询实例详情")},func(_ context.Context,_ *mcp.CallToolRequest,in getInstanceInput)(*mcp.CallToolResult,getInstanceOutput,error){
-		profile,err:=p.FindProfile(in.Selector.toLaunchSelector()); if err!=nil{return toolError(err),getInstanceOutput{},nil}; return nil,getInstanceOutput{Instance:toSummary(profile),Profile:profile},nil
+	mcp.AddTool(srv,&mcp.Tool{Name:"ant_instance_get",Description:"按 selector 查询单个实例的脱敏配置，不返回原始代理配置或启动参数。",Annotations:readOnly("查询实例详情")},func(_ context.Context,_ *mcp.CallToolRequest,in getInstanceInput)(*mcp.CallToolResult,getInstanceOutput,error){
+		profile,err:=p.FindProfile(in.Selector.toLaunchSelector()); if err!=nil{return toolError(err),getInstanceOutput{},nil}; return nil,getInstanceOutput{Instance:toSummary(profile),Profile:browser.NewProfilePublicView(profile)},nil
 	})
 }
 
@@ -95,13 +95,32 @@ type InstanceConfig struct { ProfileName string `json:"profileName"`; UserDataDi
 func (c InstanceConfig) toProfileInput() browser.ProfileInput { return browser.ProfileInput{ProfileName:strings.TrimSpace(c.ProfileName),UserDataDir:strings.TrimSpace(c.UserDataDir),CoreId:strings.TrimSpace(c.CoreID),ProxyId:strings.TrimSpace(c.ProxyID),GroupId:strings.TrimSpace(c.GroupID),Tags:c.Tags,Keywords:c.Keywords,MemoryLimitMB:c.MemoryLimitMB} }
 type createInstanceInput struct { Config InstanceConfig `json:"config"`; LaunchCode string `json:"launchCode,omitempty"` }
 type createInstanceOutput struct { Instance InstanceSummary `json:"instance"` }
-type updateInstanceInput struct { Selector Selector `json:"selector"`; Config InstanceConfig `json:"config"`; LaunchCode string `json:"launchCode,omitempty"` }
+type updateInstanceInput struct { Selector Selector `json:"selector"`; Config browser.ProfilePatchInput `json:"config"`; LaunchCode string `json:"launchCode,omitempty"` }
+type instancePatchProvider interface {
+	PatchProfile(profileID string, input browser.ProfilePatchInput, requestedCode string) (*browser.Profile, string, error)
+}
 type deleteInstanceInput struct { Selector Selector `json:"selector"` }
 type deleteInstanceOutput struct { Deleted bool `json:"deleted"`; ProfileID string `json:"profileId"`; ProfileName string `json:"profileName"` }
 
 func registerInstanceWriteTools(srv *mcp.Server,p InstanceProvider){
 	mcp.AddTool(srv,&mcp.Tool{Name:"ant_instance_create",Description:"创建新的浏览器实例。",Annotations:mutating("创建实例")},func(_ context.Context,_ *mcp.CallToolRequest,in createInstanceInput)(*mcp.CallToolResult,createInstanceOutput,error){profile,code,err:=p.CreateProfile(in.Config.toProfileInput(),strings.TrimSpace(in.LaunchCode)); if err!=nil{return toolError(err),createInstanceOutput{},nil}; s:=toSummary(profile); s.LaunchCode=code; return nil,createInstanceOutput{Instance:s},nil})
-	mcp.AddTool(srv,&mcp.Tool{Name:"ant_instance_update",Description:"整体更新实例配置；建议先读取当前配置。",Annotations:mutating("更新实例")},func(_ context.Context,_ *mcp.CallToolRequest,in updateInstanceInput)(*mcp.CallToolResult,createInstanceOutput,error){target,err:=p.FindProfile(in.Selector.toLaunchSelector()); if err!=nil{return toolError(err),createInstanceOutput{},nil}; profile,code,err:=p.UpdateProfile(target.ProfileId,in.Config.toProfileInput(),strings.TrimSpace(in.LaunchCode)); if err!=nil{return toolError(err),createInstanceOutput{},nil}; s:=toSummary(profile); s.LaunchCode=code; return nil,createInstanceOutput{Instance:s},nil})
+	mcp.AddTool(srv, &mcp.Tool{Name: "ant_instance_update", Description: "局部更新实例配置；未提供的字段保留原值，空列表表示清空。", Annotations: mutating("局部更新实例")}, func(_ context.Context, _ *mcp.CallToolRequest, in updateInstanceInput) (*mcp.CallToolResult, createInstanceOutput, error) {
+		target, err := p.FindProfile(in.Selector.toLaunchSelector())
+		if err != nil {
+			return toolError(err), createInstanceOutput{}, nil
+		}
+		patcher, ok := p.(instancePatchProvider)
+		if !ok {
+			return toolError(fmt.Errorf("profile patch is unavailable")), createInstanceOutput{}, nil
+		}
+		profile, code, err := patcher.PatchProfile(target.ProfileId, in.Config, strings.TrimSpace(in.LaunchCode))
+		if err != nil {
+			return toolError(err), createInstanceOutput{}, nil
+		}
+		s := toSummary(profile)
+		s.LaunchCode = code
+		return nil, createInstanceOutput{Instance: s}, nil
+	})
 	mcp.AddTool(srv,&mcp.Tool{Name:"ant_instance_delete",Description:"删除实例；运行中的实例需先停止。",Annotations:destructive("删除实例")},func(_ context.Context,_ *mcp.CallToolRequest,in deleteInstanceInput)(*mcp.CallToolResult,deleteInstanceOutput,error){target,err:=p.FindProfile(in.Selector.toLaunchSelector()); if err!=nil{return toolError(err),deleteInstanceOutput{},nil}; if err:=p.DeleteProfile(target.ProfileId);err!=nil{return toolError(err),deleteInstanceOutput{},nil}; return nil,deleteInstanceOutput{Deleted:true,ProfileID:target.ProfileId,ProfileName:target.ProfileName},nil})
 }
 

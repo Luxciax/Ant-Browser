@@ -297,7 +297,8 @@ func (a *App) prepareBrowserLaunchContext(ctx context.Context, input browserStar
 		return nil, nil, nil, "", "", startErr
 	}
 
-	fingerprintLaunchArgs := a.buildBrowserFingerprintCapabilityReport(input.ProfileID, profile.CoreId, profile.FingerprintArgs).LaunchArgs
+	fingerprintLaunchArgs, managedFingerprintArgs := sanitizeManagedLaunchArgs(a.buildBrowserFingerprintCapabilityReport(input.ProfileID, profile.CoreId, profile.FingerprintArgs).LaunchArgs)
+	logManagedLaunchArgOverrides(log, input.ProfileID, "profile.fingerprintArgs", managedFingerprintArgs)
 	fingerprintExpectedArgs := combineFingerprintExpectedArgs(fingerprintLaunchArgs, sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs)
 	runtimeBookmarks, fingerprintBookmarkURL, bookmarkErr := a.runtimeBookmarksForProfileExpectedArgsAndProfile(profile.ProfileId, fingerprintExpectedArgs, profile, bookmarks)
 	if bookmarkErr != nil {
@@ -422,7 +423,13 @@ func buildBrowserLaunchArgs(userDataDir string, debugPort int, effectiveProxy st
 		args = append(args, fmt.Sprintf("--load-extension=%s", extensionArg))
 	}
 
-	args = append(args, normalizeNonEmptyStrings(fingerprintLaunchArgs)...)
+	// Defense in depth: every caller-supplied argument list is filtered
+	// again at the last assembly boundary. The system-owned arguments above
+	// are not passed through this filter.
+	fingerprintLaunchArgs, _ = sanitizeManagedLaunchArgs(fingerprintLaunchArgs)
+	sanitizedProfileLaunchArgs, _ = sanitizeManagedLaunchArgs(sanitizedProfileLaunchArgs)
+	sanitizedExtraLaunchArgs, _ = sanitizeManagedLaunchArgs(sanitizedExtraLaunchArgs)
+	args = append(args, fingerprintLaunchArgs...)
 	args = append(args, sanitizedProfileLaunchArgs...)
 	args = append(args, sanitizedExtraLaunchArgs...)
 	return browser.BuildLaunchArgs(args, launchTargets)

@@ -73,13 +73,19 @@ func (s *LaunchServer) apiAuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		cfg := s.apiAuthConfig()
-		if !cfg.Active() {
+		if !cfg.Requested() {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if !cfg.Configured() {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+				"ok": false, "error": "API authentication is enabled but not configured",
+			})
+			return
+		}
 
-		providedKey := strings.TrimSpace(r.Header.Get(cfg.Header))
-		if subtle.ConstantTimeCompare([]byte(providedKey), []byte(cfg.APIKey)) != 1 {
+		values := r.Header.Values(cfg.Header)
+		if len(values) != 1 || subtle.ConstantTimeCompare([]byte(strings.TrimSpace(values[0])), []byte(cfg.APIKey)) != 1 {
 			writeJSON(w, http.StatusUnauthorized, map[string]interface{}{
 				"ok":         false,
 				"error":      "unauthorized: invalid api key",

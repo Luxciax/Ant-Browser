@@ -213,7 +213,7 @@ func (s *LaunchServer) profileWriteSuccessPayload(profile *browser.Profile, laun
 		"profileId":   profile.ProfileId,
 		"profileName": profile.ProfileName,
 		"launchCode":  launchCode,
-		"profile":     profile,
+		"profile":     browser.NewProfilePublicView(profile),
 	}
 
 	if !launched {
@@ -226,6 +226,6 @@ func (s *LaunchServer) profileWriteSuccessPayload(profile *browser.Profile, laun
 	payload["created"] = created
 	payload["updated"] = updated
 	payload["launched"] = true
-	payload["profile"] = profile
+	payload["profile"] = browser.NewProfilePublicView(profile)
 	return payload
 }
