@@ -97,12 +97,16 @@ func (a *App) BrowserProfileFingerprintCheck(profileId string) (*BrowserFingerpr
 	expected := buildBrowserFingerprintExpected(a.fingerprintCheckExpectedArgsFromProfile(profile))
 	status, issues := assessFingerprintRuntime(runtimeInfo, expected)
 	logger.New("Fingerprint").Info("基础指纹自测完成", logger.F("profile_id", profile.ProfileId), logger.F("status", status), logger.F("issues", issues))
-	return &BrowserFingerprintCheckResult{
+	result := &BrowserFingerprintCheckResult{
 		ProfileId: profile.ProfileId,
 		Status:    status, Issues: issues, Limitations: []string{"仅验证基础配置及页面/Worker 一致性，不代表反检测认证", "Canvas/Audio/WebRTC、字体、跨平台完整性仍需专项实测"},
 		Runtime:  runtimeInfo,
 		Expected: expected,
-	}, nil
+	}
+	evidence := buildRuntimeEvidenceV2(result)
+	a.attachRuntimeEvidenceContext(&evidence)
+	a.storeRuntimeEvidence(evidence)
+	return result, nil
 }
 
 func (a *App) fingerprintCheckRuntimeProfileSnapshot(profileId string, detector func(string) (browserRuntimeDetection, bool), debugPortReady func(int) bool) (*BrowserProfile, error) {

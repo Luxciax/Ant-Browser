@@ -59,6 +59,9 @@ func (s *LaunchServer) handleProfileByID(w http.ResponseWriter, r *http.Request)
 		s.handleStopProfile(w, r, profileID)
 		return
 	}
+	if s.handlePhase2ProfileAction(w, r, profileID, action) {
+		return
+	}
 
 	switch r.Method {
 	case http.MethodGet:

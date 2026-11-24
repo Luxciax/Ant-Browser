@@ -199,5 +199,26 @@ func (a *App) BrowserProfileKernelCapabilityManifest(profileID string) (BrowserK
 	}
 	snapshot := copyBrowserProfileSnapshot(profile)
 	a.browserMgr.Mutex.Unlock()
-	return a.browserKernelCapabilityManifest(snapshot), nil
+	manifest := a.browserKernelCapabilityManifest(snapshot)
+	if evidence, evidenceErr := a.BrowserProfileRuntimeEvidence(profileID); evidenceErr == nil && evidence != nil {
+		contract, contractErr := a.browserMgr.EnvironmentContract(profileID)
+		if contractErr == nil && contract != nil &&
+			evidence.EnvironmentRevision != "" &&
+			evidence.EnvironmentRevision == contract.Environment.Revision {
+			for index := range manifest.Capabilities {
+				field, ok := evidenceFieldByCapability(evidence, manifest.Capabilities[index].Capability)
+				if !ok || !field.Observed {
+					continue
+				}
+				manifest.Capabilities[index].Observed = true
+				if field.Assertion == "passed" {
+					manifest.Capabilities[index].Verified = true
+					manifest.Capabilities[index].Status = "verified"
+				} else if manifest.Capabilities[index].Status != "verified" {
+					manifest.Capabilities[index].Status = "observed"
+				}
+			}
+		}
+	}
+	return manifest, nil
 }

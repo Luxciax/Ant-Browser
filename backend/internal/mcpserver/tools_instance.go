@@ -67,7 +67,7 @@ func toRuntimeState(p *browser.Profile) RuntimeState {
 }
 
 func registerInstanceTools(srv *mcp.Server, p InstanceProvider) {
-	registerInstanceQueryTools(srv,p); registerInstanceWriteTools(srv,p); registerRuntimeTools(srv,p)
+	registerInstanceQueryTools(srv,p); registerInstanceWriteTools(srv,p); registerRuntimeTools(srv,p); registerPhase2Tools(srv,p)
 }
 
 type listInstancesInput struct { Tag string `json:"tag,omitempty"`; GroupID string `json:"groupId,omitempty"`; Keyword string `json:"keyword,omitempty"`; RunningOnly bool `json:"runningOnly,omitempty"` }
