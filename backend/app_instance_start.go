@@ -84,9 +84,10 @@ func (a *App) browserInstanceStartWithRuntimeLock(profileId string, extraLaunchA
 		return profile, err
 	}
 	a.updateLaunchReceipt(input.ProfileID, func(receipt *BrowserLaunchReceiptV2) {
-		receipt.State = "effective"
+		receipt.State = "ready"
 		receipt.StartedAt = startedProfile.LastStartAt
-		receipt.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		receipt.DebugReadyAt = time.Now().UTC().Format(time.RFC3339Nano)
+		receipt.FinishedAt = receipt.DebugReadyAt
 		receipt.PID = startedProfile.Pid
 		receipt.DebugPort = startedProfile.DebugPort
 		receipt.DebugReady = startedProfile.DebugReady

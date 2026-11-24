@@ -48,14 +48,18 @@ type BrowserLaunchTargetSummary struct {
 }
 
 type BrowserLaunchReceiptV2 struct {
-	Plan       BrowserLaunchPlanV2 `json:"plan"`
-	State      string              `json:"state"`
-	StartedAt  string              `json:"startedAt,omitempty"`
-	FinishedAt string              `json:"finishedAt,omitempty"`
-	PID        int                 `json:"pid,omitempty"`
-	DebugPort  int                 `json:"debugPort,omitempty"`
-	DebugReady bool                `json:"debugReady"`
-	Error      string              `json:"error,omitempty"`
+	Plan             BrowserLaunchPlanV2 `json:"plan"`
+	State            string              `json:"state"`
+	StartedAt        string              `json:"startedAt,omitempty"`
+	ProcessStartedAt string              `json:"processStartedAt,omitempty"`
+	DebugReadyAt     string              `json:"debugReadyAt,omitempty"`
+	FinishedAt       string              `json:"finishedAt,omitempty"`
+	PID              int                 `json:"pid,omitempty"`
+	DebugPort        int                 `json:"debugPort,omitempty"`
+	DebugReady       bool                `json:"debugReady"`
+	Attempt          int                 `json:"attempt,omitempty"`
+	MaxAttempts      int                 `json:"maxAttempts,omitempty"`
+	Error            string              `json:"error,omitempty"`
 }
 
 func launchPlanDigest(plan BrowserLaunchPlanV2) string {

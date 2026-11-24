@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "source": "antbrowser-builtin",
+  "templates": [
+    {
+      "id": "balanced-workspace",
+      "revision": "1",
+      "restoreLastSession": "follow",
+      "memoryLimitMb": 0
+    },
+    {
+      "id": "persistent-workspace",
+      "revision": "1",
+      "restoreLastSession": "enabled",
+      "memoryLimitMb": 0
+    },
+    {
+      "id": "constrained-runner",
+      "revision": "1",
+      "restoreLastSession": "disabled",
+      "memoryLimitMb": 2048
+    }
+  ],
+  "rules": {
+    "hard": [
+      "kernel-resolvable",
+      "managed-launch-args",
+      "proxy-fail-closed"
+    ],
+    "soft": [
+      "runtime-evidence",
+      "locale-link-explicit"
+    ]
+  },
+  "note": "Operational templates only. No commercial sample values, identity seeds, detector scores, or proprietary fingerprint material."
+}

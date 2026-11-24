@@ -19,6 +19,9 @@ type BrowserFingerprintCheckResult struct {
 
 type BrowserFingerprintRuntimeInfo struct {
 	Worker              *BrowserFingerprintWorkerInfo `json:"worker,omitempty"`
+	Iframe              *BrowserFingerprintWorkerInfo `json:"iframe,omitempty"`
+	SharedWorker        *BrowserFingerprintWorkerInfo `json:"sharedWorker,omitempty"`
+	ServiceWorker       BrowserFingerprintContextStatus `json:"serviceWorker"`
 	Language            string                        `json:"language"`
 	Languages           []string                      `json:"languages"`
 	Timezone            string                        `json:"timezone"`
@@ -46,6 +49,13 @@ type BrowserFingerprintRuntimeInfo struct {
 	ClientRectsHash     string                        `json:"clientRectsHash"`
 	Plugins             []string                      `json:"plugins"`
 }
+
+type BrowserFingerprintContextStatus struct {
+	Applicable bool   `json:"applicable"`
+	Executed   bool   `json:"executed"`
+	Error      string `json:"error,omitempty"`
+}
+
 
 type BrowserFingerprintExpectedInfo struct {
 	Language            string `json:"language"`
@@ -99,7 +109,7 @@ func (a *App) BrowserProfileFingerprintCheck(profileId string) (*BrowserFingerpr
 	logger.New("Fingerprint").Info("基础指纹自测完成", logger.F("profile_id", profile.ProfileId), logger.F("status", status), logger.F("issues", issues))
 	result := &BrowserFingerprintCheckResult{
 		ProfileId: profile.ProfileId,
-		Status:    status, Issues: issues, Limitations: []string{"仅验证基础配置及页面/Worker 一致性，不代表反检测认证", "Canvas/Audio/WebRTC、字体、跨平台完整性仍需专项实测"},
+		Status:    status, Issues: issues, Limitations: []string{"仅验证基础配置及受支持上下文一致性，不代表第三方检测认证", "Service Worker 仅在存在受控探测端点时执行；Canvas/Audio/WebRTC、字体、跨平台完整性仍需专项实测"},
 		Runtime:  runtimeInfo,
 		Expected: expected,
 	}
@@ -255,24 +265,78 @@ func evaluateBrowserFingerprintRuntime(debugPort int) (BrowserFingerprintRuntime
       return 0;
     }
   }
+  function contextSnapshot(target) {
+    return {
+      applicable: true,
+      executed: true,
+      language: target.navigator.language || '',
+      languages: Array.prototype.slice.call(target.navigator.languages || []),
+      timezone: (target.Intl.DateTimeFormat().resolvedOptions() || {}).timeZone || '',
+      hardwareConcurrency: target.navigator.hardwareConcurrency || 0,
+      platform: target.navigator.platform || '',
+      userAgent: target.navigator.userAgent || ''
+    };
+  }
+  async function iframeInfo() {
+    var frame;
+    try {
+      frame = document.createElement('iframe');
+      frame.style.display = 'none';
+      frame.src = 'about:blank';
+      document.documentElement.appendChild(frame);
+      var value = contextSnapshot(frame.contentWindow);
+      frame.remove();
+      return value;
+    } catch (e) {
+      if (frame) frame.remove();
+      return {applicable:true, executed:false, error:'Iframe probe failed'};
+    }
+  }
   async function workerInfo() {
+    if (typeof Worker === 'undefined') return {applicable:false, executed:false, error:'Worker unavailable'};
     return new Promise(function(resolve) {
       var worker, url, timer;
       function finish(value) { clearTimeout(timer); if(worker) worker.terminate(); if(url) URL.revokeObjectURL(url); resolve(value); }
       try {
-        url = URL.createObjectURL(new Blob(["postMessage({language:navigator.language,languages:Array.from(navigator.languages),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,hardwareConcurrency:navigator.hardwareConcurrency,platform:navigator.platform,userAgent:navigator.userAgent})"], {type:'text/javascript'}));
+        url = URL.createObjectURL(new Blob(["postMessage({applicable:true,executed:true,language:navigator.language,languages:Array.from(navigator.languages),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,hardwareConcurrency:navigator.hardwareConcurrency,platform:navigator.platform,userAgent:navigator.userAgent})"], {type:'text/javascript'}));
         worker = new Worker(url);
         worker.onmessage = function(e) { finish(e.data); };
-        worker.onerror = function() { finish({error:'Worker blocked or failed'}); };
-        timer = setTimeout(function() { finish({error:'Worker timeout'}); }, 1000);
-      } catch(e) { finish({error:'Worker unavailable or restricted by CSP'}); }
+        worker.onerror = function() { finish({applicable:true,executed:false,error:'Worker blocked or failed'}); };
+        timer = setTimeout(function() { finish({applicable:true,executed:false,error:'Worker timeout'}); }, 1000);
+      } catch(e) { finish({applicable:true,executed:false,error:'Worker unavailable or restricted by CSP'}); }
     });
   }
+  async function sharedWorkerInfo() {
+    if (typeof SharedWorker === 'undefined') return {applicable:false, executed:false, error:'SharedWorker unavailable'};
+    return new Promise(function(resolve) {
+      var worker, url, timer;
+      function finish(value) { clearTimeout(timer); try { if(worker && worker.port) worker.port.close(); } catch(e){} if(url) URL.revokeObjectURL(url); resolve(value); }
+      try {
+        url = URL.createObjectURL(new Blob(["onconnect=function(e){var p=e.ports[0];p.postMessage({applicable:true,executed:true,language:navigator.language,languages:Array.from(navigator.languages),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,hardwareConcurrency:navigator.hardwareConcurrency,platform:navigator.platform,userAgent:navigator.userAgent});}"], {type:'text/javascript'}));
+        worker = new SharedWorker(url);
+        worker.port.onmessage = function(e) { finish(e.data); };
+        worker.port.onmessageerror = function() { finish({applicable:true,executed:false,error:'SharedWorker message failed'}); };
+        worker.port.start();
+        timer = setTimeout(function() { finish({applicable:true,executed:false,error:'SharedWorker timeout'}); }, 1000);
+      } catch(e) { finish({applicable:true,executed:false,error:'SharedWorker blocked or failed'}); }
+    });
+  }
+  function serviceWorkerInfo() {
+    var applicable = window.isSecureContext === true && navigator.serviceWorker != null;
+    if (!applicable) return {applicable:false, executed:false, error:'ServiceWorker not applicable in this context'};
+    return {applicable:true, executed:false, error:'Controlled ServiceWorker probe endpoint required'};
+  }
   var worker = await workerInfo();
+  var iframe = await iframeInfo();
+  var sharedWorker = await sharedWorkerInfo();
+  var serviceWorker = serviceWorkerInfo();
   var gl = document.createElement('canvas').getContext('webgl') || document.createElement('canvas').getContext('experimental-webgl');
   var debug = gl && gl.getExtension('WEBGL_debug_renderer_info');
   return JSON.stringify({
     worker: worker,
+    iframe: iframe,
+    sharedWorker: sharedWorker,
+    serviceWorker: serviceWorker,
     language: navigator.language || '',
     languages: Array.prototype.slice.call(navigator.languages || []),
     timezone: (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone || '',

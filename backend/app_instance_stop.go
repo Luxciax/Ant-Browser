@@ -12,7 +12,15 @@ func (a *App) BrowserInstanceStop(profileId string) (*BrowserProfile, error) {
 	defer a.maintenanceMu.Unlock()
 	unlockRuntimeOp := a.lockProfileRuntimeOperation(profileId)
 	defer unlockRuntimeOp()
-	return a.browserInstanceStopWithRuntimeLock(profileId)
+	profile, err := a.browserInstanceStopWithRuntimeLock(profileId)
+	if err == nil {
+		a.updateLaunchReceipt(profileId, func(receipt *BrowserLaunchReceiptV2) {
+			receipt.State = "stopped"
+			receipt.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
+			receipt.DebugReady = false
+		})
+	}
+	return profile, err
 }
 
 // browserInstanceStopWithRuntimeLock executes one stop transaction while the

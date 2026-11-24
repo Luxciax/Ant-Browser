@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStartInput, plan *browserStartPlan) (*BrowserProfile, error) {
@@ -45,6 +46,12 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 		profile.LastError = startErr.Error()
 		return profile, startErr
 	}
+	a.updateLaunchReceipt(input.ProfileID, func(receipt *BrowserLaunchReceiptV2) {
+		receipt.State = "process-started"
+		receipt.ProcessStartedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		receipt.PID = cmd.Process.Pid
+		receipt.MaxAttempts = plan.maxStartAttempts
+	})
 	memoryLimitCleanup, err := applyBrowserProcessMemoryLimit(cmd, profile.MemoryLimitMB)
 	if err != nil {
 		monitor.closeCapture()
@@ -72,6 +79,12 @@ func (a *App) startBrowserProfileWithPlan(ctx context.Context, input browserStar
 
 	var lastStartErr error
 	for attempt := 1; attempt <= plan.maxStartAttempts; attempt++ {
+		a.updateLaunchReceipt(input.ProfileID, func(receipt *BrowserLaunchReceiptV2) {
+			receipt.State = "debug-pending"
+			receipt.Attempt = attempt
+			receipt.MaxAttempts = plan.maxStartAttempts
+			receipt.DebugPort = plan.assignedDebugPort
+		})
 		stableDebugPort, readyErr := waitBrowserDebugPortStableContext(ctx, plan.assignedDebugPort, plan.userDataDir, plan.startReadyTimeout, plan.startStableWindow, monitor)
 		if readyErr == nil {
 			a.browserMgr.Mutex.Lock()

@@ -6,6 +6,8 @@ import (
 )
 
 type BrowserFingerprintWorkerInfo struct {
+	Applicable          bool     `json:"applicable"`
+	Executed            bool     `json:"executed"`
 	Language            string   `json:"language"`
 	Languages           []string `json:"languages"`
 	Timezone            string   `json:"timezone"`
@@ -17,6 +19,7 @@ type BrowserFingerprintWorkerInfo struct {
 
 func assessFingerprintRuntime(r BrowserFingerprintRuntimeInfo, e BrowserFingerprintExpectedInfo) (string, []string) {
 	issues := []string{}
+	verificationGaps := []string{}
 	check := func(label, expected, actual string) {
 		if expected != "" && expected != actual {
 			issues = append(issues, label+"：配置与运行值不一致")
@@ -38,21 +41,32 @@ func assessFingerprintRuntime(r BrowserFingerprintRuntimeInfo, e BrowserFingerpr
 	if r.Webdriver {
 		issues = append(issues, "navigator.webdriver 为 true")
 	}
-	workerOK := r.Worker != nil && r.Worker.Error == "" && r.Worker.Language != "" && r.Worker.HardwareConcurrency > 0
-	if workerOK {
-		w := r.Worker
-		check("Worker 语言", r.Language, w.Language)
-		check("Worker 语言列表", strings.Join(r.Languages, ","), strings.Join(w.Languages, ","))
-		check("Worker 时区", r.Timezone, w.Timezone)
-		check("Worker CPU", strconv.Itoa(r.HardwareConcurrency), strconv.Itoa(w.HardwareConcurrency))
-		check("Worker 平台", r.Platform, w.Platform)
-		check("Worker UA", r.UserAgent, w.UserAgent)
+	checkContext := func(label string, ctx *BrowserFingerprintWorkerInfo) {
+		if ctx == nil || !ctx.Applicable {
+			return
+		}
+		if !ctx.Executed || ctx.Error != "" {
+			verificationGaps = append(verificationGaps, label+" 未执行有效探测")
+			return
+		}
+		check(label+" 语言", r.Language, ctx.Language)
+		check(label+" 语言列表", strings.Join(r.Languages, ","), strings.Join(ctx.Languages, ","))
+		check(label+" 时区", r.Timezone, ctx.Timezone)
+		check(label+" CPU", strconv.Itoa(r.HardwareConcurrency), strconv.Itoa(ctx.HardwareConcurrency))
+		check(label+" 平台", r.Platform, ctx.Platform)
+		check(label+" UA", r.UserAgent, ctx.UserAgent)
+	}
+	checkContext("DedicatedWorker", r.Worker)
+	checkContext("Iframe", r.Iframe)
+	checkContext("SharedWorker", r.SharedWorker)
+	if r.ServiceWorker.Applicable && !r.ServiceWorker.Executed {
+		verificationGaps = append(verificationGaps, "ServiceWorker 适用但没有受控探测端点，未执行跨上下文断言")
 	}
 	if len(issues) > 0 {
 		return "mismatch", issues
 	}
-	if !workerOK {
-		return "unverified", []string{"Worker 未返回有效结果（可能受页面 CSP 限制），不能判定一致"}
+	if len(verificationGaps) > 0 {
+		return "unverified", verificationGaps
 	}
 	return "passed_basic", issues
 }

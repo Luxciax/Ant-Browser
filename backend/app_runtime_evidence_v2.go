@@ -17,7 +17,8 @@ type BrowserRuntimeEvidenceV2 struct {
 	ExecutionStatus     string                        `json:"executionStatus"`
 	ObservationStatus   string                        `json:"observationStatus"`
 	AssertionStatus     string                        `json:"assertionStatus"`
-	Fields              []BrowserRuntimeEvidenceField `json:"fields"`
+	Fields              []BrowserRuntimeEvidenceField   `json:"fields"`
+	Contexts            []BrowserRuntimeContextEvidence `json:"contexts"`
 	Issues              []string                      `json:"issues,omitempty"`
 	Limitations         []string                      `json:"limitations,omitempty"`
 }
@@ -30,6 +31,14 @@ type BrowserRuntimeEvidenceField struct {
 	Assertion  string   `json:"assertion"`
 	Note       string   `json:"note,omitempty"`
 }
+
+type BrowserRuntimeContextEvidence struct {
+	Context    string `json:"context"`
+	Applicable bool   `json:"applicable"`
+	Executed   bool   `json:"executed"`
+	Error      string `json:"error,omitempty"`
+}
+
 
 func runtimeEvidenceAssertion(expected, actual string, observed bool) string {
 	if !observed {
@@ -65,6 +74,7 @@ func buildRuntimeEvidenceV2(check *BrowserFingerprintCheckResult) BrowserRuntime
 		ObservationStatus: "unavailable",
 		AssertionStatus: "not_run",
 		Fields: []BrowserRuntimeEvidenceField{},
+		Contexts: []BrowserRuntimeContextEvidence{},
 	}
 	if check == nil {
 		evidence.Issues = []string{"runtime check returned no result"}
@@ -83,6 +93,17 @@ func buildRuntimeEvidenceV2(check *BrowserFingerprintCheckResult) BrowserRuntime
 	}
 	r := check.Runtime
 	e := check.Expected
+	contextStatus := func(name string, ctx *BrowserFingerprintWorkerInfo) {
+		if ctx == nil {
+			evidence.Contexts = append(evidence.Contexts, BrowserRuntimeContextEvidence{Context: name})
+			return
+		}
+		evidence.Contexts = append(evidence.Contexts, BrowserRuntimeContextEvidence{Context: name, Applicable: ctx.Applicable, Executed: ctx.Executed, Error: ctx.Error})
+	}
+	contextStatus("dedicated-worker", r.Worker)
+	contextStatus("iframe", r.Iframe)
+	contextStatus("shared-worker", r.SharedWorker)
+	evidence.Contexts = append(evidence.Contexts, BrowserRuntimeContextEvidence{Context: "service-worker", Applicable: r.ServiceWorker.Applicable, Executed: r.ServiceWorker.Executed, Error: r.ServiceWorker.Error})
 	add("language", "语言", e.Language, r.Language, strings.TrimSpace(r.Language) != "", []string{"window"}, "")
 	add("timezone", "时区", e.Timezone, r.Timezone, strings.TrimSpace(r.Timezone) != "", []string{"window"}, "")
 	hardwareActual := ""
@@ -101,18 +122,23 @@ func buildRuntimeEvidenceV2(check *BrowserFingerprintCheckResult) BrowserRuntime
 	add("userAgent", "User Agent", "", r.UserAgent, strings.TrimSpace(r.UserAgent) != "", []string{"window"}, "observed only")
 	add("userAgentData", "UA-CH", "", r.UserAgentData, strings.TrimSpace(r.UserAgentData) != "", []string{"window"}, "observed only")
 
-	if r.Worker != nil && r.Worker.Error == "" {
-		worker := r.Worker
-		add("worker.language", "跨上下文语言", r.Language, worker.Language, strings.TrimSpace(worker.Language) != "", []string{"window", "dedicated-worker"}, "")
-		add("worker.timezone", "跨上下文时区", r.Timezone, worker.Timezone, strings.TrimSpace(worker.Timezone) != "", []string{"window", "dedicated-worker"}, "")
-		workerHC := ""
-		if worker.HardwareConcurrency > 0 {
-			workerHC = strconv.Itoa(worker.HardwareConcurrency)
+	addContextFields := func(prefix string, contexts []string, ctx *BrowserFingerprintWorkerInfo) {
+		if ctx == nil || !ctx.Applicable || !ctx.Executed || ctx.Error != "" {
+			return
 		}
-		add("worker.hardwareConcurrency", "跨上下文 CPU", hardwareActual, workerHC, workerHC != "", []string{"window", "dedicated-worker"}, "")
-		add("worker.platform", "跨上下文平台", r.Platform, worker.Platform, strings.TrimSpace(worker.Platform) != "", []string{"window", "dedicated-worker"}, "")
-		add("worker.userAgent", "跨上下文 User Agent", r.UserAgent, worker.UserAgent, strings.TrimSpace(worker.UserAgent) != "", []string{"window", "dedicated-worker"}, "")
+		ctxHC := ""
+		if ctx.HardwareConcurrency > 0 {
+			ctxHC = strconv.Itoa(ctx.HardwareConcurrency)
+		}
+		add(prefix+".language", "跨上下文语言", r.Language, ctx.Language, strings.TrimSpace(ctx.Language) != "", contexts, "")
+		add(prefix+".timezone", "跨上下文时区", r.Timezone, ctx.Timezone, strings.TrimSpace(ctx.Timezone) != "", contexts, "")
+		add(prefix+".hardwareConcurrency", "跨上下文 CPU", hardwareActual, ctxHC, ctxHC != "", contexts, "")
+		add(prefix+".platform", "跨上下文平台", r.Platform, ctx.Platform, strings.TrimSpace(ctx.Platform) != "", contexts, "")
+		add(prefix+".userAgent", "跨上下文 User Agent", r.UserAgent, ctx.UserAgent, strings.TrimSpace(ctx.UserAgent) != "", contexts, "")
 	}
+	addContextFields("worker", []string{"window", "dedicated-worker"}, r.Worker)
+	addContextFields("iframe", []string{"window", "iframe"}, r.Iframe)
+	addContextFields("sharedWorker", []string{"window", "shared-worker"}, r.SharedWorker)
 
 	observed := 0
 	for _, field := range evidence.Fields {
@@ -170,6 +196,7 @@ func cloneRuntimeEvidence(evidence BrowserRuntimeEvidenceV2) BrowserRuntimeEvide
 	out.Issues = append([]string{}, evidence.Issues...)
 	out.Limitations = append([]string{}, evidence.Limitations...)
 	out.Fields = append([]BrowserRuntimeEvidenceField{}, evidence.Fields...)
+	out.Contexts = append([]BrowserRuntimeContextEvidence{}, evidence.Contexts...)
 	for index := range out.Fields {
 		out.Fields[index].Contexts = append([]string{}, evidence.Fields[index].Contexts...)
 	}
