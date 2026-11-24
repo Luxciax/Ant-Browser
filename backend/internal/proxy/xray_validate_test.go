@@ -68,24 +68,19 @@ func TestValidateProxyConfigChainHTTPProxy(t *testing.T) {
 	}
 }
 
-func TestRequiresLocalProxyBridgeForBrowserAuthenticatedSocks5(t *testing.T) {
-	if !RequiresLocalProxyBridgeForBrowser("socks5://user:pass@127.0.0.1:1080") {
-		t.Fatal("expected authenticated socks5 proxy to require browser bridge")
+func TestRequiresLocalProxyBridgeForBrowserStandardProxies(t *testing.T) {
+	cases := []string{
+		"socks5://user:pass@127.0.0.1:1080",
+		"http://user:pass@127.0.0.1:8080",
+		"https://user:pass@127.0.0.1:8443",
+		"socks5://127.0.0.1:1080",
+		"http://127.0.0.1:8080",
+		"https://127.0.0.1:8443",
 	}
-	if !RequiresLocalProxyBridgeForBrowser("http://user:pass@127.0.0.1:8080") {
-		t.Fatal("expected authenticated http proxy to require browser bridge")
-	}
-	if !RequiresLocalProxyBridgeForBrowser("https://user:pass@127.0.0.1:8443") {
-		t.Fatal("expected authenticated https proxy to require browser bridge")
-	}
-	if RequiresLocalProxyBridgeForBrowser("socks5://127.0.0.1:1080") {
-		t.Fatal("expected unauthenticated socks5 proxy not to require browser bridge")
-	}
-	if RequiresLocalProxyBridgeForBrowser("http://127.0.0.1:8080") {
-		t.Fatal("expected unauthenticated http proxy not to require browser bridge")
-	}
-	if RequiresLocalProxyBridgeForBrowser("https://127.0.0.1:8443") {
-		t.Fatal("expected unauthenticated https proxy not to require browser bridge")
+	for _, src := range cases {
+		if !RequiresLocalProxyBridgeForBrowser(src) {
+			t.Fatalf("expected standard proxy %q to require managed browser bridge", src)
+		}
 	}
 }
 

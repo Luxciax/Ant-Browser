@@ -24,6 +24,8 @@ type ProxyBuildDiagnostic struct {
 	Ok              bool                   `json:"ok"`
 	Engine          string                 `json:"engine"`
 	NodeKey         string                 `json:"nodeKey"`
+	EgressMode      string                 `json:"egressMode,omitempty"`
+	EgressInterface string                 `json:"egressInterface,omitempty"`
 	RawConfigMasked string                 `json:"rawConfigMasked"`
 	DnsServers      string                 `json:"dnsServers"`
 	DnsSummary      DnsDiagnosticSummary   `json:"dnsSummary"`
@@ -125,7 +127,7 @@ func buildMihomoDiagnostic(src string, proxies []config.BrowserProxy, proxyId st
 			return
 		}
 		result.Ok = true
-		result.NodeKey = computeNodeKey(chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00mihomo")
+		applyDiagnosticEgress(result, ProxyKernelMihomo, src, proxies, proxyId)
 		for _, node := range nodes {
 			if item, ok := node.(map[string]interface{}); ok {
 				result.Outbounds = append(result.Outbounds, sanitizeDiagnosticMap(item))
@@ -144,7 +146,7 @@ func buildMihomoDiagnostic(src string, proxies []config.BrowserProxy, proxyId st
 		return
 	}
 	result.Ok = true
-	result.NodeKey = computeNodeKey(src + "\x00mihomo")
+	applyDiagnosticEgress(result, ProxyKernelMihomo, src, proxies, proxyId)
 	result.Outbound = sanitizeDiagnosticMap(node)
 	if manager != nil {
 		workDir := manager.resolveMihomoWorkdir(result.NodeKey)
@@ -200,7 +202,7 @@ func buildSingBoxDiagnostic(src string, proxies []config.BrowserProxy, proxyId s
 		result.Outbound = sanitizeDiagnosticMap(outbound)
 	}
 	result.Ok = true
-	result.NodeKey = computeNodeKey(chainProxyRuntimeKeySource(src, proxies, proxyId))
+	applyDiagnosticEgress(result, ProxyKernelSingBox, src, proxies, proxyId)
 	if manager != nil {
 		workDir := manager.resolveWorkdir(result.NodeKey)
 		result.Runtime = buildRuntimeDiagnostic(workDir, "singbox-config.json", "singbox-stderr.log", "singbox.log", "")
@@ -210,7 +212,6 @@ func buildSingBoxDiagnostic(src string, proxies []config.BrowserProxy, proxyId s
 
 func buildXrayDiagnostic(src string, proxies []config.BrowserProxy, proxyId string, manager *XrayManager, result *ProxyBuildDiagnostic) {
 	result.Engine = "xray"
-	var preferredKeySource string
 	if IsChainProxy(src) {
 		chainCfg, err := ParseChainProxyConfig(src)
 		if err != nil {
@@ -272,13 +273,30 @@ func buildXrayDiagnostic(src string, proxies []config.BrowserProxy, proxyId stri
 
 	result.Ok = true
 	result.Inbound = buildXrayDiagnosticInbound()
-	preferredKeySource = chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00" + dnsServersForDiagnostic(proxies, proxyId)
-	result.NodeKey = computeNodeKey(preferredKeySource)
+	applyDiagnosticEgress(result, ProxyKernelXray, src, proxies, proxyId)
 	if manager != nil {
 		workDir := manager.resolveWorkdir(result.NodeKey)
 		result.Runtime = buildRuntimeDiagnostic(workDir, "xray-config.json", "xray-stderr.log", "", "xray-error.log")
 		fillXrayBridgeState(manager, result.NodeKey, &result.Runtime)
 	}
+}
+
+func applyDiagnosticEgress(result *ProxyBuildDiagnostic, kernel string, src string, proxies []config.BrowserProxy, proxyId string) {
+	if result == nil {
+		return
+	}
+	if key, mode, interfaceName, ok := selectedEgressForKernel(kernel, src, proxies, proxyId); ok {
+		result.NodeKey = key
+		result.EgressMode = string(mode)
+		result.EgressInterface = interfaceName
+		return
+	}
+	base := egressBaseKeySourceForKernel(kernel, src, proxies, proxyId)
+	if base == "" {
+		return
+	}
+	result.NodeKey = computeNodeKey(base + "\x00egress:" + string(outboundEgressSystem) + ":")
+	result.EgressMode = string(outboundEgressSystem)
 }
 
 func buildXrayDiagnosticInbound() map[string]interface{} {

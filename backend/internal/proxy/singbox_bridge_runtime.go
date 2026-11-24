@@ -67,7 +67,7 @@ func (m *SingBoxManager) ensureBridgeContext(ctx context.Context, proxyConfig st
 
 	src = normalizeNodeScheme(src)
 	var (
-		outbounds     []interface{}
+		baseOutbounds []interface{}
 		routeOutbound = "proxy-out"
 		preferredPort int
 	)
@@ -77,7 +77,7 @@ func (m *SingBoxManager) ensureBridgeContext(ctx context.Context, proxyConfig st
 			log.Error("通用链式节点解析失败", logger.F("error", err))
 			return "", "", err
 		}
-		outbounds, routeOutbound, err = buildSingBoxReferencedChainOutbounds(chainCfg, proxies, proxyId)
+		baseOutbounds, routeOutbound, err = buildSingBoxReferencedChainOutbounds(chainCfg, proxies, proxyId)
 		if err != nil {
 			log.Error("通用链式节点构建失败", logger.F("error", err))
 			return "", "", err
@@ -89,7 +89,7 @@ func (m *SingBoxManager) ensureBridgeContext(ctx context.Context, proxyConfig st
 			log.Error("链式节点解析失败", logger.F("error", err))
 			return "", "", err
 		}
-		outbounds, routeOutbound, err = buildSingBoxChainOutbounds(chainCfg)
+		baseOutbounds, routeOutbound, err = buildSingBoxChainOutbounds(chainCfg)
 		if err != nil {
 			log.Error("HY2 链式节点构建失败", logger.F("error", err))
 			return "", "", err
@@ -101,23 +101,7 @@ func (m *SingBoxManager) ensureBridgeContext(ctx context.Context, proxyConfig st
 			log.Error("节点解析失败", logger.F("error", err))
 			return "", "", err
 		}
-		outbounds = []interface{}{outbound}
-	}
-
-	key := computeNodeKey(chainProxyRuntimeKeySource(src, proxies, proxyId))
-
-	if socksURL, reused := m.tryReuseBridge(key, pin); reused {
-		log.Info("复用 sing-box 桥接", logger.F("engine", "sing-box"), logger.F("key", key[:8]), logger.F("socks_url", socksURL))
-		return socksURL, key, nil
-	}
-	unlockLaunch := m.lockLaunchForKey(key)
-	defer unlockLaunch()
-	if err := ctx.Err(); err != nil {
-		return "", "", err
-	}
-	if socksURL, reused := m.tryReuseBridge(key, pin); reused {
-		log.Info("复用 sing-box 桥接", logger.F("engine", "sing-box"), logger.F("key", key[:8]), logger.F("socks_url", socksURL))
-		return socksURL, key, nil
+		baseOutbounds = []interface{}{outbound}
 	}
 
 	binaryPath, err := m.resolveBinary()
@@ -127,54 +111,148 @@ func (m *SingBoxManager) ensureBridgeContext(ctx context.Context, proxyConfig st
 	}
 	log.Debug("sing-box binary", logger.F("path", binaryPath))
 
-	maxRetries := 2
-	if preferredPort > 0 {
-		maxRetries = 1
-	}
+	baseKeySource := chainProxyRuntimeKeySource(src, proxies, proxyId)
+	decisionKey := computeNodeKey(baseKeySource + "\x00egress-auto")
 	var lastErr error
-	attemptsUsed := 0
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return "", "", err
-		}
-		attemptsUsed = attempt
-		port := preferredPort
-		if port <= 0 {
-			port, err = nextAvailablePort()
-			if err != nil {
-				lastErr = err
-				continue
-			}
-		}
 
-		bridge, err := m.launchBridgeOnPortContext(ctx, log, key, binaryPath, outbounds, routeOutbound, port, attempt)
-		if err != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return "", "", ctxErr
-			}
-			lastErr = err
-			if !isRetryableSingBoxLaunchError(err) {
-				break
-			}
+modeLoop:
+	for _, mode := range egressCandidateModes(decisionKey) {
+		interfaceName, usable := egressInterfaceForMode(mode)
+		if !usable {
 			continue
 		}
-
-		if socksURL, reused := m.registerBridge(key, bridge, pin); reused {
-			log.Info("复用已就绪 sing-box 桥接", logger.F("engine", "sing-box"), logger.F("key", key[:8]), logger.F("socks_url", socksURL))
-			bridge.Stopping = true
-			m.stopBridgeProcess(bridge)
-			return socksURL, key, nil
+		outbounds := cloneOutboundsForEgress(baseOutbounds)
+		if mode == outboundEgressPhysical {
+			applySingBoxPhysicalEgress(outbounds, interfaceName)
 		}
+		key := computeNodeKey(baseKeySource + "\x00egress:" + string(mode) + ":" + interfaceName)
+
+		if socksURL, reused := m.tryReuseBridge(key, pin); reused {
+			if probeErr := probeLocalProxy(ctx, socksURL); probeErr == nil {
+				rememberEgressDecision(decisionKey, mode, interfaceName)
+				log.Info("复用 sing-box 桥接",
+					logger.F("engine", "sing-box"),
+					logger.F("egress", string(mode)),
+					logger.F("interface", interfaceName),
+					logger.F("key", key[:8]),
+					logger.F("socks_url", socksURL),
+				)
+				return socksURL, key, nil
+			} else {
+				if pin {
+					m.ReleaseBridge(key)
+				}
+				log.Warn("sing-box 已有桥接出口失效，尝试其他出口",
+					logger.F("egress", string(mode)),
+					logger.F("interface", interfaceName),
+					logger.F("proxy_id", proxyId),
+					logger.F("error", probeErr),
+				)
+				continue modeLoop
+			}
+		}
+
+		unlockLaunch := m.lockLaunchForKey(key)
 		if err := ctx.Err(); err != nil {
-			m.discardBridge(key, bridge)
+			unlockLaunch()
 			return "", "", err
 		}
+		if socksURL, reused := m.tryReuseBridge(key, pin); reused {
+			if probeErr := probeLocalProxy(ctx, socksURL); probeErr == nil {
+				unlockLaunch()
+				rememberEgressDecision(decisionKey, mode, interfaceName)
+				return socksURL, key, nil
+			} else {
+				if pin {
+					m.ReleaseBridge(key)
+				}
+				unlockLaunch()
+				log.Warn("sing-box 已有桥接出口失效，尝试其他出口",
+					logger.F("egress", string(mode)),
+					logger.F("interface", interfaceName),
+					logger.F("proxy_id", proxyId),
+					logger.F("error", probeErr),
+				)
+				continue modeLoop
+			}
+		}
 
-		go m.watchBridge(bridge, key)
-		return fmt.Sprintf("socks5://127.0.0.1:%d", port), key, nil
+		maxRetries := 2
+		if preferredPort > 0 {
+			maxRetries = 1
+		}
+		var modeErr error
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			if err := ctx.Err(); err != nil {
+				unlockLaunch()
+				return "", "", err
+			}
+			port := preferredPort
+			if port <= 0 {
+				port, err = nextAvailablePort()
+				if err != nil {
+					modeErr = err
+					continue
+				}
+			}
+
+			bridge, launchErr := m.launchBridgeOnPortContext(ctx, log, key, binaryPath, outbounds, routeOutbound, port, attempt)
+			if launchErr != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					unlockLaunch()
+					return "", "", ctxErr
+				}
+				modeErr = launchErr
+				if !isRetryableSingBoxLaunchError(launchErr) {
+					break
+				}
+				continue
+			}
+
+			socksURL := fmt.Sprintf("socks5://127.0.0.1:%d", port)
+			if probeErr := probeLocalProxy(ctx, socksURL); probeErr != nil {
+				modeErr = fmt.Errorf("%s 出口探测失败: %w", mode, probeErr)
+				bridge.Stopping = true
+				m.stopBridgeProcess(bridge)
+				bridge.Running = false
+				if preferredPort > 0 {
+					time.Sleep(150 * time.Millisecond)
+				}
+				break
+			}
+
+			if reusedURL, reused := m.registerBridge(key, bridge, pin); reused {
+				bridge.Stopping = true
+				m.stopBridgeProcess(bridge)
+				socksURL = reusedURL
+			} else {
+				go m.watchBridge(bridge, key)
+			}
+			unlockLaunch()
+			rememberEgressDecision(decisionKey, mode, interfaceName)
+			log.Info("sing-box 自动出口选择成功",
+				logger.F("engine", "sing-box"),
+				logger.F("egress", string(mode)),
+				logger.F("interface", interfaceName),
+				logger.F("proxy_id", proxyId),
+			)
+			return socksURL, key, nil
+		}
+		unlockLaunch()
+		lastErr = modeErr
+		log.Warn("sing-box 出口候选不可用",
+			logger.F("egress", string(mode)),
+			logger.F("interface", interfaceName),
+			logger.F("proxy_id", proxyId),
+			logger.F("error", modeErr),
+		)
 	}
 
-	return "", "", fmt.Errorf("sing-box 启动失败（已尝试 %d 次）: %w", attemptsUsed, lastErr)
+	forgetEgressDecision(decisionKey)
+	if lastErr == nil {
+		lastErr = fmt.Errorf("没有可用的物理或系统出口")
+	}
+	return "", "", fmt.Errorf("sing-box 自动出口选择失败: %w", lastErr)
 }
 
 func (m *SingBoxManager) launchBridgeOnPort(log *logger.Logger, key string, binaryPath string, outbounds []interface{}, routeOutbound string, port int, attempt int) (*SingBoxBridge, error) {

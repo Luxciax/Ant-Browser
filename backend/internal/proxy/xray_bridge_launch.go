@@ -42,7 +42,7 @@ func (m *XrayManager) ensureBridgeContext(ctx context.Context, proxyConfig strin
 	src = normalizeNodeScheme(src)
 
 	var (
-		outbounds     []interface{}
+		baseOutbounds []interface{}
 		routes        []interface{}
 		preferredPort int
 	)
@@ -53,7 +53,7 @@ func (m *XrayManager) ensureBridgeContext(ctx context.Context, proxyConfig strin
 			log.Error("通用链式节点解析失败", logger.F("error", err))
 			return "", "", err
 		}
-		outbounds, routes, err = buildXrayReferencedChainOutbounds(chainCfg, proxies, proxyId)
+		baseOutbounds, routes, err = buildXrayReferencedChainOutbounds(chainCfg, proxies, proxyId)
 		if err != nil {
 			return "", "", err
 		}
@@ -69,7 +69,7 @@ func (m *XrayManager) ensureBridgeContext(ctx context.Context, proxyConfig strin
 			log.Error("链式第一层节点构建失败", logger.F("error", err))
 			return "", "", err
 		}
-		outbounds = []interface{}{
+		baseOutbounds = []interface{}{
 			firstHop,
 			chainSocks5Outbound(chainCfg.Second, "second-hop", "first-hop"),
 		}
@@ -88,7 +88,7 @@ func (m *XrayManager) ensureBridgeContext(ctx context.Context, proxyConfig strin
 			return "", "", err
 		}
 		if shouldBridgeDirectProxy {
-			outbounds = []interface{}{directOutbound}
+			baseOutbounds = []interface{}{directOutbound}
 			routes = []interface{}{
 				map[string]interface{}{
 					"type":        "field",
@@ -108,7 +108,7 @@ func (m *XrayManager) ensureBridgeContext(ctx context.Context, proxyConfig strin
 			if outbound == nil {
 				return "", "", fmt.Errorf("节点解析失败")
 			}
-			outbounds = []interface{}{outbound}
+			baseOutbounds = []interface{}{outbound}
 			routes = []interface{}{
 				map[string]interface{}{
 					"type":        "field",
@@ -118,21 +118,6 @@ func (m *XrayManager) ensureBridgeContext(ctx context.Context, proxyConfig strin
 			}
 		}
 	}
-	key := computeNodeKey(chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00" + dnsServers)
-
-	if socksURL, reused := m.tryReuseBridge(key, pin); reused {
-		log.Info("复用 xray 桥接进程", logger.F("engine", "xray"), logger.F("key", key), logger.F("socks_url", socksURL))
-		return socksURL, key, nil
-	}
-	unlockLaunch := m.lockLaunchForKey(key)
-	defer unlockLaunch()
-	if err := ctx.Err(); err != nil {
-		return "", "", err
-	}
-	if socksURL, reused := m.tryReuseBridge(key, pin); reused {
-		log.Info("复用 xray 桥接进程", logger.F("engine", "xray"), logger.F("key", key), logger.F("socks_url", socksURL))
-		return socksURL, key, nil
-	}
 
 	binaryPath, err := m.resolveBinary()
 	if err != nil {
@@ -140,44 +125,134 @@ func (m *XrayManager) ensureBridgeContext(ctx context.Context, proxyConfig strin
 		return "", "", err
 	}
 
-	// Each attempt runs Xray's config preflight before starting the process.
-	// The runtime phase can still lose a short Windows port-release/process
-	// scheduling race, including when a chain uses a preferred local port.
-	// Give that transient runtime phase one controlled retry.
-	maxLaunchRetries := 2
+	baseKeySource := chainProxyRuntimeKeySource(src, proxies, proxyId) + "\x00" + dnsServers
+	decisionKey := computeNodeKey(baseKeySource + "\x00egress-auto")
 	var lastErr error
-	attemptsUsed := 0
-	for attempt := 1; attempt <= maxLaunchRetries; attempt++ {
+
+modeLoop:
+	for _, mode := range egressCandidateModes(decisionKey) {
+		interfaceName, usable := egressInterfaceForMode(mode)
+		if !usable {
+			continue
+		}
+		outbounds := cloneOutboundsForEgress(baseOutbounds)
+		if mode == outboundEgressPhysical {
+			applyXrayPhysicalEgress(outbounds, interfaceName)
+		}
+		key := computeNodeKey(baseKeySource + "\x00egress:" + string(mode) + ":" + interfaceName)
+
+		if socksURL, reused := m.tryReuseBridge(key, pin); reused {
+			if probeErr := probeLocalProxy(ctx, socksURL); probeErr == nil {
+				rememberEgressDecision(decisionKey, mode, interfaceName)
+				log.Info("复用 xray 桥接进程",
+					logger.F("engine", "xray"),
+					logger.F("egress", string(mode)),
+					logger.F("interface", interfaceName),
+					logger.F("key", key),
+					logger.F("socks_url", socksURL),
+				)
+				return socksURL, key, nil
+			} else {
+				if pin {
+					m.ReleaseBridge(key)
+				}
+				log.Warn("xray 已有桥接出口失效，尝试其他出口",
+					logger.F("egress", string(mode)),
+					logger.F("interface", interfaceName),
+					logger.F("proxy_id", proxyId),
+					logger.F("error", probeErr),
+				)
+				continue modeLoop
+			}
+		}
+
+		unlockLaunch := m.lockLaunchForKey(key)
 		if err := ctx.Err(); err != nil {
+			unlockLaunch()
 			return "", "", err
 		}
-		attemptsUsed = attempt
-		socksURL, bridge, err := m.launchBridgeAttemptContext(ctx, log, key, binaryPath, outbounds, routes, preferredPort, dnsServers, pin, attempt)
-		if err == nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				m.discardBridge(key, bridge)
-				return "", "", ctxErr
+		if socksURL, reused := m.tryReuseBridge(key, pin); reused {
+			if probeErr := probeLocalProxy(ctx, socksURL); probeErr == nil {
+				unlockLaunch()
+				rememberEgressDecision(decisionKey, mode, interfaceName)
+				return socksURL, key, nil
+			} else {
+				if pin {
+					m.ReleaseBridge(key)
+				}
+				unlockLaunch()
+				log.Warn("xray 已有桥接出口失效，尝试其他出口",
+					logger.F("egress", string(mode)),
+					logger.F("interface", interfaceName),
+					logger.F("proxy_id", proxyId),
+					logger.F("error", probeErr),
+				)
+				continue modeLoop
 			}
+		}
+
+		maxLaunchRetries := 2
+		var modeErr error
+		for attempt := 1; attempt <= maxLaunchRetries; attempt++ {
+			if err := ctx.Err(); err != nil {
+				unlockLaunch()
+				return "", "", err
+			}
+			socksURL, bridge, launchErr := m.launchBridgeAttemptContext(ctx, log, key, binaryPath, outbounds, routes, preferredPort, dnsServers, pin, attempt)
+			if launchErr != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					unlockLaunch()
+					return "", "", ctxErr
+				}
+				if bridge != nil && bridge.Running {
+					go m.watchBridge(bridge, key)
+				}
+				modeErr = launchErr
+				if !isRetryableXrayLaunchError(launchErr) {
+					break
+				}
+				continue
+			}
+
+			if probeErr := probeLocalProxy(ctx, socksURL); probeErr != nil {
+				modeErr = fmt.Errorf("%s 出口探测失败: %w", mode, probeErr)
+				if bridge != nil {
+					m.discardBridge(key, bridge)
+				}
+				if preferredPort > 0 {
+					time.Sleep(150 * time.Millisecond)
+				}
+				break
+			}
+
 			if bridge != nil {
 				go m.watchBridge(bridge, key)
 			}
+			unlockLaunch()
+			rememberEgressDecision(decisionKey, mode, interfaceName)
+			log.Info("xray 自动出口选择成功",
+				logger.F("engine", "xray"),
+				logger.F("egress", string(mode)),
+				logger.F("interface", interfaceName),
+				logger.F("proxy_id", proxyId),
+			)
 			return socksURL, key, nil
 		}
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return "", "", ctxErr
-		}
-		if bridge != nil && bridge.Running {
-			go m.watchBridge(bridge, key)
-		}
-		lastErr = err
-		if !isRetryableXrayLaunchError(err) {
-			break
-		}
+		unlockLaunch()
+		lastErr = modeErr
+		log.Warn("xray 出口候选不可用",
+			logger.F("egress", string(mode)),
+			logger.F("interface", interfaceName),
+			logger.F("proxy_id", proxyId),
+			logger.F("error", modeErr),
+		)
 	}
-	if !isRetryableXrayLaunchError(lastErr) {
-		return "", "", lastErr
+
+	forgetEgressDecision(decisionKey)
+	if lastErr == nil {
+		lastErr = fmt.Errorf("没有可用的物理或系统出口")
 	}
-	return "", "", fmt.Errorf("xray 启动失败（已尝试 %d 次）: %w", attemptsUsed, lastErr)
+	return "", "", fmt.Errorf("xray 自动出口选择失败: %w", lastErr)
 }
 
 type xrayLaunchError struct {

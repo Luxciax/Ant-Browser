@@ -111,6 +111,7 @@ func lightHTTPDelayTestWithConnector(
 		)
 		return TestResult{ProxyId: proxyId, Ok: false, Engine: engine, Error: err.Error()}
 	}
+	engine = appendSelectedEgressLabel(engine, src, proxies, proxyId)
 
 	var lastErr error
 	var lastLatency int64
@@ -245,19 +246,14 @@ func speedTestProbeEngine(src string, proxies []config.BrowserProxy, proxyId str
 }
 
 func speedTestRuntimeError(engine string, src string, proxies []config.BrowserProxy, proxyId string, xrayMgr *XrayManager) string {
-	if engine != ProxyKernelXray || xrayMgr == nil {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(engine)), ProxyKernelXray) || xrayMgr == nil {
 		return ""
 	}
-	dnsServers := ""
-	if proxyId != "" {
-		for _, item := range proxies {
-			if strings.EqualFold(item.ProxyId, proxyId) {
-				dnsServers = item.DnsServers
-				break
-			}
-		}
+	key, _, _, ok := selectedEgressForKernel(ProxyKernelXray, src, proxies, proxyId)
+	if !ok {
+		base := egressBaseKeySourceForKernel(ProxyKernelXray, src, proxies, proxyId)
+		key = computeNodeKey(base + "\x00egress:" + string(outboundEgressSystem) + ":")
 	}
-	key := computeNodeKey(chainProxyRuntimeKeySource(normalizeNodeScheme(src), proxies, proxyId) + "\x00" + dnsServers)
 	return latestXrayErrorSummary(filepath.Join(xrayMgr.resolveWorkdir(key), "xray-error.log"))
 }
 
