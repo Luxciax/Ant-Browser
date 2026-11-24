@@ -268,6 +268,24 @@ var migrations = []migration{
 			committed INTEGER NOT NULL DEFAULT 0 CHECK(committed IN (0,1))
 		)`},
 	},
+	{
+		version: 19,
+		desc:    "Persona v2 环境身份与迁移关联",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS browser_profile_environment_identity (
+				profile_id TEXT PRIMARY KEY,
+				environment_id TEXT NOT NULL,
+				created_at TEXT NOT NULL DEFAULT '',
+				updated_at TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_browser_profile_environment_id ON browser_profile_environment_identity(environment_id)`,
+			`CREATE TRIGGER IF NOT EXISTS trg_browser_profile_environment_delete
+			AFTER DELETE ON browser_profiles
+			BEGIN
+				DELETE FROM browser_profile_environment_identity WHERE profile_id = OLD.profile_id;
+			END`,
+		},
+	},
 	// ── 新版本在此追加，格式：
 	// {
 	//     version: 4,

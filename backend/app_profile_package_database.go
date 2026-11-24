@@ -35,6 +35,7 @@ type ProfilePackageDatabase struct {
 	ProfileExtensionSettings []ProfilePackageDatabaseExtensionSettings `json:"profileExtensionSettings"`
 	ProfileExtensions        []ProfilePackageDatabaseExtensionBinding  `json:"profileExtensions"`
 	ProfileExtensionRuntime  []browser.ProfileExtensionRuntime         `json:"profileExtensionRuntime"`
+	EnvironmentIdentities    []browser.EnvironmentIdentity             `json:"environmentIdentities,omitempty"`
 	Warnings                 []string                                  `json:"warnings,omitempty"`
 }
 
@@ -87,6 +88,7 @@ func (a *App) collectProfilePackageDatabase(profiles []browser.Profile) (Profile
 		ProfileExtensionSettings: []ProfilePackageDatabaseExtensionSettings{},
 		ProfileExtensions:        []ProfilePackageDatabaseExtensionBinding{},
 		ProfileExtensionRuntime:  []browser.ProfileExtensionRuntime{},
+		EnvironmentIdentities:    []browser.EnvironmentIdentity{},
 	}
 	if a == nil || a.db == nil || a.db.GetConn() == nil {
 		return ProfilePackageDatabase{}, fmt.Errorf("数据库未初始化，无法导出实例关联数据")
@@ -120,6 +122,15 @@ func (a *App) collectProfilePackageDatabase(profiles []browser.Profile) (Profile
 	}
 
 	conn := a.db.GetConn()
+	if a.browserMgr != nil && a.browserMgr.EnvironmentDAO != nil {
+		for _, profileID := range profileIDs {
+			identity, identityErr := a.browserMgr.EnvironmentDAO.Ensure(profileID)
+			if identityErr != nil {
+				return ProfilePackageDatabase{}, fmt.Errorf("读取实例环境身份失败(%s): %w", profileID, identityErr)
+			}
+			snapshot.EnvironmentIdentities = append(snapshot.EnvironmentIdentities, identity)
+		}
+	}
 	groupIDs := make([]string, 0)
 	coreIDs := make([]string, 0)
 	proxyIDs := make([]string, 0)
@@ -482,6 +493,36 @@ func (a *App) restoreProfilePackageDatabase(snapshot ProfilePackageDatabase, pre
 		}
 		if err := insertProfilePackageProfile(tx, *profile); err != nil {
 			return err
+		}
+	}
+
+	for _, identity := range snapshot.EnvironmentIdentities {
+		targetProfileID := profileMappings[backupImportIDKey(identity.ProfileID)]
+		if targetProfileID == "" {
+			appendProfilePackageWarning(warnings, fmt.Sprintf("环境身份缺少目标实例引用（实例=%s）", identity.ProfileID))
+			continue
+		}
+		environmentID := strings.TrimSpace(identity.EnvironmentID)
+		if environmentID == "" {
+			appendProfilePackageWarning(warnings, fmt.Sprintf("实例「%s」的 environmentId 为空，导入后将按需生成", identity.ProfileID))
+			continue
+		}
+		createdAt := strings.TrimSpace(identity.CreatedAt)
+		updatedAt := strings.TrimSpace(identity.UpdatedAt)
+		if createdAt == "" {
+			createdAt = time.Now().UTC().Format(time.RFC3339Nano)
+		}
+		if updatedAt == "" {
+			updatedAt = createdAt
+		}
+		if _, err := tx.Exec(`
+			INSERT INTO browser_profile_environment_identity (profile_id, environment_id, created_at, updated_at)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT(profile_id) DO UPDATE SET
+				environment_id = excluded.environment_id,
+				updated_at = excluded.updated_at
+		`, targetProfileID, environmentID, createdAt, updatedAt); err != nil {
+			return fmt.Errorf("恢复实例环境身份失败(%s): %w", targetProfileID, err)
 		}
 	}
 

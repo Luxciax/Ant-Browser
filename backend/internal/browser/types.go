@@ -207,6 +207,7 @@ type Manager struct {
 	BookmarkDAO  BookmarkDAO
 	GroupDAO     GroupDAO
 	ExtensionDAO ExtensionDAO
+	EnvironmentDAO EnvironmentIdentityDAO
 }
 
 // XrayBridge Xray 桥接进程
