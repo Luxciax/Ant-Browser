@@ -30,3 +30,8 @@ write a key when the protection provider is unavailable. Existing plaintext
 API keys are treated only as legacy migration input; when SecretStore is
 available they are migrated to `api_key_ref`, and subsequent config writes
 omit the plaintext key.
+
+Secret updates use a staged-ref commit: new encrypted entries are created
+first, configuration is atomically written to point at them, and only then are
+the old refs deleted. If config serialization/write fails, the staged refs are
+deleted and the previous references remain authoritative.

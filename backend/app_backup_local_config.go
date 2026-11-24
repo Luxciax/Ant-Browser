@@ -390,48 +390,76 @@ func loadExistingBackupSecretRefs(path string) backupLocalConfigReadFile {
 	return stored
 }
 
-func persistBackupSecret(store *secretstore.Store, existingRef, label, value string) (string, error) {
+func stageBackupSecret(store *secretstore.Store, label, value string) (string, error) {
 	value = strings.TrimSpace(value)
-	existingRef = strings.TrimSpace(existingRef)
 	if value == "" {
-		if store != nil && existingRef != "" {
-			if err := store.Delete(existingRef); err != nil {
-				return "", err
-			}
-		}
 		return "", nil
 	}
 	if store == nil {
 		return "", fmt.Errorf("%s cannot be stored because SecretStore is unavailable", label)
 	}
-	return store.Set(existingRef, label, value)
+	return store.Set("", label, value)
+}
+
+func cleanupStagedBackupSecrets(store *secretstore.Store, refs ...string) {
+	if store == nil { return }
+	for _, ref := range refs {
+		if strings.TrimSpace(ref) != "" {
+			_ = store.Delete(ref)
+		}
+	}
+}
+
+func cleanupReplacedBackupSecrets(store *secretstore.Store, oldRefs, newRefs []string) {
+	if store == nil { return }
+	for index, oldRef := range oldRefs {
+		oldRef = strings.TrimSpace(oldRef)
+		if oldRef == "" { continue }
+		newRef := ""
+		if index < len(newRefs) { newRef = strings.TrimSpace(newRefs[index]) }
+		if oldRef != newRef {
+			_ = store.Delete(oldRef)
+		}
+	}
 }
 
 func saveBackupLocalConfigWithSecretStore(path string, value config.BackupConfig, store *secretstore.Store) error {
 	value = normalizeBackupSettings(value)
 	existing := loadExistingBackupSecretRefs(path)
-	tokenRef, err := persistBackupSecret(store, existing.Backup.Channels.OpenList.TokenRef, "backup.openlist.token", value.Channels.OpenList.Token)
+	tokenRef, err := stageBackupSecret(store, "backup.openlist.token", value.Channels.OpenList.Token)
 	if err != nil {
 		return fmt.Errorf("保护 OpenList Token 失败: %w", err)
 	}
-	accessKeyRef, err := persistBackupSecret(store, existing.Backup.Channels.S3.AccessKeyIDRef, "backup.s3.accessKeyId", value.Channels.S3.AccessKeyID)
+	accessKeyRef, err := stageBackupSecret(store, "backup.s3.accessKeyId", value.Channels.S3.AccessKeyID)
 	if err != nil {
+		cleanupStagedBackupSecrets(store, tokenRef)
 		return fmt.Errorf("保护 S3 AccessKeyID 失败: %w", err)
 	}
-	secretKeyRef, err := persistBackupSecret(store, existing.Backup.Channels.S3.SecretAccessKeyRef, "backup.s3.secretAccessKey", value.Channels.S3.SecretAccessKey)
+	secretKeyRef, err := stageBackupSecret(store, "backup.s3.secretAccessKey", value.Channels.S3.SecretAccessKey)
 	if err != nil {
+		cleanupStagedBackupSecrets(store, tokenRef, accessKeyRef)
 		return fmt.Errorf("保护 S3 SecretAccessKey 失败: %w", err)
 	}
-	sessionTokenRef, err := persistBackupSecret(store, existing.Backup.Channels.S3.SessionTokenRef, "backup.s3.sessionToken", value.Channels.S3.SessionToken)
+	sessionTokenRef, err := stageBackupSecret(store, "backup.s3.sessionToken", value.Channels.S3.SessionToken)
 	if err != nil {
+		cleanupStagedBackupSecrets(store, tokenRef, accessKeyRef, secretKeyRef)
 		return fmt.Errorf("保护 S3 SessionToken 失败: %w", err)
+	}
+	stagedRefs := []string{tokenRef, accessKeyRef, secretKeyRef, sessionTokenRef}
+	oldRefs := []string{
+		existing.Backup.Channels.OpenList.TokenRef,
+		existing.Backup.Channels.S3.AccessKeyIDRef,
+		existing.Backup.Channels.S3.SecretAccessKeyRef,
+		existing.Backup.Channels.S3.SessionTokenRef,
 	}
 
 	hasS3 := backupHasS3Config(value)
 	if tokenRef == "" && !hasS3 {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			cleanupStagedBackupSecrets(store, stagedRefs...)
 			return fmt.Errorf("删除本地备份配置失败: %w", err)
 		}
+		cleanupReplacedBackupSecrets(store, oldRefs, stagedRefs)
 		return nil
 	}
 	s3Config := backupLocalS3Config{}
@@ -457,14 +485,17 @@ func saveBackupLocalConfigWithSecretStore(path string, value config.BackupConfig
 	}
 	data, err := yaml.Marshal(stored)
 	if err != nil {
+		cleanupStagedBackupSecrets(store, stagedRefs...)
 		return fmt.Errorf("序列化本地备份配置失败: %w", err)
 	}
 	if err := fsutil.AtomicWriteFile(path, data, 0o600); err != nil {
+		cleanupStagedBackupSecrets(store, stagedRefs...)
 		return fmt.Errorf("写入本地备份配置失败: %w", err)
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
 		return fmt.Errorf("设置本地备份配置权限失败: %w", err)
 	}
+	cleanupReplacedBackupSecrets(store, oldRefs, stagedRefs)
 	return nil
 }
 

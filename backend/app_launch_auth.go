@@ -21,7 +21,7 @@ func (a *App) BrowserLaunchAuthRotate(scopes []string) (map[string]interface{}, 
 	key := base64.RawURLEncoding.EncodeToString(buf)
 	if len(scopes) == 0 { scopes = []string{launchcode.ScopeAll} }
 	previous := a.config.LaunchServer.Auth
-	ref, err := a.secretStore.Set(previous.APIKeyRef, "launchserver.apiKey", key)
+	ref, err := a.secretStore.Set("", "launchserver.apiKey", key)
 	if err != nil { return nil, err }
 	a.config.LaunchServer.Auth.Enabled = true
 	a.config.LaunchServer.Auth.APIKey = key
@@ -32,12 +32,11 @@ func (a *App) BrowserLaunchAuthRotate(scopes []string) (map[string]interface{}, 
 	}
 	if err := a.config.Save(a.resolveAppPath("config.yaml")); err != nil {
 		a.config.LaunchServer.Auth = previous
-		if previous.APIKeyRef == "" {
-			_ = a.secretStore.Delete(ref)
-		} else if previous.APIKey != "" {
-			_, _ = a.secretStore.Set(previous.APIKeyRef, "launchserver.apiKey", previous.APIKey)
-		}
+		_ = a.secretStore.Delete(ref)
 		return nil, err
+	}
+	if previous.APIKeyRef != "" && previous.APIKeyRef != ref {
+		_ = a.secretStore.Delete(previous.APIKeyRef)
 	}
 	a.launchServer.SetAPIAuthConfig(launchcode.APIAuthConfig{
 		Enabled: true, APIKey: key, Header: a.config.LaunchServer.Auth.Header, Scopes: scopes,
