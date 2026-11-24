@@ -126,7 +126,73 @@ export function BookmarkSave(arg1:Array<config.BrowserBookmark>):Promise<void>;
 
 export function BookmarkSyncToProfiles():Promise<backend.BookmarkSyncResult>;
 
+export function BrowserAutomationWorkflowDelete(arg1:string):Promise<void>;
+
+export function BrowserAutomationWorkflowGet(arg1:string):Promise<automation.WorkflowDefinition>;
+
+export function BrowserAutomationWorkflowList():Promise<Array<automation.WorkflowDefinition>>;
+
+export function BrowserAutomationWorkflowResume(arg1:string,arg2:boolean):Promise<automation.WorkflowRunRecord>;
+
+export function BrowserAutomationWorkflowRun(arg1:automation.WorkflowRunRequest):Promise<automation.WorkflowRunRecord>;
+
+export function BrowserAutomationWorkflowRunGet(arg1:string):Promise<automation.WorkflowRunRecord>;
+
+export function BrowserAutomationWorkflowRunList(arg1:number):Promise<Array<automation.WorkflowRunRecord>>;
+
+export function BrowserAutomationWorkflowSave(arg1:automation.WorkflowDefinition):Promise<automation.WorkflowDefinition>;
+
+export function BrowserAutomationWorkflowStageUpload(arg1:string,arg2:string):Promise<Record<string, any>>;
+
+export function BrowserAutomationWorkflowValidate(arg1:automation.WorkflowDefinition):Promise<Record<string, any>>;
+
+export function BrowserBatchCreate(arg1:backend.BrowserBatchCreateRequest):Promise<backend.BrowserBatchOperation>;
+
+export function BrowserBatchOperationGet(arg1:string):Promise<backend.BrowserBatchOperation>;
+
+export function BrowserBatchStart(arg1:backend.BrowserBatchProfilesRequest):Promise<backend.BrowserBatchOperation>;
+
+export function BrowserBatchStop(arg1:backend.BrowserBatchProfilesRequest):Promise<backend.BrowserBatchOperation>;
+
 export function BrowserClearCookies(arg1:string):Promise<void>;
+
+export function BrowserControlBatchCreate(arg1:Array<browser.ProfileInput>,arg2:Array<string>,arg3:number):Promise<Record<string, any>>;
+
+export function BrowserControlBatchOperation(arg1:string):Promise<Record<string, any>>;
+
+export function BrowserControlBatchStart(arg1:Array<string>,arg2:number):Promise<Record<string, any>>;
+
+export function BrowserControlBatchStop(arg1:Array<string>,arg2:number):Promise<Record<string, any>>;
+
+export function BrowserControlDiagnostics():Promise<Record<string, any>>;
+
+export function BrowserControlEnvironmentContract(arg1:string):Promise<Record<string, any>>;
+
+export function BrowserControlEnvironmentView(arg1:string):Promise<Record<string, any>>;
+
+export function BrowserControlKernelCapabilities(arg1:string):Promise<Record<string, any>>;
+
+export function BrowserControlLaunchPlanState(arg1:string):Promise<Record<string, any>>;
+
+export function BrowserControlLaunchReceipt(arg1:string):Promise<Record<string, any>>;
+
+export function BrowserControlNetworkObservationGet(arg1:string):Promise<Record<string, any>>;
+
+export function BrowserControlNetworkObserve(arg1:string,arg2:string,arg3:number):Promise<Record<string, any>>;
+
+export function BrowserControlRuntimeEvidence(arg1:string):Promise<Record<string, any>>;
+
+export function BrowserControlRuntimeVerify(arg1:string):Promise<Record<string, any>>;
+
+export function BrowserControlSyncStatus():Promise<Record<string, any>>;
+
+export function BrowserControlTrashCleanup():Promise<void>;
+
+export function BrowserControlTrashList():Promise<Record<string, any>>;
+
+export function BrowserControlTrashPermanentlyDelete(arg1:string):Promise<void>;
+
+export function BrowserControlTrashRestore(arg1:string):Promise<Record<string, any>>;
 
 export function BrowserCoreDelete(arg1:string):Promise<void>;
 
@@ -149,6 +215,8 @@ export function BrowserCoreScan():Promise<Array<config.BrowserCore>>;
 export function BrowserCoreSetDefault(arg1:string):Promise<void>;
 
 export function BrowserCoreValidate(arg1:string):Promise<browser.CoreValidateResult>;
+
+export function BrowserEnvironmentTemplateList():Promise<Array<browser.EnvironmentTemplate>>;
 
 export function BrowserExportCookies(arg1:string):Promise<string>;
 
@@ -208,9 +276,21 @@ export function BrowserInstanceStatus(arg1:string):Promise<browser.Profile>;
 
 export function BrowserInstanceStop(arg1:string):Promise<browser.Profile>;
 
+export function BrowserLaunchAuthRevoke():Promise<void>;
+
+export function BrowserLaunchAuthRotate(arg1:Array<string>):Promise<Record<string, any>>;
+
+export function BrowserNetworkObservationGet(arg1:string):Promise<backend.BrowserNetworkObservation>;
+
+export function BrowserNetworkObserve(arg1:backend.BrowserNetworkObservationRequest):Promise<backend.BrowserNetworkObservation>;
+
+export function BrowserProfileApplyEnvironmentTemplate(arg1:string,arg2:string):Promise<browser.Profile>;
+
 export function BrowserProfileBatchRemoveTags(arg1:Array<string>,arg2:Array<string>):Promise<void>;
 
 export function BrowserProfileBatchSetTags(arg1:Array<string>,arg2:Array<string>,arg3:boolean):Promise<void>;
+
+export function BrowserProfileCloneLifecycle(arg1:backend.BrowserLifecycleCloneRequest):Promise<backend.BrowserLifecycleCloneResult>;
 
 export function BrowserProfileCopy(arg1:string,arg2:string):Promise<browser.Profile>;
 
@@ -222,6 +302,10 @@ export function BrowserProfileCreate(arg1:browser.ProfileInput):Promise<browser.
 
 export function BrowserProfileDelete(arg1:string):Promise<void>;
 
+export function BrowserProfileEnvironmentContract(arg1:string):Promise<browser.EnvironmentContractV2>;
+
+export function BrowserProfileEnvironmentView(arg1:string):Promise<backend.BrowserEnvironmentViewV2>;
+
 export function BrowserProfileExtensionGet(arg1:string):Promise<browser.ProfileExtensionSettings>;
 
 export function BrowserProfileExtensionSave(arg1:string,arg2:Array<string>,arg3:boolean):Promise<browser.ProfileExtensionSettings>;
@@ -232,9 +316,21 @@ export function BrowserProfileFingerprintMatrix(arg1:string,arg2:string,arg3:Arr
 
 export function BrowserProfileGetCode(arg1:string):Promise<string>;
 
+export function BrowserProfileKernelCapabilityManifest(arg1:string):Promise<backend.BrowserKernelCapabilityManifest>;
+
+export function BrowserProfileKernelUpgradeApply(arg1:string,arg2:string):Promise<browser.Profile>;
+
+export function BrowserProfileKernelUpgradePreview(arg1:string,arg2:string):Promise<backend.BrowserKernelUpgradePreview>;
+
+export function BrowserProfileLaunchPlanState(arg1:string):Promise<Record<string, any>>;
+
+export function BrowserProfileLaunchReceipt(arg1:string):Promise<backend.BrowserLaunchReceiptV2>;
+
 export function BrowserProfileList():Promise<Array<browser.Profile>>;
 
 export function BrowserProfileListByTag(arg1:string):Promise<Array<browser.Profile>>;
+
+export function BrowserProfileNetworkPolicy(arg1:string):Promise<browser.NetworkPolicy>;
 
 export function BrowserProfilePackageExport(arg1:Array<string>):Promise<backend.ProfilePackageExportResult>;
 
@@ -250,13 +346,23 @@ export function BrowserProfilePackagePrepareImportFromPath(arg1:string):Promise<
 
 export function BrowserProfilePermanentlyDelete(arg1:string):Promise<void>;
 
+export function BrowserProfileRefreshEnvironmentID(arg1:string):Promise<browser.EnvironmentIdentity>;
+
 export function BrowserProfileRegenerateCode(arg1:string):Promise<string>;
 
 export function BrowserProfileRestore(arg1:string):Promise<browser.Profile>;
 
+export function BrowserProfileRuntimeEvidence(arg1:string):Promise<backend.BrowserRuntimeEvidenceV2>;
+
+export function BrowserProfileRuntimeVerify(arg1:string):Promise<backend.BrowserRuntimeEvidenceV2>;
+
 export function BrowserProfileSetCode(arg1:string,arg2:string):Promise<string>;
 
 export function BrowserProfileSetKeywords(arg1:string,arg2:Array<string>):Promise<browser.Profile>;
+
+export function BrowserProfileSetNetworkPolicy(arg1:browser.NetworkPolicy):Promise<browser.NetworkPolicy>;
+
+export function BrowserProfileTemplateCompatibility(arg1:string):Promise<backend.BrowserTemplateCompatibility>;
 
 export function BrowserProfileTrashCleanup():Promise<void>;
 
@@ -292,6 +398,8 @@ export function BrowserProxyListByGroup(arg1:string):Promise<Array<config.Browse
 
 export function BrowserProxyListGroups():Promise<Array<string>>;
 
+export function BrowserProxyParseImport(arg1:string):Promise<Record<string, any>>;
+
 export function BrowserProxyProbeBrowserPage(arg1:backend.ProxyBrowserProbeRequest):Promise<backend.ProxyBrowserProbeResult>;
 
 export function BrowserProxyResolveLocation(arg1:string):Promise<backend.ProxyLocationResolveResult>;
@@ -312,11 +420,23 @@ export function BrowserSnapshotList(arg1:string):Promise<Array<backend.SnapshotI
 
 export function BrowserSnapshotRestore(arg1:string,arg2:string):Promise<void>;
 
+export function BrowserSyncStatus():Promise<backend.BrowserSyncStatusV1>;
+
+export function BrowserSystemIntegrationSetProtocol(arg1:boolean):Promise<any>;
+
+export function BrowserSystemIntegrationStartupURLs():Promise<Array<string>>;
+
+export function BrowserSystemIntegrationStatusGet():Promise<any>;
+
 export function ClearAppLogs():Promise<void>;
 
 export function CreateGroup(arg1:browser.GroupInput):Promise<browser.Group>;
 
 export function DeleteGroup(arg1:string):Promise<void>;
+
+export function ExportBrowserDiagnosticIncident(arg1:string):Promise<Record<string, any>>;
+
+export function ExportBrowserDiagnostics():Promise<Record<string, any>>;
 
 export function FetchRemoteAuthorProfile(arg1:string,arg2:number):Promise<Record<string, any>>;
 
@@ -326,14 +446,19 @@ export function FrontendOperationLog(arg1:string,arg2:string,arg3:boolean,arg4:n
 
 export function GetAppConfig():Promise<Record<string, any>>;
 
-export function GetAppLogs():Promise<Array<logger.MemoryLogEntry>>;
+export function GetAppLogStatus():Promise<Record<string, string>>;
 
-export function GetAppLogStatus():Promise<Record<string,string>>;
-export function ExportBrowserDiagnostics():Promise<Record<string,any>>;
+export function GetAppLogs():Promise<Array<logger.MemoryLogEntry>>;
 
 export function GetAutomationState():Promise<Record<string, any>>;
 
 export function GetBackupFileInfo(arg1:string):Promise<Record<string, any>>;
+
+export function GetBrowserDiagnosticIncident(arg1:string):Promise<Record<string, any>>;
+
+export function GetBrowserDiagnosticIncidents():Promise<Array<Record<string, any>>>;
+
+export function GetBrowserDiagnosticRunLogs(arg1:string,arg2:string):Promise<Array<logger.MemoryLogEntry>>;
 
 export function GetBrowserSettings():Promise<browser.Settings>;
 
@@ -366,6 +491,8 @@ export function OpenProjectRoot():Promise<void>;
 export function OpenUserDataDir(arg1:string):Promise<void>;
 
 export function OpenUserDataRoot():Promise<void>;
+
+export function PatchBrowserProfile(arg1:string,arg2:browser.ProfilePatchInput):Promise<browser.Profile>;
 
 export function QuitAppOnly():Promise<void>;
 
@@ -408,9 +535,3 @@ export function UpdateGroup(arg1:string,arg2:browser.GroupInput):Promise<browser
 export function ValidateProxyConfig(arg1:string,arg2:string):Promise<backend.ProxyValidationResult>;
 
 export function WaitInstanceDebugReady(arg1:string,arg2:number,arg3:time.Duration):Promise<browser.Profile>;
-export function BrowserProxyParseImport(arg1:string):Promise<Record<string, any>>;
-
-export function GetBrowserDiagnosticIncidents():Promise<Record<string,any>[]>;
-export function GetBrowserDiagnosticIncident(id:string):Promise<Record<string,any>>;
-export function GetBrowserDiagnosticRunLogs(profile:string,run:string):Promise<Record<string,any>[]>;
-export function ExportBrowserDiagnosticIncident(id:string):Promise<Record<string,any>>;
