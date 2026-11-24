@@ -42,10 +42,15 @@ func assessFingerprintRuntime(r BrowserFingerprintRuntimeInfo, e BrowserFingerpr
 		issues = append(issues, "navigator.webdriver 为 true")
 	}
 	checkContext := func(label string, ctx *BrowserFingerprintWorkerInfo) {
-		if ctx == nil || !ctx.Applicable {
+		if ctx == nil {
 			return
 		}
-		if !ctx.Executed || ctx.Error != "" {
+		legacyObservation := ctx.Language != "" || len(ctx.Languages) > 0 || ctx.Timezone != "" ||
+			ctx.HardwareConcurrency != 0 || ctx.Platform != "" || ctx.UserAgent != ""
+		if !ctx.Applicable && !legacyObservation {
+			return
+		}
+		if (!ctx.Executed && !legacyObservation) || ctx.Error != "" {
 			verificationGaps = append(verificationGaps, label+" 未执行有效探测")
 			return
 		}
@@ -56,7 +61,11 @@ func assessFingerprintRuntime(r BrowserFingerprintRuntimeInfo, e BrowserFingerpr
 		check(label+" 平台", r.Platform, ctx.Platform)
 		check(label+" UA", r.UserAgent, ctx.UserAgent)
 	}
-	checkContext("DedicatedWorker", r.Worker)
+	if r.Worker == nil {
+		verificationGaps = append(verificationGaps, "DedicatedWorker 未提供探测结果")
+	} else {
+		checkContext("DedicatedWorker", r.Worker)
+	}
 	checkContext("Iframe", r.Iframe)
 	checkContext("SharedWorker", r.SharedWorker)
 	if r.ServiceWorker.Applicable && !r.ServiceWorker.Executed {

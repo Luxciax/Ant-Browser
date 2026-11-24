@@ -48,8 +48,8 @@ func TestLoadBackupLocalConfigMigratesLegacySettings(t *testing.T) {
 		t.Fatalf("read rewritten local config: %v", err)
 	}
 	text := string(rewritten)
-	if !strings.Contains(text, "legacy-token") {
-		t.Fatal("rewritten local config must keep the token")
+	if strings.Contains(text, "legacy-token") || !strings.Contains(text, "token_ref:") {
+		t.Fatal("rewritten local config must replace the plaintext token with a SecretRef")
 	}
 	if strings.Contains(text, "127.0.0.1:5244") || strings.Contains(text, "03:15") || strings.Contains(text, "legacy/backups") {
 		t.Fatal("rewritten local config must only contain the token")
@@ -82,8 +82,13 @@ func TestBackupLocalConfigStoresFullS3Config(t *testing.T) {
 		}
 	}
 	for _, secret := range []string{"access-key", "secret-key", "session-token"} {
-		if !strings.Contains(text, secret) {
-			t.Fatalf("local S3 config must contain %q: %s", secret, text)
+		if strings.Contains(text, secret) {
+			t.Fatalf("local S3 config must not contain plaintext secret %q: %s", secret, text)
+		}
+	}
+	for _, refField := range []string{"access_key_id_ref:", "secret_access_key_ref:", "session_token_ref:"} {
+		if !strings.Contains(text, refField) {
+			t.Fatalf("local S3 config must contain %q: %s", refField, text)
 		}
 	}
 
@@ -148,13 +153,18 @@ func TestPrepareBackupLocalConfigMovesS3ConfigOutOfConfigFile(t *testing.T) {
 		"us-west-2",
 		"backup-bucket",
 		"s3-only-prefix",
-		"access-key",
-		"secret-key",
-		"session-token",
 		"force_path_style: true",
+		"access_key_id_ref:",
+		"secret_access_key_ref:",
+		"session_token_ref:",
 	} {
 		if !strings.Contains(localText, value) {
 			t.Fatalf("S3 value %q missing from backup.local.yaml: %s", value, localText)
+		}
+	}
+	for _, secret := range []string{"access-key", "secret-key", "session-token"} {
+		if strings.Contains(localText, secret) {
+			t.Fatalf("plaintext S3 secret %q leaked into backup.local.yaml: %s", secret, localText)
 		}
 	}
 }

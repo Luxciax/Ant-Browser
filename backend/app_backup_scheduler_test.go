@@ -55,8 +55,8 @@ func TestBackupScheduledSaveSettingsStoresTokenLocally(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read local backup config: %v", err)
 	}
-	if string(localData) == "" || !containsString(string(localData), "secret-token") {
-		t.Fatal("OpenList token must be written to the local backup config")
+	if string(localData) == "" || containsString(string(localData), "secret-token") || !containsString(string(localData), "token_ref:") {
+		t.Fatal("OpenList token must be stored through a SecretRef in the local backup config")
 	}
 	if containsString(string(localData), "127.0.0.1:5244") || containsString(string(localData), "03:15") {
 		t.Fatal("local backup config must only contain the OpenList token")
@@ -76,7 +76,9 @@ func TestBackupScheduledSaveSettingsStoresTokenLocally(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload config: %v", err)
 	}
-	reloadedScheduler := newBackupScheduler(&App{appRoot: appRoot, config: persistedConfig})
+	reloadedApp := NewApp(appRoot)
+	reloadedApp.config = persistedConfig
+	reloadedScheduler := newBackupScheduler(reloadedApp)
 	if err := reloadedScheduler.loadLocalConfig(); err != nil {
 		t.Fatalf("reload local backup config: %v", err)
 	}

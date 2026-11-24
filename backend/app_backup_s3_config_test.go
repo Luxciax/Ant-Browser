@@ -55,8 +55,13 @@ func TestBackupS3SaveSettingsKeepsFullConfigLocal(t *testing.T) {
 	}
 	localText := string(localData)
 	for _, secret := range []string{"access-key", "secret-key", "session-token"} {
-		if !strings.Contains(localText, secret) {
-			t.Fatalf("local config is missing S3 secret %q: %s", secret, localText)
+		if strings.Contains(localText, secret) {
+			t.Fatalf("local config contains plaintext S3 secret %q: %s", secret, localText)
+		}
+	}
+	for _, refField := range []string{"access_key_id_ref:", "secret_access_key_ref:", "session_token_ref:"} {
+		if !strings.Contains(localText, refField) {
+			t.Fatalf("local config is missing SecretRef field %q: %s", refField, localText)
 		}
 	}
 	for _, publicValue := range []string{"s3.example.com", "us-west-2", "backup-bucket", "s3-only-prefix", "force_path_style: true"} {

@@ -42,6 +42,17 @@ func defaultSecretStorePath() string {
 	return filepath.Join(configDir, backupLocalConfigDirName, backupSecretStoreFileName)
 }
 
+func backupLocalSecretStore(path string, preferred *secretstore.Store) (*secretstore.Store, error) {
+	if preferred != nil {
+		return preferred, nil
+	}
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil, fmt.Errorf("本地备份配置路径为空")
+	}
+	return secretstore.New(filepath.Join(filepath.Dir(filepath.Clean(path)), backupSecretStoreFileName))
+}
+
 func (a *App) backupLocalConfigPath() string {
 	if a == nil {
 		return ""
@@ -70,7 +81,9 @@ func (a *App) activateStableBackupLocalConfig() {
 
 func (a *App) loadBackupLocalConfig(base config.BackupConfig) (config.BackupConfig, bool, string, error) {
 	path := a.backupLocalConfigPath()
-	settings, exists, err := loadBackupLocalConfigWithSecretStore(path, base, a.secretStore)
+	store, storeErr := backupLocalSecretStore(path, a.secretStore)
+	if storeErr != nil { return base, false, path, storeErr }
+	settings, exists, err := loadBackupLocalConfigWithSecretStore(path, base, store)
 	if err != nil || exists {
 		return settings, exists, path, err
 	}
@@ -79,7 +92,9 @@ func (a *App) loadBackupLocalConfig(base config.BackupConfig) (config.BackupConf
 	if legacyPath == path {
 		return settings, false, "", nil
 	}
-	legacySettings, legacyExists, legacyErr := loadBackupLocalConfigWithSecretStore(legacyPath, base, a.secretStore)
+	legacyStore, legacyStoreErr := backupLocalSecretStore(legacyPath, a.secretStore)
+	if legacyStoreErr != nil { return base, false, legacyPath, legacyStoreErr }
+	legacySettings, legacyExists, legacyErr := loadBackupLocalConfigWithSecretStore(legacyPath, base, legacyStore)
 	return legacySettings, legacyExists, legacyPath, legacyErr
 }
 
@@ -266,7 +281,9 @@ func backupHasLocalConfig(value config.BackupConfig) bool {
 }
 
 func loadBackupLocalConfig(path string, base config.BackupConfig) (config.BackupConfig, bool, error) {
-	return loadBackupLocalConfigWithSecretStore(path, base, nil)
+	store, err := backupLocalSecretStore(path, nil)
+	if err != nil { return normalizeBackupSettings(base), false, err }
+	return loadBackupLocalConfigWithSecretStore(path, base, store)
 }
 
 func loadBackupLocalConfigWithSecretStore(path string, base config.BackupConfig, store *secretstore.Store) (config.BackupConfig, bool, error) {
@@ -374,11 +391,15 @@ func loadBackupLocalConfigWithSecretStore(path string, base config.BackupConfig,
 }
 
 func saveBackupLocalConfig(path string, value config.BackupConfig) error {
-	return saveBackupLocalConfigWithSecretStore(path, value, nil)
+	store, err := backupLocalSecretStore(path, nil)
+	if err != nil { return err }
+	return saveBackupLocalConfigWithSecretStore(path, value, store)
 }
 
 func (a *App) saveBackupLocalConfig(path string, value config.BackupConfig) error {
-	return saveBackupLocalConfigWithSecretStore(path, value, a.secretStore)
+	store, err := backupLocalSecretStore(path, a.secretStore)
+	if err != nil { return err }
+	return saveBackupLocalConfigWithSecretStore(path, value, store)
 }
 
 func loadExistingBackupSecretRefs(path string) backupLocalConfigReadFile {
