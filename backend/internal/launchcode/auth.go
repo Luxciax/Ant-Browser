@@ -98,6 +98,13 @@ func requiredScopeForRequest(r *http.Request) string {
 		if method == http.MethodGet { return ScopeEnvironmentRead }
 		if strings.HasSuffix(path, "/start") || strings.HasSuffix(path, "/stop") { return ScopePageAction }
 		return ScopeEnvironmentAdmin
+	case strings.HasPrefix(path, "/api/automation/workflows"):
+		if strings.HasSuffix(path, "/run") { return ScopeScript }
+		if method == http.MethodGet { return ScopeEnvironmentRead }
+		return ScopeEnvironmentAdmin
+	case strings.HasPrefix(path, "/api/automation/workflow-runs"):
+		if strings.HasSuffix(path, "/resume") { return ScopeScript }
+		return ScopeEnvironmentRead
 	case strings.HasPrefix(path, "/api/automation"):
 		if method == http.MethodGet { return ScopeEnvironmentRead }
 		return ScopeScript

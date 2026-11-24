@@ -11,7 +11,7 @@ const (
 	ServerName = "ant-browser"
 	DefaultPath = "/mcp"
 	sessionTimeout = 30 * time.Minute
-	toolCount = 36
+	toolCount = 42
 )
 
 type Server struct {
@@ -42,6 +42,9 @@ func (s *Server) buildMCPServer() *mcp.Server {
 	}
 	if providerAllowsScope(s.provider, "environment-read") || providerAllowsScope(s.provider, "script") {
 		registerAutomationTools(srv, s.provider)
+	}
+	if providerAllowsScope(s.provider, "environment-read") || providerAllowsScope(s.provider, "environment-admin") || providerAllowsScope(s.provider, "script") {
+		registerWorkflowTools(srv, s.provider)
 	}
 	if providerAllowsScope(s.provider, "environment-read") || providerAllowsScope(s.provider, "environment-admin") {
 		registerProxyTools(srv, s.provider)

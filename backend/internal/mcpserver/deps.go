@@ -23,6 +23,17 @@ type InstanceProvider interface {
 	ActiveRuntimeSession() (*launchcode.RuntimeSession, error)
 }
 
+type WorkflowProvider interface {
+	ListWorkflows() ([]automation.WorkflowDefinition, error)
+	GetWorkflow(id string) (*automation.WorkflowDefinition, error)
+	SaveWorkflow(input automation.WorkflowDefinition) (*automation.WorkflowDefinition, error)
+	DeleteWorkflow(id string) error
+	RunWorkflow(req automation.WorkflowRunRequest) (*automation.WorkflowRunRecord, error)
+	ResumeWorkflow(id string, force bool) (*automation.WorkflowRunRecord, error)
+	ListWorkflowRuns(limit int) ([]automation.WorkflowRunRecord, error)
+	GetWorkflowRun(id string) (*automation.WorkflowRunRecord, error)
+}
+
 type AutomationProvider interface {
 	ListScripts() ([]automation.ScriptRecord, error)
 	GetScript(scriptID string) (*automation.ScriptRecord, error)
@@ -45,6 +56,7 @@ type PageProvider interface {
 type Provider interface {
 	InstanceProvider
 	AutomationProvider
+	WorkflowProvider
 	ProxyProvider
 	PageProvider
 }

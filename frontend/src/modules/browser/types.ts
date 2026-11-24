@@ -575,3 +575,50 @@ export interface BrowserBatchOperation {
   finishedAt?: string
   results: BrowserBatchItemResult[]
 }
+
+export interface BrowserWorkflowRetryPolicy { maxAttempts?: number; delayMs?: number; allowSideEffects?: boolean }
+export interface BrowserWorkflowCondition { variable: string; operator: string; value?: any }
+export interface BrowserWorkflowStep {
+  id: string
+  type: 'action' | 'set' | 'if' | 'loop' | 'sleep' | string
+  action?: string
+  args?: Record<string, any>
+  saveAs?: string
+  value?: any
+  condition?: BrowserWorkflowCondition
+  steps?: BrowserWorkflowStep[]
+  elseSteps?: BrowserWorkflowStep[]
+  maxIterations?: number
+  retry?: BrowserWorkflowRetryPolicy
+  timeoutMs?: number
+  breakpoint?: boolean
+}
+export interface BrowserWorkflow {
+  schemaVersion: number
+  id: string
+  name: string
+  description?: string
+  enabled: boolean
+  selector: Record<string, any>
+  variables?: Record<string, any>
+  steps: BrowserWorkflowStep[]
+  schedule: { enabled: boolean; everyMinutes?: number; dailyTime?: string; allowOverlap?: boolean }
+  createdAt: string
+  updatedAt: string
+  lastRunAt?: string
+}
+export interface BrowserWorkflowRun {
+  schemaVersion: number
+  id: string
+  workflowId: string
+  workflowName: string
+  status: 'running' | 'paused' | 'interrupted' | 'failed' | 'success' | string
+  variables: Record<string, any>
+  nextStep: number
+  lastStepId?: string
+  resumeRequiresForce?: boolean
+  error?: string
+  startedAt: string
+  finishedAt?: string
+  updatedAt: string
+}
