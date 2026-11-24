@@ -56,7 +56,6 @@ type PageProvider interface {
 type Provider interface {
 	InstanceProvider
 	AutomationProvider
-	WorkflowProvider
 	ProxyProvider
 	PageProvider
 }

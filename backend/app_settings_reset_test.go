@@ -3,6 +3,7 @@ package backend
 import (
 	"ant-chrome/backend/internal/config"
 	"os"
+	"reflect"
 	"path/filepath"
 	"testing"
 )
@@ -58,7 +59,7 @@ func TestResetManagedSettingsResetsManagedConfigAndSecrets(t *testing.T) {
 	if !backupConfigsEqual(app.config.Backup, defaults.Backup) {
 		t.Fatalf("backup config = %+v, want %+v", app.config.Backup, defaults.Backup)
 	}
-	if app.config.LaunchServer != defaults.LaunchServer {
+	if !reflect.DeepEqual(app.config.LaunchServer, defaults.LaunchServer) {
 		t.Fatalf("LaunchServer config = %+v, want %+v", app.config.LaunchServer, defaults.LaunchServer)
 	}
 	if app.config.App.Name != "custom app" {
@@ -83,7 +84,7 @@ func TestResetManagedSettingsResetsManagedConfigAndSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load persisted config: %v", err)
 	}
-	if persisted.Automation != defaults.Automation || !backupConfigsEqual(persisted.Backup, defaults.Backup) || persisted.LaunchServer != defaults.LaunchServer {
+	if persisted.Automation != defaults.Automation || !backupConfigsEqual(persisted.Backup, defaults.Backup) || !reflect.DeepEqual(persisted.LaunchServer, defaults.LaunchServer) {
 		t.Fatalf("persisted managed settings were not reset: automation=%+v backup=%+v launchServer=%+v", persisted.Automation, persisted.Backup, persisted.LaunchServer)
 	}
 	if persisted.App.Name != "custom app" || persisted.Browser.UserDataRoot != filepath.Join(root, "browser-data") {
