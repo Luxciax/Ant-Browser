@@ -56,10 +56,12 @@ func (c *Config) Validate() error {
 	if c == nil {
 		return &ValidationError{Message: "config is nil"}
 	}
-	if c.LaunchServer.Auth.Enabled && strings.TrimSpace(c.LaunchServer.Auth.APIKey) == "" {
+	if c.LaunchServer.Auth.Enabled &&
+		strings.TrimSpace(c.LaunchServer.Auth.APIKey) == "" &&
+		strings.TrimSpace(c.LaunchServer.Auth.APIKeyRef) == "" {
 		return &ValidationError{
 			Field:   "launch_server.auth.api_key",
-			Message: "must not be empty when launch server auth is enabled",
+			Message: "api_key or api_key_ref must be configured when launch server auth is enabled",
 		}
 	}
 	return nil
