@@ -34,20 +34,7 @@ jobs:
         run: go vet ./backend/... ./internal/... ./tools/...
 
       - name: Compile all Go packages
-        run: go test -run '^
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Audit frontend dependencies
-        working-directory: frontend
-        run: npm audit --audit-level=high
-
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
- -p=1 ./...
+        run: go test -run '^$' -p=1 ./...
 
       - name: Install frontend dependencies
         working-directory: frontend
