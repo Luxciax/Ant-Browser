@@ -57,8 +57,10 @@ type App struct {
 	profileWindowMarkersMu        sync.Mutex
 	profileWindowMarkers          map[string]*profileWindowMarker
 	profileRuntimeOpsMu           sync.Mutex
+	launchPlanMu                  sync.RWMutex
 	profileRuntimeOps             map[string]*sync.Mutex
 	browserProcessMonitors        map[string]*browserProcessMonitor
+	launchReceipts                 map[string]BrowserLaunchReceiptV2
 	diagnosticsMu                 sync.Mutex
 	browserDiagnostics            map[string]context.CancelFunc
 	incidentPersistMu             sync.Mutex
@@ -86,6 +88,7 @@ func NewApp(appRoot string, appVersion ...string) *App {
 		profileWindowMarkers:   make(map[string]*profileWindowMarker),
 		profileRuntimeOps:      make(map[string]*sync.Mutex),
 		browserProcessMonitors: make(map[string]*browserProcessMonitor),
+		launchReceipts:          make(map[string]BrowserLaunchReceiptV2),
 	}
 }
 

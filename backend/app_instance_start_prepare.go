@@ -38,6 +38,7 @@ type browserStartPlan struct {
 	startStableWindow    time.Duration
 	maxStartAttempts     int
 	totalReadyTimeout    time.Duration
+	publicPlan           BrowserLaunchPlanV2
 }
 
 func newBrowserStartInput(profileID string, extraLaunchArgs []string, startURLs []string, skipDefaultStartURLs bool, preferVisibleWindow bool, forceDirectProxy bool, proxyID string, proxyConfig string) browserStartInput {
@@ -206,7 +207,7 @@ func (a *App) prepareBrowserStartPlan(ctx context.Context, input browserStartInp
 	extensionWarning := joinBrowserStartExtensionWarnings(extensionWarnings)
 	instanceArgs := buildBrowserLaunchArgs(userDataDir, assignedDebugPort, effectiveProxy, extensionDirs, fingerprintLaunchArgs, sanitizedProfileLaunchArgs, sanitizedExtraLaunchArgs, launchTargets, restoreLastSession)
 
-	return &browserStartPlan{
+	plan := &browserStartPlan{
 		profile:              profile,
 		chromeBinaryPath:     chromeBinaryPath,
 		userDataDir:          userDataDir,
@@ -222,7 +223,9 @@ func (a *App) prepareBrowserStartPlan(ctx context.Context, input browserStartInp
 		startStableWindow:    startStableWindow,
 		maxStartAttempts:     maxStartAttempts,
 		totalReadyTimeout:    totalReadyTimeout,
-	}, nil
+	}
+	plan.publicPlan = a.buildLaunchPlanV2(input, plan, len(fingerprintLaunchArgs), len(launchTargets), restoreLastSession)
+	return plan, nil
 }
 
 func joinBrowserStartExtensionWarnings(warnings []error) string {

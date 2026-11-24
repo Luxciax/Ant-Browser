@@ -1,6 +1,9 @@
 package backend
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 func (a *App) BrowserInstanceStart(profileId string) (*BrowserProfile, error) {
 	return a.browserInstanceStartInternal(profileId, nil, nil, false, false, false, "", "")
@@ -65,11 +68,28 @@ func (a *App) browserInstanceStartWithRuntimeLock(profileId string, extraLaunchA
 		return profile, err
 	}
 	defer plan.releaseBridgeIfNeeded(a)
+	a.storeLaunchReceipt(input.ProfileID, BrowserLaunchReceiptV2{
+		Plan: plan.publicPlan,
+		State: "prepared",
+	})
 
 	startedProfile, err := a.startBrowserProfileWithPlan(ctx, input, plan)
 	if err != nil {
+		a.updateLaunchReceipt(input.ProfileID, func(receipt *BrowserLaunchReceiptV2) {
+			receipt.State = "failed"
+			receipt.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
+			receipt.Error = err.Error()
+		})
 		a.markProfileStartFailed(input.ProfileID, profile, err)
 		return profile, err
 	}
+	a.updateLaunchReceipt(input.ProfileID, func(receipt *BrowserLaunchReceiptV2) {
+		receipt.State = "effective"
+		receipt.StartedAt = startedProfile.LastStartAt
+		receipt.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
+		receipt.PID = startedProfile.Pid
+		receipt.DebugPort = startedProfile.DebugPort
+		receipt.DebugReady = startedProfile.DebugReady
+	})
 	return startedProfile, nil
 }
