@@ -59,7 +59,7 @@ Ant Browser 适合以下场景：
 - 备份渠道：支持本地、OpenList 和 S3（含兼容服务）三种备份位置。
 - 备份范围：支持全量备份，也支持按实例选择性备份；远程历史支持扫描、下载和恢复。
 - OpenList 定时备份：支持每日执行时间、最近执行状态和失败反馈；实例仍在运行时跳过本次任务。
-- 凭据保护：OpenList Token、S3 访问凭据仅保存到本地敏感配置 `backup.local.yaml`，界面默认脱敏并支持按需显示。
+- 凭据保护：`backup.local.yaml` 只保存 OpenList/S3 的 SecretRef；秘密值写入本地 `secrets.v1.json`，Windows 使用当前用户范围 DPAPI，其他平台要求配置 `ANT_BROWSER_SECRET_KEY` 后使用 AES-GCM。
 - 恢复安全：备份包增加清单校验、路径校验和解压限制；恢复保留兼容字段，并按当前机器重新映射实例与外部内核路径。
 - 代理连接栈：明确区分 `xray` + sing-box 组合栈与独立 `mihomo` 栈，统一代理测速、连通性、预热和运行时下载流程。
 - 设置维护：新增系统设置重置，并增加定时备份的配置保护；开发入口整理为 `bat\dev.bat` 和 `scripts/dev.sh`。
@@ -338,7 +338,7 @@ chrome/
 4. 从历史列表选择本地或远程备份，可下载并恢复；恢复采用合并方式，不会直接清空现有数据。
 5. 需要自动备份时，先配置 OpenList，再设置每日执行时间。
 
-OpenList Token 和 S3 访问凭据保存在应用用户配置目录中的 `backup.local.yaml`，不会写入 `config.yaml`；不要把该文件复制到公共仓库或提交到 git。
+`backup.local.yaml` 不再保存 OpenList Token 或 S3 凭据明文，只保存对应 SecretRef；秘密值保存在同一用户配置目录下的 `secrets.v1.json`。两者都不应提交到公共仓库。
 Windows 升级或卸载旧版本时，安装器会先将旧安装目录中的 `backup.local.yaml` 迁移到该用户配置目录，避免重装丢失凭据。
 
 ## 常用操作
@@ -377,7 +377,7 @@ Windows 升级或卸载旧版本时，安装器会先将旧安装目录中的 `b
 
 ### 5. 备份凭据会不会写进配置文件？
 
-不会写入普通 `config.yaml`。OpenList Token 和 S3 访问凭据保存在应用用户配置目录中的本地文件 `backup.local.yaml`，界面读取时默认显示为脱敏值。
+不会写入普通 `config.yaml`，也不会以明文写入 `backup.local.yaml`。`backup.local.yaml` 仅保存 SecretRef，秘密值保存在本地 `secrets.v1.json`，界面读取时默认显示脱敏状态。
 
 ## Roadmap
 
