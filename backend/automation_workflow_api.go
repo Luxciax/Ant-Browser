@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"ant-chrome/backend/internal/automation"
+	"ant-chrome/backend/internal/fsutil"
 	"ant-chrome/backend/internal/launchcode"
 )
 
@@ -199,7 +200,7 @@ func (a *App) BrowserAutomationWorkflowRun(req BrowserAutomationWorkflowRunReque
 	}
 	for key, value := range req.Variables { run.Variables[key] = value }
 	run, err = store.SaveRun(run); if err != nil { return nil, err }
-	return a.executeWorkflowRun(definition, run, req.Breakpoints)
+	return a.executeWorkflowRun(definition, run, req.Breakpoints, "")
 }
 
 func (a *App) BrowserAutomationWorkflowResume(runID string, force bool) (*BrowserAutomationWorkflowRun, error) {
@@ -212,19 +213,21 @@ func (a *App) BrowserAutomationWorkflowResume(runID string, force bool) (*Browse
 		return nil, fmt.Errorf("resume requires force because the pending step may have side effects")
 	}
 	definition, err := store.GetDefinition(run.WorkflowID); if err != nil { return nil, err }
+	skipBreakpointID := run.LastStepID
 	run.Status = "running"; run.Error = ""; run.FinishedAt = ""; run.ResumeRequiresForce = false
 	run, err = store.SaveRun(run); if err != nil { return nil, err }
-	return a.executeWorkflowRun(definition, run, nil)
+	return a.executeWorkflowRun(definition, run, nil, skipBreakpointID)
 }
 
-func (a *App) executeWorkflowRun(definition automation.WorkflowDefinition, run automation.WorkflowRunRecord, breakpoints []string) (*automation.WorkflowRunRecord, error) {
+func (a *App) executeWorkflowRun(definition automation.WorkflowDefinition, run automation.WorkflowRunRecord, breakpoints []string, skipBreakpointID string) (*automation.WorkflowRunRecord, error) {
 	store, _ := a.workflowStoreOrError()
 	breakpointSet := map[string]struct{}{}
 	for _, value := range breakpoints { breakpointSet[strings.TrimSpace(value)] = struct{}{} }
 	for index := run.NextStep; index < len(definition.Steps); index++ {
 		step := definition.Steps[index]
 		_, explicitBreakpoint := breakpointSet[step.ID]
-		if explicitBreakpoint || step.Breakpoint {
+		shouldPause := explicitBreakpoint || step.Breakpoint
+		if shouldPause && step.ID != skipBreakpointID {
 			run.Status = "paused"; run.NextStep = index; run.LastStepID = step.ID
 			run.ResumeRequiresForce = isWorkflowStepPotentiallySideEffecting(step)
 			saved, _ := store.SaveRun(run)
@@ -233,6 +236,7 @@ func (a *App) executeWorkflowRun(definition automation.WorkflowDefinition, run a
 		run.LastStepID = step.ID; run.NextStep = index
 		run.ResumeRequiresForce = isWorkflowStepPotentiallySideEffecting(step)
 		run, _ = store.SaveRun(run)
+		skipBreakpointID = ""
 		if err := a.executeWorkflowStep(definition.Selector, &run, step, index); err != nil {
 			run.Status = "failed"; run.Error = err.Error(); run.FinishedAt = time.Now().UTC().Format(time.RFC3339Nano)
 			saved, _ := store.SaveRun(run)
@@ -310,6 +314,7 @@ func (a *App) executeWorkflowAction(selector automation.WorkflowSelector, run *a
 		if err == nil && result != nil && result.OK && len(result.Steps) > 0 && result.Steps[0].OK {
 			record.OK = true; record.Result = result.Steps[0].Result; run.Steps = append(run.Steps, record)
 			if strings.TrimSpace(step.SaveAs) != "" { run.Variables[step.SaveAs] = record.Result }
+			if a.workflowStore != nil { *run, _ = a.workflowStore.SaveRun(*run) }
 			return nil
 		}
 		switch {
@@ -318,6 +323,7 @@ func (a *App) executeWorkflowAction(selector automation.WorkflowSelector, run *a
 		default: lastErr = fmt.Errorf("page action failed")
 		}
 		record.Error = lastErr.Error(); run.Steps = append(run.Steps, record)
+		if a.workflowStore != nil { *run, _ = a.workflowStore.SaveRun(*run) }
 		if attempt < attempts && delay > 0 { time.Sleep(delay) }
 	}
 	return fmt.Errorf("step %s failed after %d attempt(s): %w", step.ID, attempts, lastErr)
@@ -341,7 +347,7 @@ func (a *App) BrowserAutomationWorkflowStageUpload(sourcePath, filename string) 
 	data, err := os.ReadFile(sourcePath)
 	if err != nil { return nil, err }
 	target := filepath.Join(root, name)
-	if err := os.WriteFile(target, data, 0o600); err != nil { return nil, err }
+	if err := fsutil.AtomicWriteFile(target, data, 0o600); err != nil { return nil, err }
 	return map[string]any{"name": name, "size": len(data)}, nil
 }
 

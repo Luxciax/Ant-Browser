@@ -25,3 +25,8 @@ Uploads are staged explicitly into Ant's workflow upload directory and the page
 runner resolves upload filenames under that root only. Workflow page actions
 also accept `frameSelectors` chains and `shadowSelectors` chains, while
 retaining the existing single `frameSelector` compatibility field.
+
+Embedded breakpoints are skipped exactly once when resuming the paused run, so
+resume cannot immediately pause on the same breakpoint forever. Step-attempt
+records are persisted as they complete, including actions nested inside loops
+and conditions.
