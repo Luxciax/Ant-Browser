@@ -1,0 +1,36 @@
+{
+  "run_id": "example-run-001",
+  "sample_id": "example-sample",
+  "metadata": {
+    "product": "research-source",
+    "collector_version": "unknown",
+    "kernel_version": "unknown"
+  },
+  "stages": [
+    {
+      "stage_id": "A1",
+      "ordinal": 0,
+      "execution_status": "unknown",
+      "started_at": "",
+      "completed_at": "",
+      "session_ref": "",
+      "metadata": {},
+      "artifacts": [
+        "relative/path/to/a1.json"
+      ]
+    },
+    {
+      "stage_id": "B1",
+      "ordinal": 1,
+      "execution_status": "unknown",
+      "started_at": "",
+      "completed_at": "",
+      "session_ref": "",
+      "metadata": {},
+      "artifacts": [
+        "relative/path/to/b1.json"
+      ]
+    }
+  ],
+  "reports": {}
+}

@@ -630,6 +630,16 @@ func validateProfilePackageCatalog(manifest ProfilePackageManifest, profiles []b
 	if manifest.ProfileCount < 0 || (manifest.ProfileCount > 0 && manifest.ProfileCount != len(profiles)) {
 		return fmt.Errorf("实例包配置数量不一致: manifest=%d actual=%d", manifest.ProfileCount, len(profiles))
 	}
+	if len(manifest.ProfileNames) > 0 {
+		if len(manifest.ProfileNames) != len(profiles) {
+			return fmt.Errorf("实例包名称清单数量不一致: manifest=%d actual=%d", len(manifest.ProfileNames), len(profiles))
+		}
+		for i := range profiles {
+			if manifest.ProfileNames[i] != profiles[i].ProfileName {
+				return fmt.Errorf("实例包第 %d 条配置名称与 manifest 不一致", i+1)
+			}
+		}
+	}
 	seen := make(map[string]struct{}, len(profiles))
 	for i := range profiles {
 		id := profiles[i].ProfileId

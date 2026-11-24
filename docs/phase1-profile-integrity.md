@@ -91,6 +91,20 @@ research pipeline reconciliation is not implemented here. No source files
 are modified, and the tool does not access the network or parse the contents
 into browser configuration.
 
+## Immutable run provenance
+
+`tools/evidence_provenance.py` complements the tree inventory with immutable
+run manifests. It records a run ID, optional sample ID, ordered stages, file
+hashes and named report hashes without interpreting the underlying measurement
+payload. It can verify that source artifacts still match a manifest and can
+build an index that reports conflicting manifests sharing one run ID.
+
+The contract and an example specification are documented in
+`docs/evidence-provenance-v1.md` and `docs/evidence-run-spec.example.json`.
+Historical stages that cannot be attributed to one execution remain ambiguous;
+the tooling does not synthesize timestamps, stages, observations, or report
+statistics.
+
 ## Scope and validation status
 
 These commits implement the separable profile integrity, archive preflight,
