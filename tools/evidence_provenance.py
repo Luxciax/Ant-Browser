@@ -147,6 +147,21 @@ def normalize_metadata(value, label):
     return out
 
 
+def manifest_digest_payload(manifest):
+    return {
+        key: value
+        for key, value in manifest.items()
+        if key != "content_sha256"
+    }
+
+
+def verify_manifest_digest(manifest):
+    expected = digest_json(manifest_digest_payload(manifest))
+    if expected != manifest.get("content_sha256"):
+        raise ValueError("manifest integrity check failed")
+    return expected
+
+
 def build_manifest(root, spec):
     if not isinstance(spec, dict):
         raise ValueError("spec must be a JSON object")
@@ -232,14 +247,7 @@ def build_manifest(root, spec):
         "stages": stages,
         "reports": reports,
     }
-    payload["content_sha256"] = digest_json({
-        "schema_version": payload["schema_version"],
-        "run_id": payload["run_id"],
-        "sample_id": payload["sample_id"],
-        "metadata": payload["metadata"],
-        "stages": payload["stages"],
-        "reports": payload["reports"],
-    })
+    payload["content_sha256"] = digest_json(manifest_digest_payload(payload))
     return payload
 
 
@@ -250,16 +258,7 @@ def verify_manifest(root, manifest):
     sample_id = manifest.get("sample_id", "")
     if sample_id:
         validate_id(sample_id, RUN_ID_RE, "sample_id")
-    expected = digest_json({
-        "schema_version": manifest["schema_version"],
-        "run_id": manifest["run_id"],
-        "sample_id": sample_id,
-        "metadata": manifest.get("metadata", {}),
-        "stages": manifest.get("stages", []),
-        "reports": manifest.get("reports", {}),
-    })
-    if expected != manifest.get("content_sha256"):
-        raise ValueError("manifest integrity check failed")
+    verify_manifest_digest(manifest)
 
     checked = 0
     for stage in manifest.get("stages", []):
@@ -317,7 +316,7 @@ def index_manifests(paths):
         if manifest.get("schema_version") != SCHEMA_VERSION:
             raise ValueError("unsupported manifest schema: " + str(path))
         run_id = validate_id(manifest.get("run_id"), RUN_ID_RE, "run_id")
-        digest = manifest.get("content_sha256", "")
+        digest = verify_manifest_digest(manifest)
         if run_id in seen and seen[run_id]["content_sha256"] != digest:
             conflicts.append({
                 "run_id": run_id,
@@ -364,11 +363,14 @@ def main():
     args = parser.parse_args()
     try:
         if args.command in ("build", "verify"):
-            root = args.root.resolve(strict=True)
-            root_st = root.lstat()
-            if is_link_or_reparse(root_st) or not stat.S_ISDIR(root_st.st_mode):
+            root_input_st = args.root.lstat()
+            if is_link_or_reparse(root_input_st) or not stat.S_ISDIR(root_input_st.st_mode):
                 raise ValueError("root must be a real directory, not a link/reparse point")
+            root = args.root.resolve(strict=True)
         if args.command == "build":
+            output_path = args.output.resolve()
+            if output_path == root or root in output_path.parents:
+                raise ValueError("output must be outside the input root")
             spec = read_json(args.spec)
             manifest = build_manifest(root, spec)
             atomic_create(args.output, manifest)
