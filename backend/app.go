@@ -37,6 +37,7 @@ type App struct {
 	speedScheduler  *browser.ProxySpeedScheduler
 	backupScheduler *backupScheduler
 	secretStore     *secretstore.Store
+	workflowStore   *automation.WorkflowStore
 	appRoot         string
 	version         string
 
@@ -60,6 +61,8 @@ type App struct {
 	profileWindowMarkers          map[string]*profileWindowMarker
 	profileRuntimeOpsMu           sync.Mutex
 	batchMu                       sync.RWMutex
+	workflowSchedulerMu           sync.Mutex
+	workflowActiveMu              sync.Mutex
 	launchPlanMu                  sync.RWMutex
 	kernelCapabilityMu            sync.Mutex
 	runtimeEvidenceMu             sync.RWMutex
@@ -69,6 +72,8 @@ type App struct {
 	kernelBinaryDigestCache        map[string]kernelBinaryDigestCacheEntry
 	runtimeEvidence                map[string]BrowserRuntimeEvidenceV2
 	batchOperations                map[string]BrowserBatchOperation
+	workflowActive                 map[string]bool
+	workflowSchedulerCancel        context.CancelFunc
 	diagnosticsMu                 sync.Mutex
 	browserDiagnostics            map[string]context.CancelFunc
 	incidentPersistMu             sync.Mutex
@@ -100,6 +105,7 @@ func NewApp(appRoot string, appVersion ...string) *App {
 		kernelBinaryDigestCache: make(map[string]kernelBinaryDigestCacheEntry),
 		runtimeEvidence:         make(map[string]BrowserRuntimeEvidenceV2),
 		batchOperations:         make(map[string]BrowserBatchOperation),
+		workflowActive:          make(map[string]bool),
 	}
 }
 

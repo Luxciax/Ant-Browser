@@ -82,6 +82,11 @@ func (a *App) startup(ctx context.Context) {
 	a.startupInitLaunchCode(log)
 	a.startupInitLaunchServer(log)
 	a.startupInitAutomation()
+	a.workflowStore = automation.NewWorkflowStore(a.resolveAppPath("data/automation"))
+	if err := a.workflowStore.RecoverInterruptedRuns(); err != nil {
+		log.Warn("恢复自动化工作流运行记录失败", logger.F("error", err))
+	}
+	a.startWorkflowScheduler()
 	a.startupInitBridgeHooks()
 	a.startupInitSpeedScheduler()
 	a.startupInitBackupScheduler()
