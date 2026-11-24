@@ -464,7 +464,7 @@ func applyOpenListInput(next *config.BackupConfig, input map[string]string) erro
 
 func (s *backupScheduler) commitSettingsLocked(next config.BackupConfig) (map[string]interface{}, error) {
 	next = normalizeBackupSettings(next)
-	if err := saveBackupLocalConfig(s.localConfigPath(), next); err != nil {
+	if err := s.app.saveBackupLocalConfig(s.localConfigPath(), next); err != nil {
 		return nil, err
 	}
 	previous := s.app.config.Backup

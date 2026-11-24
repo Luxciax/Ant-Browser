@@ -35,11 +35,18 @@ type ProfilePackageManifest struct {
 	PortableLogin         bool                            `json:"portableLogin,omitempty"`
 	PortableLoginProfiles []string                        `json:"portableLoginProfiles,omitempty"`
 	Extensions            ProfilePackageExtensionManifest `json:"extensions"`
+	Secrets               ProfilePackageSecretManifest    `json:"secrets"`
 }
 
 type ProfilePackageExtensionManifest struct {
 	Portable bool `json:"portable"`
 	Count    int  `json:"count"`
+}
+
+type ProfilePackageSecretManifest struct {
+	LocalSecretRefsPortable bool   `json:"localSecretRefsPortable"`
+	BackupCredentialsIncluded bool `json:"backupCredentialsIncluded"`
+	Policy string                   `json:"policy"`
 }
 
 type ProfilePackageExportOptions struct {
@@ -363,6 +370,11 @@ func (a *App) writeProfilePackage(zipPath string, profiles []browser.Profile) (i
 				Portable: len(extensionArtifacts) > 0,
 				Count:    len(extensionArtifacts),
 			},
+			Secrets: ProfilePackageSecretManifest{
+				LocalSecretRefsPortable: false,
+				BackupCredentialsIncluded: false,
+				Policy: "local-secret-refs-excluded",
+			},
 		}
 		if err := writeProfilePackageJSON(zipWriter, "manifest.json", manifest); err != nil {
 			return err
@@ -481,6 +493,11 @@ func (a *App) writeProfilePackageWithOptions(zipPath string, profiles []browser.
 		Extensions: ProfilePackageExtensionManifest{
 			Portable: len(extensionArtifacts) > 0,
 			Count:    len(extensionArtifacts),
+		},
+		Secrets: ProfilePackageSecretManifest{
+			LocalSecretRefsPortable: false,
+			BackupCredentialsIncluded: false,
+			Policy: "local-secret-refs-excluded",
 		},
 	}
 

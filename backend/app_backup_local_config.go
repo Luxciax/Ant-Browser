@@ -3,6 +3,7 @@ package backend
 import (
 	"ant-chrome/backend/internal/config"
 	"ant-chrome/backend/internal/fsutil"
+	"ant-chrome/backend/internal/secretstore"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 const (
 	backupLocalConfigFileName = "backup.local.yaml"
 	backupLocalConfigDirName  = "Ant Browser"
+	backupSecretStoreFileName  = "secrets.v1.json"
 )
 
 func defaultBackupLocalConfigPath() string {
@@ -26,6 +28,18 @@ func defaultBackupLocalConfigPath() string {
 		return ""
 	}
 	return filepath.Join(configDir, backupLocalConfigDirName, backupLocalConfigFileName)
+}
+
+func defaultSecretStorePath() string {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	configDir = strings.TrimSpace(configDir)
+	if configDir == "" {
+		return ""
+	}
+	return filepath.Join(configDir, backupLocalConfigDirName, backupSecretStoreFileName)
 }
 
 func (a *App) backupLocalConfigPath() string {
@@ -56,7 +70,7 @@ func (a *App) activateStableBackupLocalConfig() {
 
 func (a *App) loadBackupLocalConfig(base config.BackupConfig) (config.BackupConfig, bool, string, error) {
 	path := a.backupLocalConfigPath()
-	settings, exists, err := loadBackupLocalConfig(path, base)
+	settings, exists, err := loadBackupLocalConfigWithSecretStore(path, base, a.secretStore)
 	if err != nil || exists {
 		return settings, exists, path, err
 	}
@@ -65,7 +79,7 @@ func (a *App) loadBackupLocalConfig(base config.BackupConfig) (config.BackupConf
 	if legacyPath == path {
 		return settings, false, "", nil
 	}
-	legacySettings, legacyExists, legacyErr := loadBackupLocalConfig(legacyPath, base)
+	legacySettings, legacyExists, legacyErr := loadBackupLocalConfigWithSecretStore(legacyPath, base, a.secretStore)
 	return legacySettings, legacyExists, legacyPath, legacyErr
 }
 
@@ -112,29 +126,40 @@ type backupLocalChannelsSecrets struct {
 }
 
 type backupLocalOpenListSecrets struct {
-	Token string `yaml:"token,omitempty"`
+	TokenRef string `yaml:"token_ref,omitempty"`
+}
+
+type backupLocalOpenListConfigRead struct {
+	BaseURL             string `yaml:"base_url,omitempty"`
+	RemotePath          string `yaml:"remote_path,omitempty"`
+	Token                string `yaml:"token,omitempty"`
+	TokenRef             string `yaml:"token_ref,omitempty"`
+	UploadRateLimitMBps int    `yaml:"upload_rate_limit_mbps,omitempty"`
 }
 
 type backupLocalS3Config struct {
-	Endpoint        string `yaml:"endpoint,omitempty"`
-	Region          string `yaml:"region,omitempty"`
-	Bucket          string `yaml:"bucket,omitempty"`
-	Prefix          string `yaml:"prefix,omitempty"`
-	AccessKeyID     string `yaml:"access_key_id,omitempty"`
-	SecretAccessKey string `yaml:"secret_access_key,omitempty"`
-	SessionToken    string `yaml:"session_token,omitempty"`
-	ForcePathStyle  bool   `yaml:"force_path_style,omitempty"`
+	Endpoint           string `yaml:"endpoint,omitempty"`
+	Region             string `yaml:"region,omitempty"`
+	Bucket             string `yaml:"bucket,omitempty"`
+	Prefix             string `yaml:"prefix,omitempty"`
+	AccessKeyIDRef     string `yaml:"access_key_id_ref,omitempty"`
+	SecretAccessKeyRef string `yaml:"secret_access_key_ref,omitempty"`
+	SessionTokenRef    string `yaml:"session_token_ref,omitempty"`
+	ForcePathStyle     bool   `yaml:"force_path_style,omitempty"`
 }
 
 type backupLocalS3ConfigRead struct {
-	Endpoint        string `yaml:"endpoint,omitempty"`
-	Region          string `yaml:"region,omitempty"`
-	Bucket          string `yaml:"bucket,omitempty"`
-	Prefix          string `yaml:"prefix,omitempty"`
-	AccessKeyID     string `yaml:"access_key_id,omitempty"`
-	SecretAccessKey string `yaml:"secret_access_key,omitempty"`
-	SessionToken    string `yaml:"session_token,omitempty"`
-	ForcePathStyle  *bool  `yaml:"force_path_style,omitempty"`
+	Endpoint           string `yaml:"endpoint,omitempty"`
+	Region             string `yaml:"region,omitempty"`
+	Bucket             string `yaml:"bucket,omitempty"`
+	Prefix             string `yaml:"prefix,omitempty"`
+	AccessKeyID        string `yaml:"access_key_id,omitempty"`
+	SecretAccessKey    string `yaml:"secret_access_key,omitempty"`
+	SessionToken       string `yaml:"session_token,omitempty"`
+	AccessKeyIDRef     string `yaml:"access_key_id_ref,omitempty"`
+	SecretAccessKeyRef string `yaml:"secret_access_key_ref,omitempty"`
+	SessionTokenRef    string `yaml:"session_token_ref,omitempty"`
+	ForcePathStyle     *bool  `yaml:"force_path_style,omitempty"`
 }
 
 type backupLocalConfigReadFile struct {
@@ -148,8 +173,8 @@ type backupLocalConfigReadBackup struct {
 }
 
 type backupLocalConfigReadChannels struct {
-	OpenList config.OpenListChannelConfig `yaml:"openlist"`
-	S3       backupLocalS3ConfigRead      `yaml:"s3"`
+	OpenList backupLocalOpenListConfigRead `yaml:"openlist"`
+	S3       backupLocalS3ConfigRead       `yaml:"s3"`
 }
 
 func defaultBackupConfig() config.BackupConfig {
@@ -241,6 +266,10 @@ func backupHasLocalConfig(value config.BackupConfig) bool {
 }
 
 func loadBackupLocalConfig(path string, base config.BackupConfig) (config.BackupConfig, bool, error) {
+	return loadBackupLocalConfigWithSecretStore(path, base, nil)
+}
+
+func loadBackupLocalConfigWithSecretStore(path string, base config.BackupConfig, store *secretstore.Store) (config.BackupConfig, bool, error) {
 	settings := normalizeBackupSettings(base)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -263,10 +292,41 @@ func loadBackupLocalConfig(path string, base config.BackupConfig) (config.Backup
 	if strings.TrimSpace(localOpenList.RemotePath) == "" {
 		localOpenList.RemotePath = legacyOpenList.RemotePath
 	}
-	if strings.TrimSpace(localOpenList.Token) == "" {
-		localOpenList.Token = legacyOpenList.Token
+	resolvedOpenListToken := strings.TrimSpace(localOpenList.Token)
+	if strings.TrimSpace(localOpenList.TokenRef) != "" {
+		if store == nil {
+			return settings, true, fmt.Errorf("OpenList token uses SecretRef but SecretStore is unavailable")
+		}
+		value, resolveErr := store.Get(localOpenList.TokenRef)
+		if resolveErr != nil {
+			return settings, true, fmt.Errorf("读取 OpenList SecretRef 失败: %w", resolveErr)
+		}
+		resolvedOpenListToken = value
+	}
+	if resolvedOpenListToken == "" {
+		resolvedOpenListToken = strings.TrimSpace(legacyOpenList.Token)
 	}
 	localS3 := stored.Backup.Channels.S3
+	resolveSecret := func(ref, legacyValue, label string) (string, error) {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			return strings.TrimSpace(legacyValue), nil
+		}
+		if store == nil {
+			return "", fmt.Errorf("%s uses SecretRef but SecretStore is unavailable", label)
+		}
+		value, resolveErr := store.Get(ref)
+		if resolveErr != nil {
+			return "", fmt.Errorf("读取 %s SecretRef 失败: %w", label, resolveErr)
+		}
+		return strings.TrimSpace(value), nil
+	}
+	accessKeyID, secretErr := resolveSecret(localS3.AccessKeyIDRef, localS3.AccessKeyID, "S3 access key")
+	if secretErr != nil { return settings, true, secretErr }
+	secretAccessKey, secretErr := resolveSecret(localS3.SecretAccessKeyRef, localS3.SecretAccessKey, "S3 secret access key")
+	if secretErr != nil { return settings, true, secretErr }
+	sessionToken, secretErr := resolveSecret(localS3.SessionTokenRef, localS3.SessionToken, "S3 session token")
+	if secretErr != nil { return settings, true, secretErr }
 
 	if strings.TrimSpace(base.Channels.OpenList.BaseURL) == "" {
 		settings.Channels.OpenList.BaseURL = strings.TrimSpace(localOpenList.BaseURL)
@@ -276,8 +336,8 @@ func loadBackupLocalConfig(path string, base config.BackupConfig) (config.Backup
 		(strings.TrimSpace(base.Channels.OpenList.RemotePath) == defaults.Channels.OpenList.RemotePath && strings.TrimSpace(localOpenList.RemotePath) != "" && strings.TrimSpace(localOpenList.RemotePath) != defaults.Channels.OpenList.RemotePath) {
 		settings.Channels.OpenList.RemotePath = strings.TrimSpace(localOpenList.RemotePath)
 	}
-	if strings.TrimSpace(localOpenList.Token) != "" {
-		settings.Channels.OpenList.Token = strings.TrimSpace(localOpenList.Token)
+	if resolvedOpenListToken != "" {
+		settings.Channels.OpenList.Token = strings.TrimSpace(resolvedOpenListToken)
 	}
 	if value := strings.TrimSpace(localS3.Endpoint); value != "" {
 		settings.Channels.S3.Endpoint = value
@@ -291,14 +351,14 @@ func loadBackupLocalConfig(path string, base config.BackupConfig) (config.Backup
 	if value := strings.TrimSpace(localS3.Prefix); value != "" {
 		settings.Channels.S3.Prefix = value
 	}
-	if value := strings.TrimSpace(localS3.AccessKeyID); value != "" {
-		settings.Channels.S3.AccessKeyID = value
+	if accessKeyID != "" {
+		settings.Channels.S3.AccessKeyID = accessKeyID
 	}
-	if value := strings.TrimSpace(localS3.SecretAccessKey); value != "" {
-		settings.Channels.S3.SecretAccessKey = value
+	if secretAccessKey != "" {
+		settings.Channels.S3.SecretAccessKey = secretAccessKey
 	}
-	if value := strings.TrimSpace(localS3.SessionToken); value != "" {
-		settings.Channels.S3.SessionToken = value
+	if sessionToken != "" {
+		settings.Channels.S3.SessionToken = sessionToken
 	}
 	if localS3.ForcePathStyle != nil {
 		settings.Channels.S3.ForcePathStyle = *localS3.ForcePathStyle
@@ -314,32 +374,84 @@ func loadBackupLocalConfig(path string, base config.BackupConfig) (config.Backup
 }
 
 func saveBackupLocalConfig(path string, value config.BackupConfig) error {
-	token := strings.TrimSpace(value.Channels.OpenList.Token)
-	s3Config := backupLocalS3Config{}
-	if backupHasS3Config(value) {
-		s3Config = backupLocalS3Config{
-			Endpoint:        strings.TrimSpace(value.Channels.S3.Endpoint),
-			Region:          strings.TrimSpace(value.Channels.S3.Region),
-			Bucket:          strings.TrimSpace(value.Channels.S3.Bucket),
-			Prefix:          strings.TrimSpace(value.Channels.S3.Prefix),
-			AccessKeyID:     strings.TrimSpace(value.Channels.S3.AccessKeyID),
-			SecretAccessKey: strings.TrimSpace(value.Channels.S3.SecretAccessKey),
-			SessionToken:    strings.TrimSpace(value.Channels.S3.SessionToken),
-			ForcePathStyle:  value.Channels.S3.ForcePathStyle,
-		}
+	return saveBackupLocalConfigWithSecretStore(path, value, nil)
+}
+
+func (a *App) saveBackupLocalConfig(path string, value config.BackupConfig) error {
+	return saveBackupLocalConfigWithSecretStore(path, value, a.secretStore)
+}
+
+func loadExistingBackupSecretRefs(path string) backupLocalConfigReadFile {
+	var stored backupLocalConfigReadFile
+	data, err := os.ReadFile(path)
+	if err == nil {
+		_ = yaml.Unmarshal(data, &stored)
 	}
-	if token == "" && !backupHasS3Config(value) {
+	return stored
+}
+
+func persistBackupSecret(store *secretstore.Store, existingRef, label, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	existingRef = strings.TrimSpace(existingRef)
+	if value == "" {
+		if store != nil && existingRef != "" {
+			if err := store.Delete(existingRef); err != nil {
+				return "", err
+			}
+		}
+		return "", nil
+	}
+	if store == nil {
+		return "", fmt.Errorf("%s cannot be stored because SecretStore is unavailable", label)
+	}
+	return store.Set(existingRef, label, value)
+}
+
+func saveBackupLocalConfigWithSecretStore(path string, value config.BackupConfig, store *secretstore.Store) error {
+	value = normalizeBackupSettings(value)
+	existing := loadExistingBackupSecretRefs(path)
+	tokenRef, err := persistBackupSecret(store, existing.Backup.Channels.OpenList.TokenRef, "backup.openlist.token", value.Channels.OpenList.Token)
+	if err != nil {
+		return fmt.Errorf("保护 OpenList Token 失败: %w", err)
+	}
+	accessKeyRef, err := persistBackupSecret(store, existing.Backup.Channels.S3.AccessKeyIDRef, "backup.s3.accessKeyId", value.Channels.S3.AccessKeyID)
+	if err != nil {
+		return fmt.Errorf("保护 S3 AccessKeyID 失败: %w", err)
+	}
+	secretKeyRef, err := persistBackupSecret(store, existing.Backup.Channels.S3.SecretAccessKeyRef, "backup.s3.secretAccessKey", value.Channels.S3.SecretAccessKey)
+	if err != nil {
+		return fmt.Errorf("保护 S3 SecretAccessKey 失败: %w", err)
+	}
+	sessionTokenRef, err := persistBackupSecret(store, existing.Backup.Channels.S3.SessionTokenRef, "backup.s3.sessionToken", value.Channels.S3.SessionToken)
+	if err != nil {
+		return fmt.Errorf("保护 S3 SessionToken 失败: %w", err)
+	}
+
+	hasS3 := backupHasS3Config(value)
+	if tokenRef == "" && !hasS3 {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("删除本地备份配置失败: %w", err)
 		}
 		return nil
 	}
-
+	s3Config := backupLocalS3Config{}
+	if hasS3 {
+		s3Config = backupLocalS3Config{
+			Endpoint: strings.TrimSpace(value.Channels.S3.Endpoint),
+			Region: strings.TrimSpace(value.Channels.S3.Region),
+			Bucket: strings.TrimSpace(value.Channels.S3.Bucket),
+			Prefix: strings.TrimSpace(value.Channels.S3.Prefix),
+			AccessKeyIDRef: accessKeyRef,
+			SecretAccessKeyRef: secretKeyRef,
+			SessionTokenRef: sessionTokenRef,
+			ForcePathStyle: value.Channels.S3.ForcePathStyle,
+		}
+	}
 	stored := backupLocalConfigFile{
 		Backup: backupLocalSecrets{
 			Channels: backupLocalChannelsSecrets{
-				OpenList: backupLocalOpenListSecrets{Token: token},
-				S3:       s3Config,
+				OpenList: backupLocalOpenListSecrets{TokenRef: tokenRef},
+				S3: s3Config,
 			},
 		},
 	}
@@ -347,7 +459,6 @@ func saveBackupLocalConfig(path string, value config.BackupConfig) error {
 	if err != nil {
 		return fmt.Errorf("序列化本地备份配置失败: %w", err)
 	}
-
 	if err := fsutil.AtomicWriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("写入本地备份配置失败: %w", err)
 	}
@@ -372,7 +483,7 @@ func (a *App) prepareBackupLocalConfig() error {
 		settings = base
 	}
 	if backupHasLocalConfig(settings) {
-		if err := saveBackupLocalConfig(path, settings); err != nil {
+		if err := a.saveBackupLocalConfig(path, settings); err != nil {
 			return fmt.Errorf("保存本地备份配置失败: %w", err)
 		}
 		if sourcePath != "" && sourcePath != path {

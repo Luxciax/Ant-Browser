@@ -8,6 +8,7 @@ import (
 	"ant-chrome/backend/internal/launchcode"
 	"ant-chrome/backend/internal/logger"
 	"ant-chrome/backend/internal/proxy"
+	"ant-chrome/backend/internal/secretstore"
 	"context"
 	"strings"
 	"sync"
@@ -35,6 +36,7 @@ type App struct {
 	automationMgr   *automation.Manager
 	speedScheduler  *browser.ProxySpeedScheduler
 	backupScheduler *backupScheduler
+	secretStore     *secretstore.Store
 	appRoot         string
 	version         string
 

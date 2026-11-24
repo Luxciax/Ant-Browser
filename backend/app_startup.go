@@ -10,6 +10,7 @@ import (
 	"ant-chrome/backend/internal/logger"
 	"ant-chrome/backend/internal/mcpserver"
 	"ant-chrome/backend/internal/proxy"
+	"ant-chrome/backend/internal/secretstore"
 	"context"
 	"fmt"
 	"net/http"
@@ -37,6 +38,11 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.startupLogEnvironment(log, cfg)
 	a.activateStableBackupLocalConfig()
+	if store, err := secretstore.New(defaultSecretStorePath()); err != nil {
+		log.Error("SecretStore 初始化失败", logger.F("error", err))
+	} else {
+		a.secretStore = store
+	}
 	if err := a.prepareBackupLocalConfig(); err != nil {
 		log.Error("本地备份配置初始化失败", logger.F("error", err))
 	}
