@@ -92,8 +92,14 @@ func requiredScopeForRequest(r *http.Request) string {
 	switch {
 	case strings.HasPrefix(path, "/mcp"):
 		return ""
-	case path == "/api/diagnostics":
+	case path == "/api/diagnostics", path == "/api/sync/status":
 		return ScopeEnvironmentRead
+	case strings.HasPrefix(path, "/api/trash"):
+		if method == http.MethodGet { return ScopeEnvironmentRead }
+		return ScopeEnvironmentAdmin
+	case path == "/api/system/integration":
+		if method == http.MethodGet { return ScopeEnvironmentRead }
+		return ScopeEnvironmentAdmin
 	case strings.HasPrefix(path, "/api/batch/"):
 		if method == http.MethodGet { return ScopeEnvironmentRead }
 		if strings.HasSuffix(path, "/start") || strings.HasSuffix(path, "/stop") { return ScopePageAction }

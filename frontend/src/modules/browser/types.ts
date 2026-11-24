@@ -622,3 +622,35 @@ export interface BrowserWorkflowRun {
   finishedAt?: string
   updatedAt: string
 }
+
+export interface BrowserTrashItem {
+  profileId: string
+  profileName: string
+  coreId: string
+  proxyId: string
+  tags: string[]
+  keywords: string[]
+  groupId?: string
+  deletedAt: string
+  createdAt: string
+  updatedAt: string
+}
+export interface BrowserSyncStatusV1 {
+  schemaVersion: 1
+  mode: 'backup-channel' | string
+  continuous: boolean
+  bidirectional: boolean
+  conflictPolicy: string
+  localDirectory?: string
+  schedule: Record<string, any>
+  limitations: string[]
+}
+export interface BrowserSystemIntegrationStatus {
+  schemaVersion: 1
+  supported: boolean
+  protocol: string
+  registered: boolean
+  executable?: string
+  actions: string[]
+  message?: string
+}

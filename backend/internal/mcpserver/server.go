@@ -11,7 +11,7 @@ const (
 	ServerName = "ant-browser"
 	DefaultPath = "/mcp"
 	sessionTimeout = 30 * time.Minute
-	toolCount = 42
+	toolCount = 46
 )
 
 type Server struct {
@@ -51,6 +51,9 @@ func (s *Server) buildMCPServer() *mcp.Server {
 	}
 	if providerAllowsScope(s.provider, "page-read") || providerAllowsScope(s.provider, "page-action") || providerAllowsScope(s.provider, "script") {
 		registerPageTools(srv, s.provider)
+	}
+	if providerAllowsScope(s.provider, "environment-read") || providerAllowsScope(s.provider, "environment-admin") {
+		registerPhase5ControlTools(srv, s.provider)
 	}
 	return srv
 }
