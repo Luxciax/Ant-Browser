@@ -52,14 +52,16 @@ const navGroups: FishNavGroup[] = [
     label: '自动化',
     items: [
       { label: '自动化任务', path: '/browser/automation', icon: Workflow },
-      { label: '工作流 / RPA', path: '/browser/workflows', icon: Workflow },    ],
+      { label: '工作流 / RPA', path: '/browser/workflows', icon: Workflow },
+    ],
   },
   {
     label: '系统',
     items: [
       { label: '日志', path: '/browser/logs', icon: ScrollText },
       { label: '控制中心', path: '/system/control', icon: ShieldCheck },
-      { label: '文档', path: '/system/docs', icon: BookOpenText },      { label: '设置', path: '/settings', icon: Settings2 },
+      { label: '文档', path: '/system/docs', icon: BookOpenText },
+      { label: '设置', path: '/settings', icon: Settings2 },
     ],
   },
 ]

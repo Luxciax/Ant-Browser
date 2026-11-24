@@ -526,7 +526,7 @@ export interface BrowserNetworkPolicyV2 {
   profileId: string
   failClosed: boolean
   dnsMode: 'inherit' | 'proxy' | string
-  webRtcMode: 'restricted' | 'native' | string
+  webrtcMode: 'restricted' | 'native' | string
   localeLinkMode: 'manual' | 'recommend' | string
   updatedAt: string
 }

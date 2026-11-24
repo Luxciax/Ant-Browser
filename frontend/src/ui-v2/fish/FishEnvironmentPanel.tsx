@@ -41,7 +41,7 @@ export function FishEnvironmentPanel({profileId,running}:{profileId:string;runni
       <div className="fish-form-grid three">
         <label className="fish-setting-row compact"><div><strong>Fail Closed</strong><span>代理配置失败时禁止静默直连</span></div><input type="checkbox" checked={policy.failClosed} onChange={e=>setPolicy({...policy,failClosed:e.target.checked})}/></label>
         <label className="fish-field"><span>DNS</span><select className="fish-select" value={policy.dnsMode} onChange={e=>setPolicy({...policy,dnsMode:e.target.value})}><option value="inherit">inherit</option><option value="proxy">proxy</option></select></label>
-        <label className="fish-field"><span>WebRTC</span><select className="fish-select" value={policy.webRtcMode} onChange={e=>setPolicy({...policy,webRtcMode:e.target.value})}><option value="restricted">restricted</option><option value="native">native</option></select></label>
+        <label className="fish-field"><span>WebRTC</span><select className="fish-select" value={policy.webrtcMode} onChange={e=>setPolicy({...policy,webrtcMode:e.target.value})}><option value="restricted">restricted</option><option value="native">native</option></select></label>
         <label className="fish-field"><span>Locale linkage</span><select className="fish-select" value={policy.localeLinkMode} onChange={e=>setPolicy({...policy,localeLinkMode:e.target.value})}><option value="manual">manual</option><option value="recommend">recommend</option></select></label>
       </div>
     </div></section>

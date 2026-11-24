@@ -116,7 +116,7 @@ export function FishWorkflowsPage(){
   useEffect(()=>{const item=items.find(v=>v.id===selectedId);if(item)setDraft(JSON.parse(JSON.stringify(item)))},[items,selectedId])
   const relatedRuns=useMemo(()=>runs.filter(r=>!draft||r.workflowId===draft.id).slice(0,8),[runs,draft])
   const save=async()=>{if(!draft)return;setBusy(true);try{const saved=await saveBrowserWorkflow(draft);setDraft(saved);setSelectedId(saved.id);toast.success('工作流已保存');await load()}catch(e){toast.error(e instanceof Error?e.message:'保存失败')}finally{setBusy(false)}}
-  const run=async()=>{if(!draft?.id)return;setBusy(true);try{const result=await runBrowserWorkflow(draft.id);toast[result.status==='success'?'success':'warning'](result.status==='success'?'工作流执行完成':`工作流状态：${result.status}`);await load()}catch(e){toast.error(e instanceof Error?e.message:'执行失败');await load()}finally{setBusy(false)}}
+  const run=async()=>{if(!draft?.id)return;setBusy(true);try{const result=await runBrowserWorkflow(draft.id);if(result.status==='success')toast.success('工作流执行完成');else toast.warning(`工作流状态：${result.status}`);await load()}catch(e){toast.error(e instanceof Error?e.message:'执行失败');await load()}finally{setBusy(false)}}
   const resume=async(r:BrowserWorkflowRun)=>{setBusy(true);try{await resumeBrowserWorkflow(r.id,r.resumeRequiresForce===true);toast.success('已提交恢复执行');await load()}catch(e){toast.error(e instanceof Error?e.message:'恢复失败')}finally{setBusy(false)}}
   const remove=async()=>{if(!draft?.id)return;setBusy(true);try{await deleteBrowserWorkflow(draft.id);setSelectedId('');setDraft(null);toast.success('工作流已删除');await load()}catch(e){toast.error(e instanceof Error?e.message:'删除失败')}finally{setBusy(false)}}
   const create=()=>{const w=newWorkflow();setDraft(w);setSelectedId('')}
