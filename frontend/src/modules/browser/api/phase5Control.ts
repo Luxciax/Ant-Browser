@@ -8,3 +8,4 @@ export async function cleanupBrowserTrash():Promise<void>{await (await b()).Brow
 export async function getBrowserSyncStatus():Promise<BrowserSyncStatusV1>{return await (await b()).BrowserSyncStatus()}
 export async function getBrowserSystemIntegrationStatus():Promise<BrowserSystemIntegrationStatus>{return await (await b()).BrowserSystemIntegrationStatusGet()}
 export async function setBrowserProtocolRegistration(enabled:boolean):Promise<BrowserSystemIntegrationStatus>{return await (await b()).BrowserSystemIntegrationSetProtocol(enabled)}
+export async function getBrowserStartupProtocolURLs():Promise<string[]>{return await (await b()).BrowserSystemIntegrationStartupURLs()}

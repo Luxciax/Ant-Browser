@@ -110,6 +110,29 @@ func networkAddressFamily(value string) string {
 	return "ipv6"
 }
 
+func disallowedObservationIP(ip net.IP) bool {
+	if ip == nil { return true }
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast()
+}
+
+func validateObservationTarget(ctx context.Context, host string) error {
+	host = strings.TrimSpace(host)
+	if ip := net.ParseIP(host); ip != nil {
+		if disallowedObservationIP(ip) { return fmt.Errorf("private, loopback, link-local and multicast observation targets are not allowed") }
+		return nil
+	}
+	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil { return fmt.Errorf("resolve observation target: %w", err) }
+	if len(addresses) == 0 { return fmt.Errorf("observation target resolved no addresses") }
+	for _, address := range addresses {
+		if disallowedObservationIP(address.IP) {
+			return fmt.Errorf("observation target resolves to a private, loopback, link-local or multicast address")
+		}
+	}
+	return nil
+}
+
 func tlsVersionName(v uint16) string {
 	switch v {
 	case tls.VersionTLS10: return "TLS1.0"
@@ -180,6 +203,11 @@ func (a *App) BrowserNetworkObserve(req BrowserNetworkObservationRequest) (*Brow
 		},
 	}
 	ctx,cancel:=context.WithTimeout(context.Background(),timeout);defer cancel()
+	if err:=validateObservationTarget(ctx,target.Hostname());err!=nil{
+		obs.Error=err.Error();finished:=time.Now().UTC();obs.FinishedAt=finished.Format(time.RFC3339Nano);obs.TotalMs=finished.Sub(started).Milliseconds()
+		_ = a.saveNetworkObservation(obs)
+		return &obs,err
+	}
 	ctx=httptrace.WithClientTrace(ctx,trace)
 	transport:=&http.Transport{Proxy:http.ProxyFromEnvironment,ForceAttemptHTTP2:true,DisableKeepAlives:true,TLSClientConfig:&tls.Config{MinVersion:tls.VersionTLS12}}
 	client:=&http.Client{Transport:transport}

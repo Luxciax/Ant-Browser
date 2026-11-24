@@ -20,3 +20,8 @@ register or unregister the per-user `antbrowser://` URL protocol. Ant does not
 set itself as the OS default browser, does not modify proxy/TUN/firewall
 settings, and performs no system integration automatically during startup.
 Non-Windows builds report the protocol action as unsupported.
+
+When Windows starts Ant through the custom protocol, the original
+`antbrowser://` command-line URLs are exposed through
+`BrowserSystemIntegrationStartupURLs` for the presentation/controller layer
+to consume. Unrelated command-line arguments are not exposed by that API.

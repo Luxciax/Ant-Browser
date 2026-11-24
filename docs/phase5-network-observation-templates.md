@@ -24,3 +24,8 @@ pack does not fabricate a device identity and does not turn a desktop engine
 into a mobile engine. Mobile packs remain `requires-compatible-kernel` until
 the selected kernel/runtime actually exposes and verifies the required
 capabilities.
+
+For control-plane safety, the host observation endpoint rejects literal or
+DNS-resolved loopback, private, link-local, unspecified and multicast
+addresses. It is intended for explicitly controlled public observation
+endpoints, not internal-network scanning.
