@@ -52,13 +52,13 @@ import { useBrowserListDerived, useBrowserListViewState } from '../../modules/br
 import { useBrowserProfileActions } from '../../modules/browser/pages/browserList/useBrowserProfileActions'
 import { isBrowserRuntimeConfigLocked, isBrowserRuntimeStoppable, normalizeBrowserRuntimeState } from '../../modules/browser/utils/runtimeState'
 import {
-  BackupV2Modal,
-  KeywordsV2Modal,
-  LaunchCodeV2Modal,
-  ProfileExtensionsV2Modal,
-  ProxyPickerV2Modal,
-  TrashV2Modal,
-} from '../components/BrowserListV2Modals'
+  FishBackupModal,
+  FishKeywordsModal,
+  FishLaunchCodeModal,
+  FishProfileExtensionsModal,
+  FishProxyPickerModal,
+  FishTrashModal,
+} from './FishBrowserListModals'
 
 function formatUpdatedAt(value: string) {
   if (!value) return '—'
@@ -484,12 +484,12 @@ export function FishBrowserListPage() {
       {deleteProfile ? <div className="ui-v2-backdrop"><div className="ui-v2-modal"><div className="ui-v2-modal-head"><strong>移到回收站</strong></div><div className="ui-v2-modal-body"><p>确定将「{deleteProfile.profileName}」移到回收站？3 天内可以恢复。</p></div><div className="ui-v2-modal-foot"><button className="ui-v2-btn" type="button" onClick={() => setDeleteProfile(null)}>取消</button><button className="ui-v2-btn danger" type="button" onClick={() => void confirmDelete()}>确认删除</button></div></div></div> : null}
       {batchDeleteOpen ? <div className="ui-v2-backdrop"><div className="ui-v2-modal"><div className="ui-v2-modal-head"><strong>批量移到回收站</strong></div><div className="ui-v2-modal-body"><p>确定将选中的 {selectedIds.size} 个实例移到回收站？3 天内可以恢复。</p></div><div className="ui-v2-modal-foot"><button className="ui-v2-btn" type="button" disabled={bulkBusy} onClick={() => setBatchDeleteOpen(false)}>取消</button><button className="ui-v2-btn danger" type="button" disabled={bulkBusy} onClick={() => void confirmBatchDelete()}>{bulkBusy ? '删除中' : '确认删除'}</button></div></div></div> : null}
 
-      {keywordsProfile ? <KeywordsV2Modal profile={keywordsProfile} onClose={() => setKeywordsProfile(null)} onChanged={loadProfiles} /> : null}
-      {extensionsProfile ? <ProfileExtensionsV2Modal profile={extensionsProfile} onClose={() => setExtensionsProfile(null)} /> : null}
-      {launchCodeProfile ? <LaunchCodeV2Modal profile={launchCodeProfile} onClose={() => setLaunchCodeProfile(null)} onChanged={loadProfiles} /> : null}
-      {proxyPickerProfile ? <ProxyPickerV2Modal profile={proxyPickerProfile} proxies={proxies} onSelect={(proxy) => saveProfileProxy(proxyPickerProfile, proxy)} onClose={() => setProxyPickerProfile(null)} /> : null}
-      {trashOpen ? <TrashV2Modal onClose={() => setTrashOpen(false)} onChanged={loadProfiles} /> : null}
-      {backupOpen ? <BackupV2Modal selectedProfiles={selectedProfiles} runningCount={runningCount} onClose={() => setBackupOpen(false)} onChanged={loadProfiles} /> : null}
+      {keywordsProfile ? <FishKeywordsModal profile={keywordsProfile} onClose={() => setKeywordsProfile(null)} onChanged={loadProfiles} /> : null}
+      {extensionsProfile ? <FishProfileExtensionsModal profile={extensionsProfile} onClose={() => setExtensionsProfile(null)} /> : null}
+      {launchCodeProfile ? <FishLaunchCodeModal profile={launchCodeProfile} onClose={() => setLaunchCodeProfile(null)} onChanged={loadProfiles} /> : null}
+      {proxyPickerProfile ? <FishProxyPickerModal profile={proxyPickerProfile} proxies={proxies} onSelect={(proxy) => saveProfileProxy(proxyPickerProfile, proxy)} onClose={() => setProxyPickerProfile(null)} /> : null}
+      {trashOpen ? <FishTrashModal onClose={() => setTrashOpen(false)} onChanged={loadProfiles} /> : null}
+      {backupOpen ? <FishBackupModal selectedProfiles={selectedProfiles} runningCount={runningCount} onClose={() => setBackupOpen(false)} /> : null}
       <ProfilePackageExportModal
         open={profileExportIds.length > 0}
         profileCount={profileExportIds.length}

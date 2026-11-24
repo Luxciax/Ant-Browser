@@ -57,8 +57,7 @@ chrome/*
 publish/staging/
 publish/output/
 
-# Internal docs / scratch files
-docs/
+# Local scratch files
 DEPLOYMENT_GUIDE.md
 plan.md
 pic/

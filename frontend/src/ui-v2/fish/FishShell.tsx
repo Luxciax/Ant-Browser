@@ -25,7 +25,7 @@ import {
 import { projectConfig } from '../../config'
 import { useTheme } from '../../shared/theme'
 import { useNotificationStore } from '../../store/notificationStore'
-import '../styles.css'
+import './fish-shell.css'
 import './fish.css'
 import './fish-remaining.css'
 

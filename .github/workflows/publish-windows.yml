@@ -37,6 +37,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - name: Check repository consistency
+        run: node tools/check-repo-consistency.mjs
       - name: Check release versions
         run: |
           $wails = Get-Content wails.json -Raw | ConvertFrom-Json
@@ -48,13 +50,15 @@ jobs:
       - name: Test backend before packaging
         run: |
           $env:ANT_BROWSER_TEST_SINGBOX = (Resolve-Path -LiteralPath 'bin/sing-box.exe').Path
-          go test ./backend/... ./internal/... ./tools/...
+          go test -p=1 ./backend/... ./internal/... ./tools/...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go vet ./backend/... ./internal/... ./tools/...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Install Wails and NSIS
         run: |
-          go install github.com/wailsapp/wails/v2/cmd/wails@v2.17.1
+          $wailsVersion = go list -m -f '{{.Version}}' github.com/wailsapp/wails/v2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go install "github.com/wailsapp/wails/v2/cmd/wails@$wailsVersion"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           (Join-Path (go env GOPATH) 'bin') | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           if (!(Test-Path -LiteralPath 'C:\Program Files (x86)\NSIS\makensis.exe')) {

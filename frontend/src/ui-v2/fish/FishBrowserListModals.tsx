@@ -39,7 +39,7 @@ interface ProfileModalProps extends CloseProps {
   onChanged: () => unknown | Promise<unknown>
 }
 
-export function KeywordsV2Modal({ profile, onClose, onChanged }: ProfileModalProps) {
+export function FishKeywordsModal({ profile, onClose, onChanged }: ProfileModalProps) {
   const [items, setItems] = useState<string[]>(() => profile.keywords?.length ? [...profile.keywords] : [''])
   const [saving, setSaving] = useState(false)
 
@@ -80,7 +80,7 @@ export function KeywordsV2Modal({ profile, onClose, onChanged }: ProfileModalPro
   )
 }
 
-export function LaunchCodeV2Modal({ profile, onClose, onChanged }: ProfileModalProps) {
+export function FishLaunchCodeModal({ profile, onClose, onChanged }: ProfileModalProps) {
   const [value, setValue] = useState(profile.launchCode || '')
   const [busy, setBusy] = useState(false)
 
@@ -138,7 +138,7 @@ export function LaunchCodeV2Modal({ profile, onClose, onChanged }: ProfileModalP
   )
 }
 
-export function ProfileExtensionsV2Modal({ profile, onClose }: Omit<ProfileModalProps, 'onChanged'>) {
+export function FishProfileExtensionsModal({ profile, onClose }: Omit<ProfileModalProps, 'onChanged'>) {
   const [extensions, setExtensions] = useState<BrowserExtension[]>([])
   const [configured, setConfigured] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -197,13 +197,13 @@ export function ProfileExtensionsV2Modal({ profile, onClose }: Omit<ProfileModal
   )
 }
 
-interface ProxyPickerV2Props extends CloseProps {
+interface FishProxyPickerProps extends CloseProps {
   profile: BrowserProfile
   proxies: BrowserProxy[]
   onSelect: (proxy: BrowserProxy) => Promise<void>
 }
 
-export function ProxyPickerV2Modal({ profile, proxies, onSelect, onClose }: ProxyPickerV2Props) {
+export function FishProxyPickerModal({ profile, proxies, onSelect, onClose }: FishProxyPickerProps) {
   const [search, setSearch] = useState('')
   const [group, setGroup] = useState('')
   const [testingId, setTestingId] = useState('')
@@ -258,11 +258,11 @@ export function ProxyPickerV2Modal({ profile, proxies, onSelect, onClose }: Prox
   )
 }
 
-interface TrashV2Props extends CloseProps {
+interface FishTrashProps extends CloseProps {
   onChanged: () => unknown | Promise<unknown>
 }
 
-export function TrashV2Modal({ onClose, onChanged }: TrashV2Props) {
+export function FishTrashModal({ onClose, onChanged }: FishTrashProps) {
   const [profiles, setProfiles] = useState<BrowserProfile[]>([])
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState('')
@@ -300,13 +300,12 @@ export function TrashV2Modal({ onClose, onChanged }: TrashV2Props) {
 }
 
 type BackupMode = 'none' | 'selected'
-interface BackupV2Props extends CloseProps {
+interface FishBackupProps extends CloseProps {
   selectedProfiles: BrowserProfile[]
   runningCount: number
-  onChanged: () => unknown | Promise<unknown>
 }
 
-export function BackupV2Modal({ selectedProfiles, runningCount, onClose }: BackupV2Props) {
+export function FishBackupModal({ selectedProfiles, runningCount, onClose }: FishBackupProps) {
   const navigate = useNavigate()
   const [mode, setMode] = useState<BackupMode>('none')
   const busy = mode !== 'none'

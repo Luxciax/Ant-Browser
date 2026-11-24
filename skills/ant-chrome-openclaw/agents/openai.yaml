@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ant Browser OpenClaw"
+  short_description: "Control local Ant Browser through LaunchServer"
+  default_prompt: "Use $ant-chrome-openclaw to operate Ant Browser through its local LaunchServer APIs."

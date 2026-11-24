@@ -1,37 +1,47 @@
-# Project Agent Instructions
+# Ant Browser Engineering Rules
 
-<!-- ant-ready-start-skills:start -->
+## Source of truth
 
-## Shared Local Skills
+- Treat current source, schemas, tests, generated bindings, and successful build output as authoritative.
+- Treat README, docs, skills, comments, and historical audit files as secondary. Update them in the same change when behavior changes.
+- Do not add placeholders, fake buttons, unconnected APIs, or UI states that claim unsupported capability.
 
-Use the shared local skills below when the task matches their scope:
+## Structure
 
-- `page-style-linear-flow`: `D:\code\open_source\ant-ready-start\skills\page-style-linear-flow\SKILL.md`
-- `ui-ux-pro-max`: `D:\code\open_source\ant-ready-start\skills\ui-ux-pro-max\SKILL.md`
-- `frontend-skill`: `D:\code\open_source\ant-ready-start\skills\frontend-skill\SKILL.md`
-- `create-plan`: `D:\code\open_source\ant-ready-start\skills\create-plan\SKILL.md`
-- `create-plan-doc`: `D:\code\open_source\ant-ready-start\skills\create-plan-doc\SKILL.md`
+- The active frontend is the Fish UI under `frontend/src/ui-v2/fish`.
+- Keep one page implementation per user-facing route. Historical URLs may redirect to current routes; do not maintain parallel legacy pages.
+- Reuse browser domain logic from `frontend/src/modules/browser` rather than duplicating it in page components.
+- LaunchServer HTTP routing and authorization are defined under `backend/internal/launchcode`; never invent routes from docs.
+- Proxy behavior is defined by the current proxy/runtime code. Preserve the explicit Xray+sing-box stack versus Mihomo stack boundary.
 
-Apply it for frontend page design or refactors involving pages, admin panels, forms, tables, dashboards, detail views, wizards, modal/drawer placement, or multi-step flows.
+## State and security
 
-Apply `ui-ux-pro-max` for broader UI/UX design work involving visual direction, design-system shaping, palette and typography selection, component styling, landing pages, dashboards, and cross-stack interface generation when linear-flow rules alone are not enough.
+- Prefer explicit persisted state and revisioned/runtime receipts over derived hidden state.
+- Secrets must use SecretRef-backed storage. Do not introduce plaintext fallback for credentials.
+- Missing runtime evidence stays unavailable/not-observed. Do not synthesize support, network evidence, or compatibility status.
+- Keep destructive operations recoverable where the product already provides trash, transaction, or backup semantics.
 
-Apply `frontend-skill` when the task needs stronger frontend art direction, visual hierarchy, landing-page composition, sparse premium layouts, image-led sections, or restrained motion design.
+## Verification
 
-Apply `create-plan` when the user explicitly asks for a plan, task breakdown, implementation roadmap, rollout outline, or a step-by-step execution plan before coding.
+Run the smallest checks that cover the change, then the repository gates before merging substantial changes:
 
-Apply `create-plan-doc` when the user explicitly asks for a plan that should also be saved into the repository as a markdown document under `docs/plan`.
+```text
+node tools/check-repo-consistency.mjs
+go test -p=1 ./backend/... ./internal/... ./tools/...
+go vet ./backend/... ./internal/... ./tools/...
+go test -run ^$ -p=1 ./...
+npm --prefix frontend ci
+npm --prefix frontend audit --audit-level=high
+npm --prefix frontend run build
+```
 
-Core expectations:
+Windows backend tests use `-p=1` because resource-sensitive process/proxy tests have shown contention when packages run concurrently.
 
-- Keep each page focused on one primary responsibility.
-- Do not mix operational tables and submit forms on the same screen.
-- Use modal/drawer for short low-risk forms; use a dedicated page or wizard for complex flows.
-- Remove filler copy, repeated headings, decorative cards, and meaningless whitespace.
-- Keep the next action obvious and preserve predictable back/cancel/save behavior.
-- 代理连接必须遵守两套连接栈规则，详见 `docs/proxy-connector-stacks.md`：`browser.default_connector_type=xray` 表示 Xray + sing-box 组合栈，Xray 负责 vmess/vless/trojan/shadowsocks/链式代理等，sing-box 负责 hysteria2/tuic/anytls 等协议；`browser.default_connector_type=mihomo` 表示独立 Mihomo 栈。实例启动、测速、真实连通性、IP 健康、预热和代理下载都必须按当前连接栈执行，不允许在 `xray` 组合栈和 `mihomo` 栈之间自动混用；不要把 sing-box 协议误判成“xray 不支持”。
-- For detailed UI checks, selectively read `D:\code\open_source\ant-ready-start\skills\page-style-linear-flow\references\checklist.md`.
+For release changes, derive Go from `go.mod`, derive the Wails CLI version from the Wails module in `go.mod`, and keep `wails.json`, `frontend/package.json`, and `frontend/package-lock.json` on the same product version.
 
-These shared skill instructions supplement project-specific rules in this `AGENTS.md`; keep more specific project rules authoritative for this repository.
+## Repository hygiene
 
-<!-- ant-ready-start-skills:end -->
+- Do not commit machine-specific absolute paths, local data, credentials, build caches, generated release outputs, or user profiles.
+- Keep comments for non-obvious design intent and constraints; remove comments that merely restate code.
+- Delete dead entry points and stale compatibility layers when their consumers are gone. Keep compatibility only at a narrow boundary such as a redirect or migration.
+- Keep historical investigation material clearly separated from current architecture guidance.

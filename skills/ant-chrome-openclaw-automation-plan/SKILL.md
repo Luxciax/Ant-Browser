@@ -1,42 +1,36 @@
 ---
 name: ant-chrome-openclaw-automation-plan
-description: Use when implementing, reviewing, auditing, or updating the ant-chrome and OpenClaw integration design, rollout status, or public HTTP API contract. Prefer this skill for low-coupling integration work around runtime/session, runtime/stop, automation/scripts, playwright-cdp execution, and OpenClaw compatibility mapping. Do not use it for day-to-day LaunchServer API invocation; use the sibling ant-chrome-openclaw skill instead.
+description: Implement, review, or audit Ant Browser and OpenClaw integration code and public LaunchServer contracts. Use for changes to runtime/CDP session control, automation scripts or workflows, API authorization, compatibility mapping, and integration documentation; use the sibling ant-chrome-openclaw skill for day-to-day invocation.
 ---
 
-# Ant Browser OpenClaw Integration Plan
+# Ant Browser OpenClaw Integration
 
-Use this skill for engineering work on the integration itself: planning, code changes, API alignment, audits, and rollout decisions.
+Keep OpenClaw as an orchestration client and Ant Browser as the execution/runtime owner.
 
-If the task is operational usage of LaunchServer from OpenClaw, read the sibling skill at `../ant-chrome-openclaw/SKILL.md` instead.
+## Read only what is needed
 
-## Read Only What You Need
+- `references/overview.md`: architecture boundary.
+- `references/api-contract.md`: current LaunchServer route groups and authorization source.
+- `references/script-compat.md`: script/CDP compatibility details.
 
-- Read `references/overview.md` for the architecture split, scope, and recommended integration path.
-- Read `references/api-contract.md` for the exact public API surface that exists today.
-- Read `references/delivery-status.md` for what is actually shipped versus intentionally deferred.
-- Read `references/script-compat.md` for how `playwright-cdp` and script execution should absorb LaunchServer, CDP, and Playwright complexity.
+## Engineering rules
 
-## Working Rules
-
-1. Keep OpenClaw as the orchestration layer and Ant Browser as the execution layer.
-2. Prefer public/common APIs first:
-   - `POST /api/runtime/session`
-   - `POST /api/runtime/status`
-   - `POST /api/runtime/stop`
-   - `GET /api/automation/scripts`
-   - `POST /api/automation/scripts/run`
-   - `GET /api/automation/scripts/runs`
-3. Do not add `/api/automation/openclaw/*` private routes unless the user explicitly needs a compatibility alias for an already-fixed external protocol.
-4. Do not re-invent a second automation runtime for OpenClaw; reuse the existing script execution chain.
-5. Keep the external script protocol object-shaped (`selector` / `params`) and only convert to internal text fields at the boundary.
-6. Treat `playwright-cdp` as the main complexity-reduction layer for OpenClaw-facing automation.
+1. Inspect `backend/internal/launchcode/server_http.go` before changing or documenting an HTTP route.
+2. Inspect `backend/internal/launchcode/auth.go` before changing authorization or scopes.
+3. Reuse existing runtime, automation script, workflow, batch, profile, and CDP services. Do not create OpenClaw-only execution stacks.
+4. Keep external JSON objects typed at the boundary; convert only where the existing internal model requires it.
+5. Prefer a thin compatibility adapter over duplicate business logic.
+6. Update the sibling operational Skill and API reference in the same change when the public contract changes.
 
 ## Validation
 
-After changing code or the plan:
+Run focused tests for the touched LaunchServer package, then repository gates appropriate to the change. For substantial integration changes:
 
-1. Re-check the current LaunchServer routes under `backend/internal/launchcode`.
-2. Run `go test ./backend/test/launchcode/...`.
-3. Run `go test ./backend/...`.
-4. Run `python C:\Users\Administrator\.codex\skills\.system\skill-creator\scripts\quick_validate.py <this-skill-dir>`.
-5. If `SKILL.md` changes meaningfully, regenerate `agents/openai.yaml`.
+```text
+node tools/check-repo-consistency.mjs
+go test -p=1 ./backend/... ./internal/... ./tools/...
+go vet ./backend/... ./internal/... ./tools/...
+go test -run ^$ -p=1 ./...
+```
+
+Do not use machine-specific validator paths in repository instructions.
