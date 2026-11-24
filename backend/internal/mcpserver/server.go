@@ -11,7 +11,7 @@ const (
 	ServerName = "ant-browser"
 	DefaultPath = "/mcp"
 	sessionTimeout = 30 * time.Minute
-	toolCount = 47
+	toolCount = 49
 )
 
 type Server struct {

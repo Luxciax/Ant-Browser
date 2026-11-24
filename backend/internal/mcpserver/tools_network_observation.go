@@ -19,4 +19,9 @@ func registerNetworkObservationTools(srv *mcp.Server,p Provider){
 			v,e:=provider.NetworkObserve(in.ProfileID,in.URL,in.TimeoutMs);if e!=nil{return toolError(e),phase2Output{Data:v},nil};return nil,phase2Output{Data:v},nil
 		})
 	}
+	if providerAllowsScope(p,"environment-read"){
+		mcp.AddTool(srv,&mcp.Tool{Name:"ant_network_observation_get",Description:"读取已持久化的网络观测证据，不触发新网络请求。",Annotations:readOnly("读取网络观测")},func(_ context.Context,_ *mcp.CallToolRequest,in struct{ID string `json:"id"`})(*mcp.CallToolResult,phase2Output,error){
+			v,e:=provider.NetworkObservationGet(in.ID);if e!=nil{return toolError(e),phase2Output{},nil};return nil,phase2Output{Data:v},nil
+		})
+	}
 }

@@ -34,5 +34,8 @@ func registerPhase5ControlTools(srv *mcp.Server,p Provider){
 		mcp.AddTool(srv,&mcp.Tool{Name:"ant_trash_permanent_delete",Description:"永久删除回收站实例及其受管关联数据。",Annotations:destructive("永久删除实例")},func(_ context.Context,_ *mcp.CallToolRequest,in trashInput)(*mcp.CallToolResult,map[string]any,error){
 			if strings.TrimSpace(in.ProfileID)==""{return toolError(fmt.Errorf("profileId is required")),nil,nil};if e:=provider.TrashPermanentlyDelete(in.ProfileID);e!=nil{return toolError(e),nil,nil};return nil,map[string]any{"deleted":true},nil
 		})
+		mcp.AddTool(srv,&mcp.Tool{Name:"ant_trash_cleanup",Description:"清理超过保留期的回收站实例。",Annotations:destructive("清理回收站")},func(_ context.Context,_ *mcp.CallToolRequest,_ struct{})(*mcp.CallToolResult,map[string]any,error){
+			if e:=provider.TrashCleanup();e!=nil{return toolError(e),nil,nil};return nil,map[string]any{"cleaned":true},nil
+		})
 	}
 }

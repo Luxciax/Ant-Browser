@@ -29,3 +29,10 @@ For control-plane safety, the host observation endpoint rejects literal or
 DNS-resolved loopback, private, link-local, unspecified and multicast
 addresses. It is intended for explicitly controlled public observation
 endpoints, not internal-network scanning.
+
+EnvironmentView v2 now exposes `templateCompatibility`. Host/OS eligibility
+and kernel availability are reported separately from verification. Required
+capabilities are matched only by exact manifest evidence keys; an unmapped or
+merely emitted capability is not promoted to verified. This prevents a mobile
+or cross-OS compatibility label from being presented as an actually verified
+runtime.

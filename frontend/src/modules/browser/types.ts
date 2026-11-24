@@ -555,6 +555,21 @@ export interface BrowserEnvironmentViewV2 {
   capabilities: Record<string, any>
   runtimeEvidence?: Record<string, any>
   templates: BrowserEnvironmentTemplateV2[]
+  templateCompatibility?: {
+    schemaVersion: number
+    bound: boolean
+    templateId?: string
+    revision?: string
+    targetOS?: string
+    deviceClass?: string
+    kernelFamily?: string
+    supportLevel?: string
+    eligible: boolean
+    verified: boolean
+    status: string
+    reasons?: string[]
+    requirements?: Array<{ capability: string; status: string; verified: boolean; note?: string }>
+  }
 }
 
 export interface BrowserBatchItemResult {

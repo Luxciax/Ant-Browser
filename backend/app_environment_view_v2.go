@@ -10,6 +10,7 @@ type BrowserEnvironmentViewV2 struct {
 	Capabilities  map[string]interface{}           `json:"capabilities"`
 	RuntimeEvidence map[string]interface{}         `json:"runtimeEvidence,omitempty"`
 	Templates     []BrowserEnvironmentTemplate     `json:"templates"`
+	TemplateCompatibility *BrowserTemplateCompatibility `json:"templateCompatibility,omitempty"`
 }
 
 func (a *App) BrowserProfileEnvironmentView(profileID string) (*BrowserEnvironmentViewV2, error) {
@@ -32,6 +33,9 @@ func (a *App) BrowserProfileEnvironmentView(profileID string) (*BrowserEnvironme
 	}
 	if evidence, evidenceErr := a.BrowserControlRuntimeEvidence(profileID); evidenceErr == nil {
 		view.RuntimeEvidence = evidence
+	}
+	if compatibility, compatibilityErr := a.BrowserProfileTemplateCompatibility(profileID); compatibilityErr == nil {
+		view.TemplateCompatibility = compatibility
 	}
 	return view, nil
 }
