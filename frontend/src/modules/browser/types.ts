@@ -506,3 +506,56 @@ export interface BrowserGroupWithCount extends BrowserGroup {
   instanceCount: number
 }
 
+
+export interface BrowserNetworkPolicyV2 {
+  profileId: string
+  failClosed: boolean
+  dnsMode: 'inherit' | 'proxy' | string
+  webRtcMode: 'restricted' | 'native' | string
+  localeLinkMode: 'manual' | 'recommend' | string
+  updatedAt: string
+}
+
+export interface BrowserEnvironmentTemplateV2 {
+  schemaVersion: number
+  id: string
+  revision: string
+  name: string
+  description: string
+  restoreLastSession: string
+  memoryLimitMb: number
+  rules: Array<{ key: string; enforcement: 'hard' | 'soft' | string; description: string }>
+}
+
+export interface BrowserEnvironmentViewV2 {
+  schemaVersion: 2
+  contract: Record<string, any>
+  launchState: { profileId: string; environmentId: string; environmentRevision: string; state: 'configured' | 'effective' | 'pending-next-launch' | string }
+  launchReceipt?: Record<string, any>
+  capabilities: Record<string, any>
+  runtimeEvidence?: Record<string, any>
+  templates: BrowserEnvironmentTemplateV2[]
+}
+
+export interface BrowserBatchItemResult {
+  index: number
+  clientKey?: string
+  profileId?: string
+  profileName?: string
+  ok: boolean
+  error?: string
+  runtime?: BrowserProfile
+}
+
+export interface BrowserBatchOperation {
+  operationId: string
+  kind: 'create' | 'start' | 'stop' | string
+  status: 'running' | 'completed' | 'partial' | 'failed' | string
+  concurrency: number
+  total: number
+  succeeded: number
+  failed: number
+  startedAt: string
+  finishedAt?: string
+  results: BrowserBatchItemResult[]
+}

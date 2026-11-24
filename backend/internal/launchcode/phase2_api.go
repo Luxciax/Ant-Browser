@@ -136,6 +136,12 @@ func (s *LaunchServer) handlePhase2ProfileAction(w http.ResponseWriter, r *http.
 			return true
 		}
 		value, err = s.RuntimeEvidence(profileID)
+	case "view":
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{"ok": false, "error": "method not allowed"})
+			return true
+		}
+		value, err = s.EnvironmentView(profileID)
 	case "runtime-verify":
 		if r.Method != http.MethodPost {
 			writeJSON(w, http.StatusMethodNotAllowed, map[string]interface{}{"ok": false, "error": "method not allowed"})

@@ -28,7 +28,7 @@ func New(provider Provider, version string) *Server {
 
 type scopeProvider interface { AllowsScope(scope string) bool }
 
-func providerAllowsScope(provider Provider, scope string) bool {
+func providerAllowsScope(provider interface{}, scope string) bool {
 	if scoped, ok := provider.(scopeProvider); ok {
 		return scoped.AllowsScope(scope)
 	}

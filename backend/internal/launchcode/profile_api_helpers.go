@@ -134,7 +134,7 @@ func parseProfilePath(path string) (string, string, bool) {
 		switch action {
 		case "status", "stop",
 			"environment", "launch-state", "launch-receipt",
-			"capabilities", "runtime-evidence", "runtime-verify":
+			"capabilities", "runtime-evidence", "runtime-verify", "view":
 			return profileID, action, true
 		default:
 			return "", "", false

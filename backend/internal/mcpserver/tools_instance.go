@@ -67,9 +67,10 @@ func toRuntimeState(p *browser.Profile) RuntimeState {
 }
 
 func registerInstanceTools(srv *mcp.Server, p InstanceProvider) {
-	if providerAllowsScope(p.(Provider), "environment-read") { registerInstanceQueryTools(srv,p); registerPhase2Tools(srv,p) }
-	if providerAllowsScope(p.(Provider), "environment-admin") { registerInstanceWriteTools(srv,p) }
-	if providerAllowsScope(p.(Provider), "page-action") { registerRuntimeTools(srv,p) }
+	if providerAllowsScope(p, "environment-read") { registerInstanceQueryTools(srv,p); registerPhase2Tools(srv,p) }
+	if providerAllowsScope(p, "environment-admin") { registerInstanceWriteTools(srv,p) }
+	if providerAllowsScope(p, "page-action") { registerRuntimeTools(srv,p) }
+	registerPhase4Tools(srv, p)
 }
 
 type listInstancesInput struct { Tag string `json:"tag,omitempty"`; GroupID string `json:"groupId,omitempty"`; Keyword string `json:"keyword,omitempty"`; RunningOnly bool `json:"runningOnly,omitempty"` }
