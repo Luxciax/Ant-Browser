@@ -94,6 +94,10 @@ func effectiveNetworkMode(effectiveProxy string) string {
 }
 
 func (a *App) buildLaunchPlanV2(input browserStartInput, plan *browserStartPlan, fingerprintArgCount int, immediateTargets int, restore bool) BrowserLaunchPlanV2 {
+	connectorType := config.NormalizeBrowserConnectorType("")
+	if a != nil && a.config != nil {
+		connectorType = config.NormalizeBrowserConnectorType(a.config.Browser.DefaultConnectorType)
+	}
 	out := BrowserLaunchPlanV2{
 		SchemaVersion: 2,
 		ProfileID: input.ProfileID,
@@ -105,7 +109,7 @@ func (a *App) buildLaunchPlanV2(input browserStartInput, plan *browserStartPlan,
 			EffectiveMode: effectiveNetworkMode(plan.effectiveProxy),
 			ProxyID: strings.TrimSpace(plan.profile.ProxyId),
 			Temporary: input.hasTemporaryProxy() || input.ForceDirectProxy,
-			ConnectorType: config.NormalizeBrowserConnectorType(a.config.Browser.DefaultConnectorType),
+			ConnectorType: connectorType,
 		},
 		Arguments: BrowserLaunchArgumentSummary{
 			ProfileConfigured: len(normalizeNonEmptyStrings(plan.profile.LaunchArgs)),
