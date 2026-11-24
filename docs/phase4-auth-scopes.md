@@ -23,3 +23,11 @@ state rather than trusting annotations.
 The desktop control plane can rotate the API key with a new scope set or revoke
 it. Rotation returns the newly generated key once; normal launch-server status
 does not expose the key.
+
+MCP page tools are registered at tool-group granularity:
+
+- `page-read`: snapshot, screenshot and extraction;
+- `page-action`: navigation, tabs, click/fill/press/select and session release;
+- `script`: JavaScript evaluation only.
+
+Possessing `script` no longer implicitly exposes click/navigation tools.

@@ -124,6 +124,13 @@ func (a *App) GetLaunchServerInfo() map[string]interface{} {
 		authHeader = a.launchServer.APIAuthHeader()
 	}
 
+	authScopes := []string{"*"}
+	if a.config != nil && len(a.config.LaunchServer.Auth.Scopes) > 0 {
+		authScopes = append([]string{}, a.config.LaunchServer.Auth.Scopes...)
+	}
+	if a.launchServer != nil {
+		authScopes = a.launchServer.APIAuthScopes()
+	}
 	info := map[string]interface{}{
 		"host":          "127.0.0.1",
 		"preferredPort": preferredPort,
@@ -134,7 +141,7 @@ func (a *App) GetLaunchServerInfo() map[string]interface{} {
 			"configured": authConfigured,
 			"enabled":    authEnabled,
 			"header":     authHeader,
-			"scopes":     append([]string{}, a.config.LaunchServer.Auth.Scopes...),
+			"scopes":     authScopes,
 		},
 		"mcp": map[string]interface{}{
 			"enabled":   false,
