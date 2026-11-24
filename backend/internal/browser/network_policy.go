@@ -164,6 +164,9 @@ func (m *Manager) SetNetworkPolicy(policy NetworkPolicy) (NetworkPolicy, error) 
 	if err != nil {
 		return NetworkPolicy{}, err
 	}
+	if m.NetworkPolicyDAO == nil {
+		return NetworkPolicy{}, fmt.Errorf("network policy persistence is unavailable")
+	}
 	m.InitData()
 	m.Mutex.Lock()
 	profile := m.Profiles[normalized.ProfileID]
@@ -176,19 +179,29 @@ func (m *Manager) SetNetworkPolicy(policy NetworkPolicy) (NetworkPolicy, error) 
 		m.Mutex.Unlock()
 		return NetworkPolicy{}, fmt.Errorf("profile runtime is %s; stop it before changing network policy", state)
 	}
+	previousProfile := cloneProfileValue(profile)
+	previousPolicy, previousPolicyErr := m.NetworkPolicyDAO.Get(normalized.ProfileID)
 	profile.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
-	if m.ProfileDAO != nil {
-		if err := m.ProfileDAO.Upsert(profile); err != nil {
-			m.Mutex.Unlock()
-			return NetworkPolicy{}, err
-		}
-	}
-	m.Mutex.Unlock()
-	if m.NetworkPolicyDAO == nil {
-		return normalized, fmt.Errorf("network policy persistence is unavailable")
-	}
 	if err := m.NetworkPolicyDAO.Upsert(normalized); err != nil {
+		m.Mutex.Unlock()
 		return NetworkPolicy{}, err
 	}
+	var persistErr error
+	if m.ProfileDAO != nil {
+		persistErr = m.ProfileDAO.Upsert(profile)
+	} else {
+		persistErr = m.SaveProfiles()
+	}
+	if persistErr != nil {
+		*profile = previousProfile
+		if previousPolicyErr == nil {
+			_ = m.NetworkPolicyDAO.Upsert(previousPolicy)
+		} else {
+			_ = m.NetworkPolicyDAO.Delete(normalized.ProfileID)
+		}
+		m.Mutex.Unlock()
+		return NetworkPolicy{}, persistErr
+	}
+	m.Mutex.Unlock()
 	return m.NetworkPolicyDAO.Get(normalized.ProfileID)
 }

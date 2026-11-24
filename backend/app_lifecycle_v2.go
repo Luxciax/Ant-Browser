@@ -36,6 +36,9 @@ func (a *App) BrowserProfileCloneLifecycle(req BrowserLifecycleCloneRequest) (*B
 	if a == nil || a.browserMgr == nil {
 		return nil, fmt.Errorf("browser manager is unavailable")
 	}
+	if a.browserMgr.EnvironmentDAO == nil || a.browserMgr.NetworkPolicyDAO == nil {
+		return nil, fmt.Errorf("lifecycle persistence is unavailable")
+	}
 	sourceID := strings.TrimSpace(req.ProfileID)
 	mode := strings.ToLower(strings.TrimSpace(req.EnvironmentMode))
 	if sourceID == "" {
@@ -58,9 +61,6 @@ func (a *App) BrowserProfileCloneLifecycle(req BrowserLifecycleCloneRequest) (*B
 	if err != nil {
 		return nil, err
 	}
-	if a.browserMgr.EnvironmentDAO == nil {
-		return nil, fmt.Errorf("environment identity persistence is unavailable")
-	}
 	targetIdentity, err := a.browserMgr.EnvironmentDAO.Ensure(cloned.ProfileId)
 	if err != nil {
 		return nil, err
@@ -75,6 +75,24 @@ func (a *App) BrowserProfileCloneLifecycle(req BrowserLifecycleCloneRequest) (*B
 		targetIdentity, err = setter.Set(cloned.ProfileId, sourceIdentity.EnvironmentID)
 		if err != nil {
 			return nil, err
+		}
+	}
+	sourcePolicy, policyErr := a.browserMgr.GetNetworkPolicy(sourceID)
+	if policyErr != nil {
+		return nil, policyErr
+	}
+	sourcePolicy.ProfileID = cloned.ProfileId
+	sourcePolicy.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+	if err := a.browserMgr.NetworkPolicyDAO.Upsert(sourcePolicy); err != nil {
+		return nil, err
+	}
+	if a.browserMgr.TemplateBindingDAO != nil {
+		if binding, bindErr := a.browserMgr.TemplateBindingDAO.Get(sourceID); bindErr == nil {
+			binding.ProfileID = cloned.ProfileId
+			binding.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+			if err := a.browserMgr.TemplateBindingDAO.Upsert(binding); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return &BrowserLifecycleCloneResult{

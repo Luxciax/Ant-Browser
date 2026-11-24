@@ -158,6 +158,7 @@ func (a *App) startupInitManagers(cfg *config.Config, db *database.DB) {
 	a.browserMgr.ExtensionDAO = browser.NewSQLiteExtensionDAO(conn)
 	a.browserMgr.EnvironmentDAO = browser.NewSQLiteEnvironmentIdentityDAO(conn)
 	a.browserMgr.NetworkPolicyDAO = browser.NewSQLiteNetworkPolicyDAO(conn)
+	a.browserMgr.TemplateBindingDAO = browser.NewSQLiteEnvironmentTemplateBindingDAO(conn)
 
 	a.migrateToSQLite()
 

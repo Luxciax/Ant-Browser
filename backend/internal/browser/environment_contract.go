@@ -108,6 +108,8 @@ type EnvironmentContractV2 struct {
 	Persona       EnvironmentPersona          `json:"persona"`
 	KernelBinding EnvironmentKernelBinding    `json:"kernelBinding"`
 	NetworkBinding EnvironmentNetworkBinding  `json:"networkBinding"`
+	NetworkPolicy  NetworkPolicy               `json:"networkPolicy"`
+	Template       *EnvironmentTemplateBinding  `json:"template,omitempty"`
 	Storage       EnvironmentStorageBinding   `json:"storage"`
 	Runtime       EnvironmentRuntimeState     `json:"runtime"`
 	LegacyExtras  EnvironmentLegacyExtras     `json:"legacyExtras"`
@@ -212,6 +214,19 @@ func (m *Manager) EnvironmentContract(profileID string) (*EnvironmentContractV2,
 	if revision == "" {
 		revision = strings.TrimSpace(snapshot.CreatedAt)
 	}
+	networkPolicy, err := m.GetNetworkPolicy(snapshot.ProfileId)
+	if err != nil {
+		return nil, err
+	}
+	var templateBinding *EnvironmentTemplateBinding
+	if m.TemplateBindingDAO != nil {
+		binding, bindErr := m.TemplateBindingDAO.Get(snapshot.ProfileId)
+		if bindErr == nil {
+			templateBinding = &binding
+		} else if bindErr != sql.ErrNoRows {
+			return nil, bindErr
+		}
+	}
 	connectorType := config.NormalizeBrowserConnectorType("")
 	if m.Config != nil {
 		connectorType = config.NormalizeBrowserConnectorType(m.Config.Browser.DefaultConnectorType)
@@ -241,6 +256,8 @@ func (m *Manager) EnvironmentContract(profileID string) (*EnvironmentContractV2,
 			ProxyBindName: strings.TrimSpace(snapshot.ProxyBindName),
 			ConnectorType: connectorType,
 		},
+		NetworkPolicy: networkPolicy,
+		Template: templateBinding,
 		Storage: EnvironmentStorageBinding{
 			ManagedUserDataDir: true,
 			RestoreLastSession: NormalizeRestoreLastSessionMode(snapshot.RestoreLastSession),

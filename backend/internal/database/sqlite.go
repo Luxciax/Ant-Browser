@@ -305,6 +305,23 @@ var migrations = []migration{
 			END`,
 		},
 	},
+	{
+		version: 21,
+		desc:    "环境模板 revision 绑定",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS browser_profile_environment_template (
+				profile_id TEXT PRIMARY KEY,
+				template_id TEXT NOT NULL,
+				template_revision TEXT NOT NULL,
+				updated_at TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE TRIGGER IF NOT EXISTS trg_browser_profile_environment_template_delete
+			AFTER DELETE ON browser_profiles
+			BEGIN
+				DELETE FROM browser_profile_environment_template WHERE profile_id = OLD.profile_id;
+			END`,
+		},
+	},
 	// ── 新版本在此追加，格式：
 	// {
 	//     version: 4,

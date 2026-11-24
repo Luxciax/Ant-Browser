@@ -103,6 +103,7 @@ func (m *Manager) ApplyEnvironmentTemplate(profileID, templateID string) (*Profi
 	if ProfileRuntimeMutationBlocked(profile) {
 		return nil, fmt.Errorf("profile runtime is %s; stop it before applying a template", NormalizeProfileRuntimeState(profile))
 	}
+	previous := cloneProfileValue(profile)
 	next := cloneProfileValue(profile)
 	next.RestoreLastSession = NormalizeRestoreLastSessionMode(template.RestoreLastSession)
 	next.MemoryLimitMB = normalizeMemoryLimitMB(template.MemoryLimitMB)
@@ -113,10 +114,26 @@ func (m *Manager) ApplyEnvironmentTemplate(profileID, templateID string) (*Profi
 		}
 		*profile = next
 	} else {
-		previous := cloneProfileValue(profile)
 		*profile = next
 		if err := m.SaveProfiles(); err != nil {
 			*profile = previous
+			return nil, err
+		}
+	}
+	if m.TemplateBindingDAO != nil {
+		binding := EnvironmentTemplateBinding{
+			ProfileID: profile.ProfileId,
+			TemplateID: template.ID,
+			TemplateRevision: template.Revision,
+			UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		if err := m.TemplateBindingDAO.Upsert(binding); err != nil {
+			*profile = previous
+			if m.ProfileDAO != nil {
+				_ = m.ProfileDAO.Upsert(profile)
+			} else {
+				_ = m.SaveProfiles()
+			}
 			return nil, err
 		}
 	}

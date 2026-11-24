@@ -209,6 +209,7 @@ type Manager struct {
 	ExtensionDAO ExtensionDAO
 	EnvironmentDAO EnvironmentIdentityDAO
 	NetworkPolicyDAO NetworkPolicyDAO
+	TemplateBindingDAO EnvironmentTemplateBindingDAO
 }
 
 // XrayBridge Xray 桥接进程
