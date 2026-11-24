@@ -185,6 +185,10 @@ func (m *Manager) EnvironmentContract(profileID string) (*EnvironmentContractV2,
 	if revision == "" {
 		revision = strings.TrimSpace(snapshot.CreatedAt)
 	}
+	connectorType := config.NormalizeBrowserConnectorType("")
+	if m.Config != nil {
+		connectorType = config.NormalizeBrowserConnectorType(m.Config.Browser.DefaultConnectorType)
+	}
 	return &EnvironmentContractV2{
 		SchemaVersion: EnvironmentContractSchemaVersion,
 		Environment: EnvironmentContractIdentity{
@@ -208,7 +212,7 @@ func (m *Manager) EnvironmentContract(profileID string) (*EnvironmentContractV2,
 			Mode: networkMode,
 			ProxyID: strings.TrimSpace(snapshot.ProxyId),
 			ProxyBindName: strings.TrimSpace(snapshot.ProxyBindName),
-			ConnectorType: config.NormalizeBrowserConnectorType(m.Config.Browser.DefaultConnectorType),
+			ConnectorType: connectorType,
 		},
 		Storage: EnvironmentStorageBinding{
 			ManagedUserDataDir: true,

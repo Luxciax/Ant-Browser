@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"ant-chrome/backend/internal/browser"
 	"ant-chrome/backend/internal/config"
 )
 
@@ -205,4 +204,3 @@ func (a *App) BrowserProfileLaunchPlanState(profileID string) (map[string]interf
 	}, nil
 }
 
-var _ = browser.EnvironmentContractSchemaVersion

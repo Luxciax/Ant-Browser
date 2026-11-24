@@ -25,6 +25,12 @@ type BrowserKernelCapabilityManifest struct {
 	Warnings       []string                         `json:"warnings,omitempty"`
 }
 
+type kernelBinaryDigestCacheEntry struct {
+	Size    int64
+	ModTime int64
+	SHA256  string
+}
+
 type BrowserKernelCapabilityStatus struct {
 	Capability   string `json:"capability"`
 	Configurable bool   `json:"configurable"`
@@ -36,24 +42,63 @@ type BrowserKernelCapabilityStatus struct {
 	Note         string `json:"note,omitempty"`
 }
 
-func sha256RegularFile(path string) (string, error) {
+func sha256RegularFile(path string) (string, os.FileInfo, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer file.Close()
 	info, err := file.Stat()
+	if err != nil {
+		return "", nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return "", nil, fmt.Errorf("kernel executable is not a regular file")
+	}
+	digest := sha256.New()
+	if _, err := io.Copy(digest, file); err != nil {
+		return "", nil, err
+	}
+	after, err := file.Stat()
+	if err != nil {
+		return "", nil, err
+	}
+	if after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
+		return "", nil, fmt.Errorf("kernel executable changed while hashing")
+	}
+	return hex.EncodeToString(digest.Sum(nil)), after, nil
+}
+
+func (a *App) kernelBinarySHA256(path string) (string, error) {
+	info, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
 	if !info.Mode().IsRegular() {
 		return "", fmt.Errorf("kernel executable is not a regular file")
 	}
-	digest := sha256.New()
-	if _, err := io.Copy(digest, file); err != nil {
+	key := strings.TrimSpace(path)
+	a.kernelCapabilityMu.Lock()
+	if cached, ok := a.kernelBinaryDigestCache[key]; ok &&
+		cached.Size == info.Size() && cached.ModTime == info.ModTime().UnixNano() {
+		a.kernelCapabilityMu.Unlock()
+		return cached.SHA256, nil
+	}
+	a.kernelCapabilityMu.Unlock()
+
+	digest, after, err := sha256RegularFile(path)
+	if err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(digest.Sum(nil)), nil
+	a.kernelCapabilityMu.Lock()
+	if a.kernelBinaryDigestCache == nil {
+		a.kernelBinaryDigestCache = make(map[string]kernelBinaryDigestCacheEntry)
+	}
+	a.kernelBinaryDigestCache[key] = kernelBinaryDigestCacheEntry{
+		Size: after.Size(), ModTime: after.ModTime().UnixNano(), SHA256: digest,
+	}
+	a.kernelCapabilityMu.Unlock()
+	return digest, nil
 }
 
 func (a *App) browserKernelCapabilityManifest(profile *BrowserProfile) BrowserKernelCapabilityManifest {
@@ -78,7 +123,7 @@ func (a *App) browserKernelCapabilityManifest(profile *BrowserProfile) BrowserKe
 	manifest.CoreName = core.CoreName
 	manifest.BrowserVersion = a.browserMgr.GetChromeVersion(core.CorePath)
 	if executable, err := a.browserMgr.ResolveCoreExecutable(core); err == nil {
-		if digest, digestErr := sha256RegularFile(executable); digestErr == nil {
+		if digest, digestErr := a.kernelBinarySHA256(executable); digestErr == nil {
 			manifest.BinarySHA256 = digest
 		} else {
 			manifest.Warnings = append(manifest.Warnings, "kernel binary hash unavailable: "+digestErr.Error())
