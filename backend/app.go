@@ -59,6 +59,7 @@ type App struct {
 	profileWindowMarkersMu        sync.Mutex
 	profileWindowMarkers          map[string]*profileWindowMarker
 	profileRuntimeOpsMu           sync.Mutex
+	batchMu                       sync.RWMutex
 	launchPlanMu                  sync.RWMutex
 	kernelCapabilityMu            sync.Mutex
 	runtimeEvidenceMu             sync.RWMutex
@@ -67,6 +68,7 @@ type App struct {
 	launchReceipts                 map[string]BrowserLaunchReceiptV2
 	kernelBinaryDigestCache        map[string]kernelBinaryDigestCacheEntry
 	runtimeEvidence                map[string]BrowserRuntimeEvidenceV2
+	batchOperations                map[string]BrowserBatchOperation
 	diagnosticsMu                 sync.Mutex
 	browserDiagnostics            map[string]context.CancelFunc
 	incidentPersistMu             sync.Mutex
@@ -97,6 +99,7 @@ func NewApp(appRoot string, appVersion ...string) *App {
 		launchReceipts:          make(map[string]BrowserLaunchReceiptV2),
 		kernelBinaryDigestCache: make(map[string]kernelBinaryDigestCacheEntry),
 		runtimeEvidence:         make(map[string]BrowserRuntimeEvidenceV2),
+		batchOperations:         make(map[string]BrowserBatchOperation),
 	}
 }
 
