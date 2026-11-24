@@ -36,3 +36,7 @@ capabilities are matched only by exact manifest evidence keys; an unmapped or
 merely emitted capability is not promoted to verified. This prevents a mobile
 or cross-OS compatibility label from being presented as an actually verified
 runtime.
+
+The probe does not automatically follow HTTP redirects. Redirect responses are
+recorded as the observed response so a public URL cannot redirect the probe
+into a private or loopback target.

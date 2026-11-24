@@ -16,7 +16,7 @@ type BrowserPhase5ControlProvider interface {
 	BrowserSystemIntegrationStatusGet() interface{}
 	BrowserSystemIntegrationSetProtocol(enabled bool) (interface{}, error)
 }
-type systemProtocolRequest struct { Enabled bool `json:"enabled"` }
+type systemProtocolRequest struct { Enabled *bool `json:"enabled"` }
 
 func (s *LaunchServer) phase5ControlProvider() (BrowserPhase5ControlProvider,error) {
 	p,ok:=s.starter.(BrowserPhase5ControlProvider)
@@ -64,7 +64,8 @@ func (s *LaunchServer) handleSystemIntegration(w http.ResponseWriter,r *http.Req
 		var req systemProtocolRequest
 		dec:=json.NewDecoder(io.LimitReader(r.Body,1<<20));dec.DisallowUnknownFields()
 		if e:=dec.Decode(&req);e!=nil{writeJSON(w,400,map[string]any{"ok":false,"error":"invalid request body"});return}
-		v,e:=p.BrowserSystemIntegrationSetProtocol(req.Enabled);if e!=nil{writeJSON(w,400,map[string]any{"ok":false,"error":e.Error(),"status":v});return}
+		if req.Enabled==nil{writeJSON(w,400,map[string]any{"ok":false,"error":"enabled is required"});return}
+		v,e:=p.BrowserSystemIntegrationSetProtocol(*req.Enabled);if e!=nil{writeJSON(w,400,map[string]any{"ok":false,"error":e.Error(),"status":v});return}
 		writeJSON(w,200,map[string]any{"ok":true,"status":v})
 	default:writeJSON(w,405,map[string]any{"ok":false,"error":"method not allowed"})
 	}

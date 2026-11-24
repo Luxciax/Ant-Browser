@@ -295,6 +295,7 @@ func (a *App) executeWorkflowStep(selector automation.WorkflowSelector, run *aut
 }
 
 func (a *App) executeWorkflowAction(selector automation.WorkflowSelector, run *automation.WorkflowRunRecord, step automation.WorkflowStep, index int) error {
+	if a == nil || a.launchServer == nil { return fmt.Errorf("launch server is unavailable") }
 	attempts := step.Retry.MaxAttempts; if attempts <= 0 { attempts = 1 }
 	delay := time.Duration(step.Retry.DelayMs) * time.Millisecond
 	timeout := step.TimeoutMs; if timeout <= 0 { timeout = 30000 }; if timeout > 300000 { timeout = 300000 }

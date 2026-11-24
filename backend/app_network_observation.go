@@ -210,7 +210,10 @@ func (a *App) BrowserNetworkObserve(req BrowserNetworkObservationRequest) (*Brow
 	}
 	ctx=httptrace.WithClientTrace(ctx,trace)
 	transport:=&http.Transport{Proxy:http.ProxyFromEnvironment,ForceAttemptHTTP2:true,DisableKeepAlives:true,TLSClientConfig:&tls.Config{MinVersion:tls.VersionTLS12}}
-	client:=&http.Client{Transport:transport}
+	client:=&http.Client{
+		Transport:transport,
+		CheckRedirect:func(_ *http.Request,_ []*http.Request) error{return http.ErrUseLastResponse},
+	}
 	request,err:=http.NewRequestWithContext(ctx,http.MethodGet,target.String(),nil)
 	if err!=nil{return nil,err}
 	request.Header.Set("User-Agent","AntBrowser-NetworkObservation/1")

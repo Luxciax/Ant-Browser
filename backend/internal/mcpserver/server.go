@@ -55,7 +55,7 @@ func (s *Server) buildMCPServer() *mcp.Server {
 	if providerAllowsScope(s.provider, "environment-read") || providerAllowsScope(s.provider, "environment-admin") {
 		registerPhase5ControlTools(srv, s.provider)
 	}
-	if providerAllowsScope(s.provider, "page-read") {
+	if providerAllowsScope(s.provider, "page-read") || providerAllowsScope(s.provider, "environment-read") {
 		registerNetworkObservationTools(srv, s.provider)
 	}
 	return srv
