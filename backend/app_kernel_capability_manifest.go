@@ -200,6 +200,20 @@ func (a *App) BrowserProfileKernelCapabilityManifest(profileID string) (BrowserK
 	snapshot := copyBrowserProfileSnapshot(profile)
 	a.browserMgr.Mutex.Unlock()
 	manifest := a.browserKernelCapabilityManifest(snapshot)
+	if receipt, receiptErr := a.BrowserProfileLaunchReceipt(profileID); receiptErr == nil && receipt != nil {
+		contract, contractErr := a.browserMgr.EnvironmentContract(profileID)
+		if contractErr == nil && contract != nil &&
+			receipt.Plan.EnvironmentRevision == contract.Environment.Revision &&
+			receipt.DebugReady {
+			for index := range manifest.Capabilities {
+				if manifest.Capabilities[index].Capability == "managed-debug-endpoint" {
+					manifest.Capabilities[index].Acknowledged = true
+					manifest.Capabilities[index].Observed = true
+					manifest.Capabilities[index].Status = "observed"
+				}
+			}
+		}
+	}
 	if evidence, evidenceErr := a.BrowserProfileRuntimeEvidence(profileID); evidenceErr == nil && evidence != nil {
 		contract, contractErr := a.browserMgr.EnvironmentContract(profileID)
 		if contractErr == nil && contract != nil &&

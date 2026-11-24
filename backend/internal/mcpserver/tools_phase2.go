@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"ant-chrome/backend/internal/launchcode"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -60,7 +59,7 @@ func registerPhase2Tools(srv *mcp.Server, p InstanceProvider) {
 	addRead("ant_instance_capabilities", "读取实际内核能力阶段；未有证据的能力不会标记 verified。", "读取内核能力", inspector.KernelCapabilities)
 	addRead("ant_runtime_evidence", "读取最近一次显式运行验证留下的证据；不会自动执行验证。", "读取运行证据", inspector.RuntimeEvidence)
 
-	mcp.AddTool(srv, &mcp.Tool{Name: "ant_runtime_verify", Description: "显式执行一次基础运行验证并保存证据；普通状态查询不会调用它。", Annotations: readOnly("验证运行配置")}, func(_ context.Context, _ *mcp.CallToolRequest, in phase2ReadInput) (*mcp.CallToolResult, phase2Output, error) {
+	mcp.AddTool(srv, &mcp.Tool{Name: "ant_runtime_verify", Description: "显式执行一次基础运行验证并保存证据；普通状态查询不会调用它。", Annotations: mutating("验证运行配置")}, func(_ context.Context, _ *mcp.CallToolRequest, in phase2ReadInput) (*mcp.CallToolResult, phase2Output, error) {
 		profileID, err := resolvePhase2Profile(p, in.Selector)
 		if err != nil {
 			return toolError(err), phase2Output{}, nil
@@ -73,4 +72,3 @@ func registerPhase2Tools(srv *mcp.Server, p InstanceProvider) {
 	})
 }
 
-var _ = launchcode.LaunchSelector{}

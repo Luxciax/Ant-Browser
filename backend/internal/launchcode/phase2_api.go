@@ -1,7 +1,6 @@
 package launchcode
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 )
@@ -162,4 +161,3 @@ func (s *LaunchServer) handlePhase2ProfileAction(w http.ResponseWriter, r *http.
 	return true
 }
 
-var _ = fmt.Sprintf

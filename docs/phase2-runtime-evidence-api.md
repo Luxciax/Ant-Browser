@@ -49,7 +49,8 @@ The corresponding tools are:
 - `ant_runtime_verify`
 
 The first five are passive reads. `ant_runtime_verify` is an explicit runtime
-measurement operation.
+measurement operation and is marked mutating because it stores a new evidence
+record in the application runtime state.
 
 ## Capability promotion
 
