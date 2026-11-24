@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.9.9 - 2026-11-25
+
+- 完成五阶段环境与运行体系升级：统一 Persona/EnvironmentView、LaunchPlan、内核能力清单、NetworkPolicy、生命周期、备份迁移、批量操作与运行证据模型。
+- 新增可恢复 Workflow/RPA：条件、循环、变量、断点、重试、副作用保护、调度、运行历史、文件上传、iframe/shadow selector 与中断恢复。
+- 完善控制面：API/MCP 权限范围、Key 轮换/撤销、回收站、备份通道同步状态、可选 antbrowser:// Windows 协议与 Network Observation。
+- 新增模板兼容性证据：Windows/macOS/Linux/Android/iOS 目标模板区分 eligible 与 verified，不将缺少兼容内核的模板伪装成已验证。
+- 网络观测新增 DNS/TCP/TLS/ALPN/HTTP 真实证据、SSRF 私网保护和未观测状态；JA3/JA4/QUIC/H3 等无证据字段保持 not_observed。
+- 前端 Fish UI 接入环境契约、NetworkPolicy、Workflow/RPA、控制中心、网络证据、回收站与系统集成。
+- Wails 升级到 v2.17.1，Go 基线升级到 1.26；React Router 升级到 7.18.6，Vite 升级到 8.3.8，并完成 Rolldown 兼容迁移。
+- 前端依赖经过干净 npm ci、完整 npm audit=0 和 production build 验证；Windows Go 测试、go vet、全模块编译和完整 Wails production build 已通过。
+- 新增手动 Quality Gate；修复 SecretRef 文档与备份凭据测试语义，发布配置不再以明文保存 OpenList/S3 凭据。
+
 ## 1.9.4 - 2026-10-14
 
 - 代理导入支持单条/多条节点链接、Base64 订阅、Clash YAML/JSON、sing-box JSON，以及 VMess、VLESS、Trojan、SS、HY2、TUIC、AnyTLS 等节点格式。
