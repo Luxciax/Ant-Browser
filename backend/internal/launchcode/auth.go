@@ -94,6 +94,10 @@ func requiredScopeForRequest(r *http.Request) string {
 		return ""
 	case path == "/api/diagnostics", path == "/api/sync/status":
 		return ScopeEnvironmentRead
+	case path == "/api/network/observe":
+		return ScopePageRead
+	case strings.HasPrefix(path, "/api/network/observations/"):
+		return ScopeEnvironmentRead
 	case strings.HasPrefix(path, "/api/trash"):
 		if method == http.MethodGet { return ScopeEnvironmentRead }
 		return ScopeEnvironmentAdmin

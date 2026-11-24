@@ -7,6 +7,8 @@ func (s *LaunchServer) buildMux() *http.ServeMux {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/diagnostics", s.handleDiagnostics)
 	mux.HandleFunc("/api/sync/status", s.handleSyncStatus)
+	mux.HandleFunc("/api/network/observe", s.handleNetworkObserve)
+	mux.HandleFunc("/api/network/observations/", s.handleNetworkObservationGet)
 	mux.HandleFunc("/api/trash", s.handleTrash)
 	mux.HandleFunc("/api/trash/", s.handleTrash)
 	mux.HandleFunc("/api/system/integration", s.handleSystemIntegration)

@@ -15,14 +15,19 @@ type EnvironmentTemplateRule struct {
 }
 
 type EnvironmentTemplate struct {
-	SchemaVersion       int                       `json:"schemaVersion"`
-	ID                  string                    `json:"id"`
-	Revision            string                    `json:"revision"`
-	Name                string                    `json:"name"`
-	Description         string                    `json:"description"`
-	RestoreLastSession  string                    `json:"restoreLastSession"`
-	MemoryLimitMB       int                       `json:"memoryLimitMb"`
-	Rules               []EnvironmentTemplateRule `json:"rules"`
+	SchemaVersion        int                       `json:"schemaVersion"`
+	ID                   string                    `json:"id"`
+	Revision             string                    `json:"revision"`
+	Name                 string                    `json:"name"`
+	Description          string                    `json:"description"`
+	TargetOS             string                    `json:"targetOS,omitempty"`
+	DeviceClass          string                    `json:"deviceClass,omitempty"`
+	KernelFamily         string                    `json:"kernelFamily,omitempty"`
+	SupportLevel         string                    `json:"supportLevel,omitempty"`
+	RequiredCapabilities []string                  `json:"requiredCapabilities,omitempty"`
+	RestoreLastSession   string                    `json:"restoreLastSession"`
+	MemoryLimitMB        int                       `json:"memoryLimitMb"`
+	Rules                []EnvironmentTemplateRule `json:"rules"`
 }
 
 func builtinEnvironmentTemplates() []EnvironmentTemplate {
@@ -61,6 +66,46 @@ func builtinEnvironmentTemplates() []EnvironmentTemplate {
 			MemoryLimitMB: 2048,
 			Rules: append([]EnvironmentTemplateRule{}, commonRules...),
 		},
+		{
+			SchemaVersion: EnvironmentTemplateSchemaVersion,
+			ID: "desktop-windows-compatible", Revision: "1",
+			Name: "Windows Desktop Compatibility", Description: "Compatibility target for a verified Windows desktop-capable kernel.",
+			TargetOS: "windows", DeviceClass: "desktop", KernelFamily: "chromium-compatible", SupportLevel: "requires-compatible-kernel",
+			RequiredCapabilities: []string{"desktop-window","ua-contract","runtime-evidence"},
+			RestoreLastSession: RestoreLastSessionFollow, Rules: append([]EnvironmentTemplateRule{}, commonRules...),
+		},
+		{
+			SchemaVersion: EnvironmentTemplateSchemaVersion,
+			ID: "desktop-macos-compatible", Revision: "1",
+			Name: "macOS Desktop Compatibility", Description: "Compatibility target that requires an actual macOS-capable kernel/runtime binding.",
+			TargetOS: "macos", DeviceClass: "desktop", KernelFamily: "chromium-compatible", SupportLevel: "requires-compatible-kernel",
+			RequiredCapabilities: []string{"desktop-window","ua-contract","runtime-evidence"},
+			RestoreLastSession: RestoreLastSessionFollow, Rules: append([]EnvironmentTemplateRule{}, commonRules...),
+		},
+		{
+			SchemaVersion: EnvironmentTemplateSchemaVersion,
+			ID: "desktop-linux-compatible", Revision: "1",
+			Name: "Linux Desktop Compatibility", Description: "Compatibility target for a verified Linux desktop-capable kernel.",
+			TargetOS: "linux", DeviceClass: "desktop", KernelFamily: "chromium-compatible", SupportLevel: "requires-compatible-kernel",
+			RequiredCapabilities: []string{"desktop-window","ua-contract","runtime-evidence"},
+			RestoreLastSession: RestoreLastSessionFollow, Rules: append([]EnvironmentTemplateRule{}, commonRules...),
+		},
+		{
+			SchemaVersion: EnvironmentTemplateSchemaVersion,
+			ID: "mobile-android-compatible", Revision: "1",
+			Name: "Android Mobile Compatibility", Description: "Mobile compatibility target; never treats desktop metadata overrides as proof of a mobile engine.",
+			TargetOS: "android", DeviceClass: "mobile", KernelFamily: "android-compatible", SupportLevel: "requires-compatible-kernel",
+			RequiredCapabilities: []string{"mobile-viewport","touch-input","mobile-ua-contract","runtime-evidence"},
+			RestoreLastSession: RestoreLastSessionFollow, Rules: append([]EnvironmentTemplateRule{}, commonRules...),
+		},
+		{
+			SchemaVersion: EnvironmentTemplateSchemaVersion,
+			ID: "mobile-ios-compatible", Revision: "1",
+			Name: "iOS Mobile Compatibility", Description: "Mobile compatibility target that remains unavailable unless an iOS/WebKit-compatible runtime is actually bound.",
+			TargetOS: "ios", DeviceClass: "mobile", KernelFamily: "webkit-compatible", SupportLevel: "requires-compatible-kernel",
+			RequiredCapabilities: []string{"mobile-viewport","touch-input","mobile-ua-contract","runtime-evidence"},
+			RestoreLastSession: RestoreLastSessionFollow, Rules: append([]EnvironmentTemplateRule{}, commonRules...),
+		},
 	}
 }
 
@@ -70,6 +115,7 @@ func BuiltinEnvironmentTemplates() []EnvironmentTemplate {
 	for i := range items {
 		out[i] = items[i]
 		out[i].Rules = append([]EnvironmentTemplateRule{}, items[i].Rules...)
+		out[i].RequiredCapabilities = append([]string{}, items[i].RequiredCapabilities...)
 	}
 	return out
 }
@@ -79,6 +125,7 @@ func FindEnvironmentTemplate(id string) (EnvironmentTemplate, bool) {
 	for _, item := range builtinEnvironmentTemplates() {
 		if strings.EqualFold(item.ID, id) {
 			item.Rules = append([]EnvironmentTemplateRule{}, item.Rules...)
+			item.RequiredCapabilities = append([]string{}, item.RequiredCapabilities...)
 			return item, true
 		}
 	}

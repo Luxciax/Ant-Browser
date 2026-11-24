@@ -537,6 +537,11 @@ export interface BrowserEnvironmentTemplateV2 {
   revision: string
   name: string
   description: string
+  targetOS?: string
+  deviceClass?: string
+  kernelFamily?: string
+  supportLevel?: string
+  requiredCapabilities?: string[]
   restoreLastSession: string
   memoryLimitMb: number
   rules: Array<{ key: string; enforcement: 'hard' | 'soft' | string; description: string }>
@@ -653,4 +658,28 @@ export interface BrowserSystemIntegrationStatus {
   executable?: string
   actions: string[]
   message?: string
+}
+
+export interface BrowserNetworkObservation {
+  schemaVersion: 1
+  id: string
+  profileId?: string
+  source: 'host' | string
+  url: string
+  startedAt: string
+  finishedAt: string
+  totalMs: number
+  ok: boolean
+  statusCode?: number
+  httpProtocol?: string
+  dns: Record<string, any>
+  connection: Record<string, any>
+  tls: Record<string, any>
+  http3: { status: string; reason?: string }
+  quic: { status: string; reason?: string }
+  ja3: { status: string; reason?: string }
+  ja4: { status: string; reason?: string }
+  browserRoute: { status: string; reason?: string }
+  serverSeen: { status: string; reason?: string }
+  error?: string
 }
