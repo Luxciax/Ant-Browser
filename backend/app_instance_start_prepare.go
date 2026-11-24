@@ -147,8 +147,7 @@ func (a *App) prepareBrowserStartPlan(ctx context.Context, input browserStartInp
 		}
 		return nil, fmt.Errorf("实例启动失败：读取 NetworkPolicy 失败: %w", policyErr)
 	}
-	policyArgs := networkPolicyLaunchArgs(networkPolicy)
-	fingerprintLaunchArgs = append(fingerprintLaunchArgs, policyArgs...)
+	fingerprintLaunchArgs = mergeNetworkPolicyLaunchArgs(fingerprintLaunchArgs, networkPolicy)
 	if err := validateEffectiveNetworkPolicy(networkPolicy, configuredNetworkMode(profile, input), effectiveNetworkMode(effectiveProxy)); err != nil {
 		if releaseProxyBridge {
 			a.releaseProxyBridgeRef(acquiredProxyBridge)

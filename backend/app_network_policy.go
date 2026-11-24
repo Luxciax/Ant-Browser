@@ -27,12 +27,17 @@ func (a *App) BrowserProfileSetNetworkPolicy(policy BrowserNetworkPolicy) (Brows
 	return a.browserMgr.SetNetworkPolicy(policy)
 }
 
-func networkPolicyLaunchArgs(policy BrowserNetworkPolicy) []string {
-	args := []string{}
-	if policy.WebRTCMode == browser.NetworkWebRTCRestricted {
-		args = append(args, "--disable-non-proxied-udp")
+func mergeNetworkPolicyLaunchArgs(args []string, policy BrowserNetworkPolicy) []string {
+	out := append([]string{}, args...)
+	if policy.WebRTCMode != browser.NetworkWebRTCRestricted {
+		return out
 	}
-	return args
+	for _, arg := range out {
+		if strings.TrimSpace(arg) == "--disable-non-proxied-udp" {
+			return out
+		}
+	}
+	return append(out, "--disable-non-proxied-udp")
 }
 
 func validateEffectiveNetworkPolicy(policy BrowserNetworkPolicy, configuredMode, effectiveMode string) error {
