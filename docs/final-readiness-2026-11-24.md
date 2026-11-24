@@ -10,21 +10,27 @@ The finalization chain was validated on Windows in an isolated detached worktree
 
 The following commands completed successfully against the finalization code line:
 
-- `go test ./backend/... ./internal/... ./tools/...`
+- `go test -p=1 ./backend/... ./internal/... ./tools/...`
 - `go vet ./backend/... ./internal/... ./tools/...`
-- `go test -run ^$ ./...`
+- `go test -run ^$ -p=1 ./...`
 - `npm ci`
 - `npm run build`
 - `npm audit --json`
+- `go run github.com/wailsapp/wails/v2/cmd/wails@v2.17.1 build -clean`
 
 Results:
 
-- backend/internal/tools Go tests: PASS;
+- backend/internal/tools Go tests: PASS (serial package execution to avoid Windows resource-sensitive test contention);
 - Go vet: PASS;
 - full Go module compile gate: PASS;
 - frontend TypeScript/Vite production build: PASS;
+- Wails v2.17.1 full Windows production build: PASS (`build/bin/ant-chrome.exe` generated);
 - final full npm audit: 0 known vulnerabilities;
 - final dependency tree: no invalid peer/dependency entries in the audited Tailwind/Vite chains.
+
+## Wails / Go toolchain migration
+
+The desktop application was upgraded from Wails v2.12.0 to Wails v2.17.1. The project Go directive is now 1.26.0. This resolves the old Wails package-analysis failure seen with the newer Go toolchain and was verified by a full Windows production build, including bindings generation, frontend compilation, application assets and final executable compilation.
 
 ## Frontend dependency migration
 
