@@ -28,7 +28,7 @@ Neither tool accesses the network. Neither writes into the selected input root.
 
 A build specification is ordinary JSON:
 
-`@json
+```json
 {
   "run_id": "ML-1504-20261120T101500Z",
   "sample_id": "ML-1504",
@@ -56,7 +56,7 @@ A build specification is ordinary JSON:
     "summary": "lifecycle_v2/ML-1504/C2/summary.json"
   }
 }
-`@
+```
 
 `run_id` identifies one execution. `sample_id` may be reused across executions.
 Do not use a sample directory name as a run ID when files in that directory came
@@ -73,11 +73,11 @@ IDs, cookies, proxy credentials, tokens, or other secrets in metadata.
 
 Example:
 
-`@powershell
+```powershell
 python tools/evidence_provenance.py build   --root "D:\research\source"   --spec "D:\research\specs\run-001.json"   --output "D:\research\manifests\run-001.manifest.json"
 
 python tools/evidence_provenance.py verify   --root "D:\research\source"   --manifest "D:\research\manifests\run-001.manifest.json"
-`@
+```
 
 The builder rejects duplicate stage IDs, non-increasing stage ordinals,
 duplicate artifact assignment across stages, unsafe paths, links/reparse
@@ -88,9 +88,9 @@ current artifacts. A changed file does not silently become part of the old run.
 
 ## Run index
 
-`@powershell
+```powershell
 python tools/evidence_provenance.py index   --manifests "D:\research\manifests\run-001.manifest.json"               "D:\research\manifests\run-002.manifest.json"   --output "D:\research\indexes\index-001.json"
-`@
+```
 
 A repeated `run_id` with different manifest digests is reported as a conflict.
 Repeated `sample_id` values are allowed because one sample can be measured in

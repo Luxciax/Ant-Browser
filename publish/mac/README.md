@@ -33,10 +33,10 @@ Build an Intel package:
 bash publish/mac/publish-mac.sh --arch amd64
 ```
 
-The version defaults to `wails.json`. Override it for a package-only build with:
+The version defaults to `wails.json`. The following uses `1.2.3` only as a version-format example:
 
 ```bash
-bash publish/mac/publish-mac.sh --arch arm64 --version 1.8.0
+bash publish/mac/publish-mac.sh --arch arm64 --version 1.2.3
 ```
 
 Available options:

@@ -111,6 +111,12 @@ const currentContextFiles = [
   '.github/workflows/publish-windows.yml',
   '.github/workflows/publish-linux.yml',
   '.github/workflows/publish-macos.yml',
+  'bat/README.md',
+  'publish/linux/README.md',
+  'publish/mac/README.md',
+  'docs/architecture.md',
+  'docs/security-and-evidence.md',
+  'docs/evidence-provenance-v1.md',
   ...skillDirs.flatMap((dir) => {
     const out = []
     const walk = (relative) => {

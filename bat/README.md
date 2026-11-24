@@ -112,13 +112,13 @@ bat\publish.bat
 bat\publish.bat W
 bat\publish.bat L
 bat\publish.bat B
-bat\publish.bat W -Version 1.8.0
-bat\publish.bat B -Version 1.8.0
+bat\publish.bat W -Version 1.2.3
+bat\publish.bat B -Version 1.2.3
 ```
 
 说明：
 
-- `-Version 1.8.0` 会覆盖本次发布使用的版本号；发布其他版本时替换为目标版本。
+- `-Version 1.2.3` 只是格式示例；实际发布时使用目标版本号。
 - Windows / Linux 包名、NSIS 安装包版本号，以及本次构建期间读取到的 `wails.json productVersion` 会统一使用该值。
 
 Windows 打包依赖 NSIS，默认查找顺序：

@@ -58,6 +58,8 @@ publish/staging/
 publish/output/
 
 # Local scratch files
+docs/local/
+docs/scratch/
 DEPLOYMENT_GUIDE.md
 plan.md
 pic/
